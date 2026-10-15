@@ -36,4 +36,6 @@ def get_gemini_response(prompt):
     response = send_gemini_request(url, headers, payload)
     return extract_gemini_response(response)
 
-print(get_gemini_response("Confirma en una frase corta que esta conexion funciona correctamente."))
+if __name__ == "__main__":
+    response = get_gemini_response("Confirma en una frase corta que esta conexion funciona correctamente.")
+    print(response)
