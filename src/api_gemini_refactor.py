@@ -31,7 +31,16 @@ def send_gemini_request(url, headers, payload):
         return response.json()
     except requests.exceptions.JSONDecodeError as e:
         raise RuntimeError(f"Error decodificando la respuesta JSON o viene vacía: {e}")
-        
+
+def calculate_cost(response, input_pricing, output_pricing):
+    try:
+        use = response["usage"]
+        input_tokens = use["total_input_tokens"]
+        output_tokens = use["total_output_tokens"]
+        return (input_tokens * input_pricing) + (output_tokens * output_pricing)
+    except (KeyError, IndexError) as e:
+        raise RuntimeError(f"Error calculando el costo: {e}")
+
 def extract_gemini_response(data):
     try:
         return data["steps"][1]["content"][0].get("text", "No se encontro texto en la respuesta")
@@ -41,8 +50,10 @@ def extract_gemini_response(data):
 def get_gemini_response(prompt):
     url, headers, payload = build_gemini_prompt(prompt)
     response = send_gemini_request(url, headers, payload)
-    return extract_gemini_response(response)
+    cost = calculate_cost(response, input_pricing=0.0001, output_pricing=0.0002)
+    return extract_gemini_response(response), cost
 
 if __name__ == "__main__":
-    response = get_gemini_response("Confirma en una frase corta que esta conexion funciona correctamente.")
-    print(response)
+    response, cost = get_gemini_response("Confirma en una frase corta que esta conexion funciona correctamente.")
+    print(f"Respuesta: {response}")
+    print(f"Costo: {cost}")
