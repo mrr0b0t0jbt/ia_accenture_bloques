@@ -1,0 +1,20 @@
+{
+  "clasificar_phishing": {
+    "schema": true,
+    "exitos": 3,
+    "intentos": 3,
+    "fallos": []
+  },
+  "extraer_iocs": {
+    "schema": true,
+    "exitos": 3,
+    "intentos": 3,
+    "fallos": []
+  },
+  "clasificar_alerta_sin_schema": {
+    "schema": false,
+    "exitos": 3,
+    "intentos": 3,
+    "fallos": []
+  }
+}

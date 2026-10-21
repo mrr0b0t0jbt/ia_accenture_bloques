@@ -7,18 +7,23 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def build_claude_prompt(prompt):
+def build_claude_prompt(prompt, system=None, output_schema=None):
     if not prompt:
         raise ValueError("La entrada no puede estar vacía. Por favor, proporciona un prompt válido.")
     url = "https://api.anthropic.com/v1/messages"
     api_key = os.getenv("CLAUDE_API_KEY")
-    payload = json.dumps({
+    body = {
         "model": "claude-sonnet-5-5",
         "max_tokens": 1024,
         "messages": [
             {"role": "user", "content": prompt}
         ]
-    })
+    }
+    if system:
+        body["system"] = system
+    if output_schema:
+        body["output_config"] = {"format": {"type": "json_schema", "schema": output_schema}}
+    payload = json.dumps(body)
     headers = {
         "anthropic-version": "2023-06-01",
         'x-api-key': api_key,
