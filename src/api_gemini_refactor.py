@@ -1,3 +1,5 @@
+import time
+
 import requests
 import os
 import json
@@ -48,12 +50,31 @@ def extract_gemini_response(data):
         raise RuntimeError(f"Error extrayendo la respuesta: {e}")
 
 def get_gemini_response(prompt):
-    url, headers, payload = build_gemini_prompt(prompt)
-    response = send_gemini_request(url, headers, payload)
-    cost = calculate_cost(response, input_pricing=0.0001, output_pricing=0.0002)
-    return extract_gemini_response(response), cost
+    try:
+        url, headers, payload = build_gemini_prompt(prompt)
+        response = send_gemini_request(url, headers, payload)
+        cost = calculate_cost(response, input_pricing=0.0001, output_pricing=0.0002)
+        print (f"Costo calculado: {cost}")
+        return extract_gemini_response(response)
+    except KeyError as ve:
+        print(f"Error extract response: {ve}")
+    except Exception as e:
+        print(f"unexpected error: {e}")
 
+def latency_test(ciclos: int = 5):
+    latencies = []
+    for i in range(ciclos):
+        url, headers, payload = build_gemini_prompt("Cuanto es 2 + 2? Dame solo el resultado")
+        index = time.time()
+        data = send_gemini_request(url, headers, payload)
+        duration = time.time() - index
+        print(f"Duración de la petición {i + 1}: {duration} segundos")
+        latencies.append(duration)
+    prom_latency = sum(latencies) / len(latencies)
+    print(f"Latencia promedio después de {ciclos} ciclos: {prom_latency} segundos")  
+    
 if __name__ == "__main__":
     response, cost = get_gemini_response("Confirma en una frase corta que esta conexion funciona correctamente.")
     print(f"Respuesta: {response}")
     print(f"Costo: {cost}")
+    latency_test(10)
