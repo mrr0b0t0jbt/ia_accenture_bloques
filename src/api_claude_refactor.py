@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def build_gemini_prompt(prompt):
+def build_claude_prompt(prompt):
     if not prompt:
         raise ValueError("La entrada no puede estar vacía. Por favor, proporciona un prompt válido.")
     url = "https://generativelanguage.googleapis.com/v1beta/interactions"
@@ -22,7 +22,7 @@ def build_gemini_prompt(prompt):
     }
     return url, headers, payload
 
-def send_gemini_request(url, headers, payload):
+def send_claude_request(url, headers, payload):
     try:
         response = requests.post(url, headers=headers, data=payload)
     except requests.exceptions.ConnectionError as e:
@@ -43,19 +43,19 @@ def calculate_cost(response, input_pricing, output_pricing):
     except (KeyError, IndexError) as e:
         raise RuntimeError(f"Error calculando el costo: {e}")
 
-def extract_gemini_response(data):
+def extract_claude_response(data):
     try:
         return data["steps"][1]["content"][0].get("text", "No se encontro texto en la respuesta")
     except (KeyError, IndexError) as e:
         raise RuntimeError(f"Error extrayendo la respuesta: {e}")
 
-def get_gemini_response(prompt):
+def get_claude_response(prompt):
     try:
-        url, headers, payload = build_gemini_prompt(prompt)
-        response = send_gemini_request(url, headers, payload)
+        url, headers, payload = build_claude_prompt(prompt)
+        response = send_claude_request(url, headers, payload)
         cost = calculate_cost(response, input_pricing=0.0001, output_pricing=0.0002)
         print (f"Costo calculado: {cost}")
-        return extract_gemini_response(response)
+        return extract_claude_response(response)
     except KeyError as ve:
         print(f"Error extract response: {ve}")
     except Exception as e:
@@ -64,9 +64,9 @@ def get_gemini_response(prompt):
 def latency_test(ciclos: int = 5):
     latencies = []
     for i in range(ciclos):
-        url, headers, payload = build_gemini_prompt("Cuanto es 2 + 2? Dame solo el resultado")
+        url, headers, payload = build_claude_prompt("Cuanto es 2 + 2? Dame solo el resultado")
         index = time.time()
-        data = send_gemini_request(url, headers, payload)
+        data = send_claude_request(url, headers, payload)
         duration = time.time() - index
         print(f"Duración de la petición {i + 1}: {duration} segundos")
         latencies.append(duration)
@@ -74,7 +74,7 @@ def latency_test(ciclos: int = 5):
     print(f"Latencia promedio después de {ciclos} ciclos: {prom_latency} segundos")  
     
 if __name__ == "__main__":
-    response, cost = get_gemini_response("Confirma en una frase corta que esta conexion funciona correctamente.")
+    response, cost = get_claude_response("Confirma en una frase corta que esta conexion funciona correctamente.")
     print(f"Respuesta: {response}")
     print(f"Costo: {cost}")
     latency_test(10)

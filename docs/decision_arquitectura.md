@@ -6,7 +6,7 @@ Claude sonnet 5.5 para la funcion principal de la miniaplicacion
 
 ## Diagrama de arquitectura
 
-El diagrama de arquitectura se encuentra en la ruta docs/diagrama_arquitectura.png, se aclara que el diagrama de arquitectura sera modificado al igual que los metodos ya que se comenzo con el modelo de Gemini en las primeras etapas y la arquitectura sera migrada a consultar modelos de Claude.
+El diagrama de arquitectura se encuentra en la ruta docs/diagrama_arquitectura.png
  
 ## Comparación de candidatos
 
