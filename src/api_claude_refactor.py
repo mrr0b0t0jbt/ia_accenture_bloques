@@ -10,14 +10,18 @@ load_dotenv()
 def build_claude_prompt(prompt):
     if not prompt:
         raise ValueError("La entrada no puede estar vacía. Por favor, proporciona un prompt válido.")
-    url = "https://generativelanguage.googleapis.com/v1beta/interactions"
-    api_key = os.getenv("GEMINI_API_KEY")
+    url = "https://api.anthropic.com/v1/messages"
+    api_key = os.getenv("CLAUDE_API_KEY")
     payload = json.dumps({
-        "model": "gemini-3.5-flash-lite",
-        "input": prompt
+        "model": "claude-sonnet-5-5",
+        "max_tokens": 1024,
+        "messages": [
+            {"role": "user", "content": prompt}
+        ]
     })
     headers = {
-        'x-goog-api-key': api_key,
+        "anthropic-version": "2023-06-01",
+        'x-api-key': api_key,
         'Content-Type': 'application/json'
     }
     return url, headers, payload
@@ -37,15 +41,15 @@ def send_claude_request(url, headers, payload):
 def calculate_cost(response, input_pricing, output_pricing):
     try:
         use = response["usage"]
-        input_tokens = use["total_input_tokens"]
-        output_tokens = use["total_output_tokens"]
+        input_tokens = use["input_tokens"]
+        output_tokens = use["output_tokens"]
         return (input_tokens * input_pricing) + (output_tokens * output_pricing)
     except (KeyError, IndexError) as e:
         raise RuntimeError(f"Error calculando el costo: {e}")
 
 def extract_claude_response(data):
     try:
-        return data["steps"][1]["content"][0].get("text", "No se encontro texto en la respuesta")
+        return data["content"][0].get("text", "No se encontro texto en la respuesta")
     except (KeyError, IndexError) as e:
         raise RuntimeError(f"Error extrayendo la respuesta: {e}")
 
@@ -55,11 +59,10 @@ def get_claude_response(prompt):
         response = send_claude_request(url, headers, payload)
         cost = calculate_cost(response, input_pricing=0.0001, output_pricing=0.0002)
         print (f"Costo calculado: {cost}")
-        return extract_claude_response(response)
-    except KeyError as ve:
-        print(f"Error extract response: {ve}")
+        return extract_claude_response(response), cost
     except Exception as e:
         print(f"unexpected error: {e}")
+        raise
 
 def latency_test(ciclos: int = 5):
     latencies = []
