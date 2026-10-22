@@ -3,6 +3,7 @@ import time
 import requests
 import os
 import json
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -58,13 +59,23 @@ def extract_claude_response(data):
     except (KeyError, IndexError) as e:
         raise RuntimeError(f"Error extrayendo la respuesta: {e}")
 
-def get_claude_response(prompt):
+def parse_json_response(text):
+    # algunos modelos envuelven el JSON en un bloque markdown ```json ... ```
+    clean = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
     try:
-        url, headers, payload = build_claude_prompt(prompt)
+        return json.loads(clean)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"La respuesta del modelo no es JSON válido: {e}")
+
+def get_claude_response(prompt, system=None, output_schema=None):
+    try:
+        url, headers, payload = build_claude_prompt(prompt, system, output_schema)
         response = send_claude_request(url, headers, payload)
-        cost = calculate_cost(response, input_pricing=0.0001, output_pricing=0.0002)
+        # Sonnet 5.5: USD 2 / 10 por millón de tokens (ver docs/decision_arquitectura.md)
+        cost = calculate_cost(response, input_pricing=2 / 1_000_000, output_pricing=10 / 1_000_000)
         print (f"Costo calculado: {cost}")
-        return extract_claude_response(response), cost
+        text = extract_claude_response(response)
+        return (parse_json_response(text) if output_schema else text), cost
     except Exception as e:
         print(f"unexpected error: {e}")
         raise
@@ -85,4 +96,25 @@ if __name__ == "__main__":
     response, cost = get_claude_response("Confirma en una frase corta que esta conexion funciona correctamente.")
     print(f"Respuesta: {response}")
     print(f"Costo: {cost}")
+
+    pregunta = "¿Cuál es la capital legislativa de Sudafrica?"
+    schema = {
+        "type": "object",
+        "properties": {"rta": {"type": "string"}, "fuente": {"type": "string"}},
+        "required": ["rta", "fuente"],
+        "additionalProperties": False,
+    }
+    casos = [
+        ("Da respuestas de una sola palabra", None),
+        ("", None),
+        ("Utiliza solo formato JSON sin markdown, claves: rta:str y fuente:str", None),
+        ("Da respuestas de una sola palabra", schema),
+    ]
+    for system, output_schema in casos:
+        # un caso fallido no corta los siguientes
+        try:
+            print(f"Respuesta: {get_claude_response(pregunta, system, output_schema)[0]}")
+        except (ValueError, RuntimeError) as e:
+            print(f"Error: {e}")
+
     latency_test(10)

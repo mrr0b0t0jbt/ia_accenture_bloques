@@ -1,0 +1,46 @@
+{
+  "clasificar_phishing": {
+    "schema": true,
+    "exitos": 0,
+    "intentos": 3,
+    "fallos": [
+      {
+        "intento": 1,
+        "motivo": "valor incorrecto en 'veredicto': 'malicious' (esperado 'suspicious')"
+      },
+      {
+        "intento": 2,
+        "motivo": "valor incorrecto en 'veredicto': 'malicious' (esperado 'suspicious')"
+      },
+      {
+        "intento": 3,
+        "motivo": "valor incorrecto en 'veredicto': 'malicious' (esperado 'suspicious')"
+      }
+    ]
+  },
+  "extraer_iocs": {
+    "schema": true,
+    "exitos": 3,
+    "intentos": 3,
+    "fallos": []
+  },
+  "clasificar_alerta_sin_schema": {
+    "schema": false,
+    "exitos": 0,
+    "intentos": 3,
+    "fallos": [
+      {
+        "intento": 1,
+        "motivo": "JSON inválido: '```json\\n{\\n  \"severidad\": \"alta\",\\n  \"estado\": \"malicious\",\\n  \"justificacion\": \"Se'"
+      },
+      {
+        "intento": 2,
+        "motivo": "JSON inválido: '```json\\n{\\n  \"severidad\": \"alta\",\\n  \"estado\": \"malicious\",\\n  \"justificacion\": \"Se'"
+      },
+      {
+        "intento": 3,
+        "motivo": "JSON inválido: '```json\\n{\\n  \"severidad\": \"alta\",\\n  \"estado\": \"malicious\",\\n  \"justificacion\": \"Se'"
+      }
+    ]
+  }
+}

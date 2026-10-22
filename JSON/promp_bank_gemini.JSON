@@ -1,0 +1,44 @@
+[
+  {
+    "nombre": "clasificar_phishing",
+    "system": "Eres un analista SOC. Clasifica el correo y responde únicamente con un JSON con las claves 'veredicto' ('legitimo', 'suspicious' si hay indicios no confirmados, 'malicious' si está confirmado), 'confianza' (0 a 1) e 'indicadores' (lista de señales encontradas).",
+    "ejemplo_usuario": "De: soporte@banco-seguro.test\nAsunto: Su cuenta será bloqueada en 24 horas\nEstimado cliente, detectamos actividad inusual. Verifique su identidad aquí: http://banco-seguro-verificacion.test/login",
+    "claves_esperadas": ["veredicto", "confianza", "indicadores"],
+    "respuesta_esperada": { "veredicto": "suspicious" },
+    "output_schema": {
+      "type": "OBJECT",
+      "properties": {
+        "veredicto": { "type": "STRING", "enum": ["legitimo", "suspicious", "malicious"] },
+        "confianza": { "type": "NUMBER" },
+        "indicadores": { "type": "ARRAY", "items": { "type": "STRING" } }
+      },
+      "required": ["veredicto", "confianza", "indicadores"]
+    }
+  },
+  {
+    "nombre": "extraer_iocs",
+    "system": "Eres un analista SOC. Extrae los indicadores de compromiso del log y responde únicamente con un JSON con las claves 'ips' (lista de IPs), 'dominios' (lista de dominios) y 'total' (cantidad de indicadores).",
+    "ejemplo_usuario": "2026-10-21 03:14:07 conexión saliente desde 192.0.2.15 hacia update-cdn.test (198.51.100.23) puerto 443; reintento hacia files.malo.test",
+    "claves_esperadas": ["ips", "dominios", "total"],
+    "respuesta_esperada": {
+      "ips": ["192.0.2.15", "198.51.100.23"],
+      "dominios": ["update-cdn.test", "files.malo.test"]
+    },
+    "output_schema": {
+      "type": "OBJECT",
+      "properties": {
+        "ips": { "type": "ARRAY", "items": { "type": "STRING" } },
+        "dominios": { "type": "ARRAY", "items": { "type": "STRING" } },
+        "total": { "type": "INTEGER" }
+      },
+      "required": ["ips", "dominios", "total"]
+    }
+  },
+  {
+    "nombre": "clasificar_alerta_sin_schema",
+    "system": "Eres un analista SOC. Clasifica la alerta y responde únicamente con un JSON con las claves 'severidad' ('baja', 'media', 'alta' o 'critica'), 'estado' ('suspicious' si no está confirmado, 'malicious' si está confirmado) y 'justificacion' (una frase).",
+    "ejemplo_usuario": "Se detectaron 40 intentos de login fallidos en 2 minutos contra la cuenta admin desde 198.51.100.77, seguidos de un login exitoso.",
+    "claves_esperadas": ["severidad", "estado", "justificacion"],
+    "respuesta_esperada": { "estado": "suspicious" }
+  }
+]
