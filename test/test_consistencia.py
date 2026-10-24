@@ -47,8 +47,8 @@ if __name__ == "__main__":
                 )
                 respuesta = send_claude_request(url, headers, payload)
                 motivo = validar_respuesta(extract_claude_response(respuesta), prompt)
-            # RuntimeError (red/HTTP) también cuenta como intento fallido para no perder el registro
-            except (ValueError, RuntimeError) as error:
+            # RuntimeError/TimeoutError (red/HTTP) también cuenta como intento fallido para no perder el registro
+            except (ValueError, RuntimeError, TimeoutError) as error:
                 motivo = f"error de API: {error}"
             if motivo:
                 print(f"  intento {intento + 1} falló: {motivo}")

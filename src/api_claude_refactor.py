@@ -34,15 +34,32 @@ def build_claude_prompt(prompt, system=None, output_schema=None):
 
 def send_claude_request(url, headers, payload):
     try:
-        response = requests.post(url, headers=headers, data=payload)
-    except requests.exceptions.ConnectionError as e:
-        raise RuntimeError(f"Ocurrio un error de conexión: {e}")
+        response = requests.post(url, headers=headers, data=payload, timeout=10)
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+        raise TimeoutError("No se pudo contactar al proveedor. Puede ser momentáneo.")
+    if response.status_code in (401, 403):
+        raise ValueError("Credencial inválida o sin permiso. Revisa tu API key (CLAUDE_API_KEY / GEMINI_API_KEY).")
+    if response.status_code == 429 or response.status_code >= 500:
+        raise TimeoutError("El proveedor no pudo procesar la petición. Hay que esperar y reintentar.")
     if not response.ok:
         raise RuntimeError(f"Ocurrio un error de conexión: {response.status_code}")
     try:
         return response.json()
     except requests.exceptions.JSONDecodeError as e:
         raise RuntimeError(f"Error decodificando la respuesta JSON o viene vacía: {e}")
+
+def with_retry(func, attempts=3, wait_seconds=2):
+    # solo TimeoutError (red, 429, 5xx) es transitorio; ValueError/RuntimeError no mejoran reintentando
+    if attempts < 1:
+        raise ValueError("attempts debe ser al menos 1")
+    for attempt in range(1, attempts + 1):
+        try:
+            return func()
+        except TimeoutError:
+            if attempt == attempts:
+                raise
+            print(f"Intento {attempt} de {attempts} falló (proveedor no disponible). Reintentando...")
+            time.sleep(wait_seconds)
 
 def calculate_cost(response, input_pricing, output_pricing):
     try:
@@ -70,7 +87,10 @@ def parse_json_response(text):
 def get_claude_response(prompt, system=None, output_schema=None):
     try:
         url, headers, payload = build_claude_prompt(prompt, system, output_schema)
-        response = send_claude_request(url, headers, payload)
+        try:
+            response = with_retry(lambda: send_claude_request(url, headers, payload))
+        except TimeoutError as e:
+            raise RuntimeError("El servicio no respondió tras varios intentos. Intenta más tarde.") from e
         # Sonnet 5.5: USD 2 / 10 por millón de tokens (ver docs/decision_arquitectura.md)
         cost = calculate_cost(response, input_pricing=2 / 1_000_000, output_pricing=10 / 1_000_000)
         print (f"Costo calculado: {cost}")

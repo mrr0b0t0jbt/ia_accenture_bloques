@@ -3,7 +3,7 @@ import time
 import os
 import json
 from dotenv import load_dotenv
-from api_claude_refactor import send_claude_request as send_gemini_request, parse_json_response
+from api_claude_refactor import send_claude_request as send_gemini_request, parse_json_response, with_retry
 
 load_dotenv()
 
@@ -46,7 +46,10 @@ def extract_gemini_response(data):
 def get_gemini_response(prompt, system=None, output_schema=None):
     try:
         url, headers, payload = build_gemini_prompt(prompt, system, output_schema)
-        response = send_gemini_request(url, headers, payload)
+        try:
+            response = with_retry(lambda: send_gemini_request(url, headers, payload))
+        except TimeoutError as e:
+            raise RuntimeError("El servicio no respondió tras varios intentos. Intenta más tarde.") from e
         # shortcut: precios de Gemini 3.1 Pro (USD 2 / 12 por millón), no de flash-lite; actualizar al confirmar precios de flash-lite
         # Pro dio 429 por cuota (sin facturación), por eso se usa flash-lite por ahora
         cost = calculate_gemini_cost(response, input_pricing=2 / 1_000_000, output_pricing=12 / 1_000_000)
