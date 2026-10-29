@@ -92,6 +92,15 @@ def test_ejecutar_ensayo_n_fuera_de_rango_lanza_value_error():
         ensayo.ejecutar_ensayo(0, 1.0)
 
 
+def test_ejecutar_ensayo_cuenta_los_fallos_definitivos():
+    enviar = Mock(side_effect=[("OK", 0.01), RuntimeError("x"), ("OK", 0.01), RuntimeError("x"), ("OK", 0.01)])
+    info = ensayo.ejecutar_ensayo(5, 1.0, enviar=enviar)
+    assert info["fallos_definitivos"] == 2
+    assert info["peticiones_enviadas"] == 5
+    assert info["costo_total"] == pytest.approx(0.03)
+    assert info["cortado_por_tope"] is False
+
+
 # --- main ---
 
 def test_main_sin_confirmar_api_real_devuelve_2_sin_ejecutar_el_ensayo(monkeypatch, capsys):
@@ -100,6 +109,16 @@ def test_main_sin_confirmar_api_real_devuelve_2_sin_ejecutar_el_ensayo(monkeypat
     assert ensayo.main([]) == 2
     assert capsys.readouterr().err
     falso.assert_not_called()
+
+
+def test_main_salida_en_directorio_inexistente_devuelve_1_sin_llamar_a_la_api(monkeypatch, capsys, tmp_path):
+    falso = Mock()
+    monkeypatch.setattr(ensayo, "ejecutar_ensayo", falso)
+    salida = tmp_path / "no_existe" / "registro.md"
+    assert ensayo.main(["--confirmar-api-real", "--salida", str(salida)]) == 1
+    assert capsys.readouterr().err
+    falso.assert_not_called()
+    assert not (tmp_path / "no_existe").exists()
 
 
 # --- formatear_registro ---

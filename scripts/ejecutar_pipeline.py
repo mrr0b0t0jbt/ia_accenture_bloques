@@ -116,6 +116,10 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    directorio = os.path.dirname(os.path.abspath(args.salida))
+    if not os.path.isdir(directorio):
+        print(f"Error: el directorio de --salida no existe: {directorio}", file=sys.stderr)
+        return 1
 
     # import diferido: sin el flag no se carga el cliente ni la API key
     from api_claude_refactor import get_claude_response

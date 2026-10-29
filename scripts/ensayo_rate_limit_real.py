@@ -142,6 +142,10 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    directorio = os.path.dirname(os.path.abspath(args.salida))
+    if not os.path.isdir(directorio):
+        print(f"Error: el directorio de --salida no existe: {directorio}", file=sys.stderr)
+        return 1
     try:
         info = ejecutar_ensayo(args.n, args.tope_usd)
     except ValueError as error:

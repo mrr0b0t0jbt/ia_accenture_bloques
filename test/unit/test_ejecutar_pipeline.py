@@ -67,6 +67,22 @@ def test_ejecutar_casos_respeta_el_tope_de_gasto():
     assert info["cortado_por_tope"] is False
 
 
+def test_ejecutar_casos_corta_cuando_el_costo_es_igual_al_tope():
+    obtener_respuesta = Mock(return_value=("r", 0.05))
+    info = ejecutar_pipeline.ejecutar_casos(CASOS, obtener_respuesta, 0.05)
+    assert len(info["resultados"]) == 1
+    assert obtener_respuesta.call_count == 1
+    assert info["cortado_por_tope"] is True
+
+
+def test_ejecutar_casos_registra_value_error_como_error_del_caso():
+    obtener_respuesta = Mock(side_effect=[("uno", 0.01), ValueError("valor"), ("tres", 0.02)])
+    info = ejecutar_pipeline.ejecutar_casos(CASOS, obtener_respuesta, 1.0)
+    assert len(info["resultados"]) == 2
+    assert info["errores"] == [{"consulta": "consulta 2", "error": "valor"}]
+    assert info["costo_total"] == pytest.approx(0.03)
+
+
 # --- formatear_registro ---
 
 def test_formatear_registro_incluye_porcentajes_y_aviso_de_llamada_real():
@@ -105,3 +121,23 @@ def test_casos_pipeline_json_tiene_tres_casos_con_consulta_y_referencia():
     for caso in casos:
         assert caso["consulta"]
         assert caso["referencia"]
+
+
+# --- main ---
+
+def test_main_sin_confirmar_api_real_devuelve_2_sin_ejecutar_casos(monkeypatch, capsys):
+    falso = Mock()
+    monkeypatch.setattr(ejecutar_pipeline, "ejecutar_casos", falso)
+    assert ejecutar_pipeline.main([]) == 2
+    assert capsys.readouterr().err
+    falso.assert_not_called()
+
+
+def test_main_salida_en_directorio_inexistente_devuelve_1_sin_llamar_a_la_api(monkeypatch, capsys, tmp_path):
+    falso = Mock()
+    monkeypatch.setattr(ejecutar_pipeline, "ejecutar_casos", falso)
+    salida = tmp_path / "no_existe" / "registro.md"
+    assert ejecutar_pipeline.main(["--confirmar-api-real", "--salida", str(salida)]) == 1
+    assert capsys.readouterr().err
+    falso.assert_not_called()
+    assert not (tmp_path / "no_existe").exists()
