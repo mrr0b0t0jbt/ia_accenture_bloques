@@ -33,3 +33,11 @@ def coincidencia_por_palabras(tokens_referencia: list[str], tokens_respuesta: li
     if not referencia:
         return 0.0
     return len(referencia & set(tokens_respuesta)) / len(referencia)
+
+
+def comparar_antes_despues(referencia: str, respuesta: str) -> dict:
+    """Coincidencia con el texto crudo (split) y con el texto procesado."""
+    return {
+        "pct_crudo": coincidencia_por_palabras(referencia.split(), respuesta.split()),
+        "pct_procesado": coincidencia_por_palabras(procesar_texto(referencia), procesar_texto(respuesta)),
+    }

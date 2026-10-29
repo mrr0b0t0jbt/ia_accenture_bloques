@@ -1,0 +1,14 @@
+[
+  {
+    "consulta": "¿Qué es una inyección SQL?",
+    "referencia": "Una inyección SQL es un ataque que inserta código SQL malicioso en una consulta de la aplicación para leer o modificar la base de datos."
+  },
+  {
+    "consulta": "¿Para qué sirve la autenticación de múltiples factores?",
+    "referencia": "La autenticación multifactor exige más de una prueba de identidad, de modo que una contraseña robada no basta para acceder a la cuenta."
+  },
+  {
+    "consulta": "¿Qué es una vulnerabilidad crítica según CVSS?",
+    "referencia": "Una vulnerabilidad crítica en CVSS tiene una puntuación de 9.0 a 10.0 y suele permitir comprometer el sistema con facilidad y gran impacto."
+  }
+]
