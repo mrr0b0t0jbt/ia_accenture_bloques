@@ -1,4 +1,6 @@
 import importlib.util
+import json
+import threading
 from pathlib import Path
 from unittest.mock import patch, Mock
 
@@ -101,6 +103,75 @@ def test_ejecutar_ensayo_cuenta_los_fallos_definitivos():
     assert info["cortado_por_tope"] is False
 
 
+def test_ensayo_concurrente_registra_el_primer_429_y_el_total():
+    lock = threading.Lock()
+    vistas = set()
+    llamadas = [0]
+
+    def fake(*args, **kwargs):
+        peticion = int(json.loads(kwargs["data"])["messages"][0]["content"].split()[-1])
+        with lock:
+            llamadas[0] += 1
+            primera_vez = peticion not in vistas
+            vistas.add(peticion)
+        return respuesta_falsa(429 if primera_vez and peticion in (2, 5) else 200)
+
+    with patch("api_claude_refactor.requests.post", side_effect=fake), \
+            patch("api_claude_refactor.time.sleep"):
+        info = ensayo.ejecutar_ensayo(6, 1.0, concurrencia=3)
+    assert info["total_429"] == 2
+    assert info["primer_429"] == 2
+    assert info["llamadas_http"] == llamadas[0] == 8
+    assert info["olas"] == 2
+    assert info["peticiones_enviadas"] == 6
+    assert info["fallos_definitivos"] == 0
+    assert len(info["esperas"]) == 2
+
+
+def test_ensayo_concurrente_corta_entre_olas_al_superar_el_tope():
+    enviar = Mock(return_value=("OK", 0.03))
+    info = ensayo.ejecutar_ensayo(10, 0.1, enviar=enviar, concurrencia=2)
+    assert info["peticiones_enviadas"] == 4
+    assert info["cortado_por_tope"] is True
+    assert info["costo_total"] == pytest.approx(0.12)
+    assert info["olas"] == 2
+
+
+def test_ensayo_concurrente_valida_n_y_concurrencia():
+    enviar = Mock(return_value=("OK", 0.0))
+    for concurrencia in (0, 21):
+        with pytest.raises(ValueError):
+            ensayo.ejecutar_ensayo(5, 1.0, enviar=enviar, concurrencia=concurrencia)
+    for n in (101, 0):
+        with pytest.raises(ValueError):
+            ensayo.ejecutar_ensayo(n, 1.0, enviar=enviar, concurrencia=5)
+    with pytest.raises(ValueError):
+        ensayo.ejecutar_ensayo(31, 1.0, enviar=enviar, concurrencia=1)
+    assert ensayo.ejecutar_ensayo(100, 1.0, enviar=enviar, concurrencia=5)["peticiones_enviadas"] == 100
+    ensayo.ejecutar_ensayo(20, 1.0, enviar=enviar, concurrencia=20)
+
+
+def test_ensayo_concurrente_los_contadores_coinciden_con_las_llamadas_reales():
+    lock = threading.Lock()
+    contador = {"llamadas": 0, "429": 0}
+
+    def fake(*args, **kwargs):
+        with lock:
+            contador["llamadas"] += 1
+            es_429 = contador["llamadas"] % 3 == 0
+            if es_429:
+                contador["429"] += 1
+        return respuesta_falsa(429 if es_429 else 200)
+
+    with patch("api_claude_refactor.requests.post", side_effect=fake), \
+            patch("api_claude_refactor.time.sleep"):
+        info = ensayo.ejecutar_ensayo(60, 1.0, concurrencia=20)
+    assert info["llamadas_http"] == contador["llamadas"]
+    assert info["total_429"] == contador["429"]
+    assert info["peticiones_enviadas"] == 60
+    assert info["olas"] == 3
+
+
 # --- main ---
 
 def test_main_sin_confirmar_api_real_devuelve_2_sin_ejecutar_el_ensayo(monkeypatch, capsys):
@@ -121,6 +192,14 @@ def test_main_salida_en_directorio_inexistente_devuelve_1_sin_llamar_a_la_api(mo
     assert not (tmp_path / "no_existe").exists()
 
 
+def test_main_con_concurrencia_sin_confirmar_api_real_devuelve_2(monkeypatch, capsys):
+    falso = Mock()
+    monkeypatch.setattr(ensayo, "ejecutar_ensayo", falso)
+    assert ensayo.main(["--concurrencia", "5"]) == 2
+    assert capsys.readouterr().err
+    falso.assert_not_called()
+
+
 # --- formatear_registro ---
 
 def test_formatear_registro_incluye_el_aviso_de_ensayo_real():
@@ -133,3 +212,14 @@ def test_formatear_registro_incluye_el_aviso_de_ensayo_real():
     assert "no se alcanzó ningún 429 en 5 peticiones" in sin_429
     assert "petición 3" in con_429
     assert "2 respuestas 429" in con_429
+
+
+def test_formatear_registro_concurrente_incluye_concurrencia_y_aviso():
+    info = dict(info_a_mano(None, 0), concurrencia=5, olas=4)
+    registro = ensayo.formatear_registro(info, "2026-10-28")
+    assert "- Concurrencia: 5 (olas: 4)" in registro
+    assert "ráfaga concurrente deliberada" in registro
+    assert "no se alcanzó ningún 429 en 5 peticiones" in registro
+    secuencial = ensayo.formatear_registro(info_a_mano(None, 0), "2026-10-28")
+    assert "Concurrencia" not in secuencial
+    assert "ráfaga" not in secuencial

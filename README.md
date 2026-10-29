@@ -128,15 +128,18 @@ Envía N peticiones seguidas a Claude pidiendo una respuesta de una sola palabra
 
 ```bash
 python scripts/ensayo_rate_limit_real.py --confirmar-api-real
+python scripts/ensayo_rate_limit_real.py --confirmar-api-real --concurrencia 10 --n 60
 ```
 
 - `--confirmar-api-real` es obligatorio: sin él el script sale con código 2 sin tocar la red.
-- `--n` fija el número de peticiones (por defecto y como máximo 30).
+- `--n` fija el número de peticiones (por defecto 30; máximo 30 en modo secuencial y 100 en modo concurrente).
+- `--concurrencia K` (por defecto 1 = secuencial; máximo 20) envía las peticiones en olas de K peticiones simultáneas; cada ola espera a que terminen todas antes de lanzar la siguiente. El tope de gasto se comprueba antes de cada ola, así que el sobregiro máximo posible es una ola completa.
+- El modo concurrente (`--concurrencia` mayor que 1) escribe por defecto en `docs/registro_rate_limit_real_concurrente.md`, sin pisar el registro secuencial; `--salida` cambia el archivo.
 - `--tope-usd 0.05` es el tope de gasto por defecto; al alcanzarlo el ensayo se corta.
 - El costo esperado es muy bajo (respuestas de ~1 token).
 - Puede NO aparecer ningún 429; en ese caso el registro lo dice así.
 
-Genera `docs/registro_rate_limit_real.md`; no pisa [docs/registro_rate_limit.md](docs/registro_rate_limit.md), que es el ensayo simulado.
+Genera `docs/registro_rate_limit_real.md` (secuencial) o `docs/registro_rate_limit_real_concurrente.md` (concurrente); no pisa [docs/registro_rate_limit.md](docs/registro_rate_limit.md), que es el ensayo simulado.
 
 ## Pruebas unitarias
 
@@ -204,6 +207,7 @@ docs/                      decisión de arquitectura, diagrama y evidencias
   registro_rate_limit.md   registro del ensayo de rate limit (simulado)
   registro_pipeline.md     registro del pipeline de texto (se genera al correr el script)
   registro_rate_limit_real.md  registro del ensayo de rate limit real (se genera al correr el ensayo)
+  registro_rate_limit_real_concurrente.md  registro del ensayo concurrente (se genera al correr el ensayo con --concurrencia mayor que 1)
 ```
 
 ## Problemas comunes
