@@ -45,7 +45,7 @@ def send_claude_request(url, headers, payload):
     except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
         raise TimeoutError("No se pudo contactar al proveedor. Puede ser momentáneo.")
     if response.status_code in (401, 403):
-        raise ValueError("Credencial inválida o sin permiso. Revisa tu API key (CLAUDE_API_KEY / GEMINI_API_KEY).")
+        raise ValueError("Credencial inválida o sin permiso. Revisa la API key de tu proveedor en .env.")
     if response.status_code == 429 or response.status_code >= 500:
         raise TimeoutError("El proveedor no pudo procesar la petición. Hay que esperar y reintentar.")
     if not response.ok:
@@ -111,6 +111,8 @@ def get_claude_response(prompt, system=None, output_schema=None):
         cost = registrar_costo(response)
         text = extract_claude_response(response)
         return (parse_json_response(text) if output_schema else text), cost
+    except (ValueError, RuntimeError):
+        raise
     except Exception as e:
         print(f"unexpected error: {e}")
         raise
@@ -123,6 +125,7 @@ def latency_test(ciclos: int = 5):
         data = send_claude_request(url, headers, payload)
         duration = time.time() - index
         print(f"Duración de la petición {i + 1}: {duration} segundos")
+        registrar_costo(data)
         latencies.append(duration)
     prom_latency = sum(latencies) / len(latencies)
     print(f"Latencia promedio después de {ciclos} ciclos: {prom_latency} segundos")  

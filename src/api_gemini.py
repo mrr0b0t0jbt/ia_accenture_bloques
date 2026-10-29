@@ -56,6 +56,8 @@ def get_gemini_response(prompt, system=None, output_schema=None):
         print (f"Costo calculado: {cost}")
         text = extract_gemini_response(response)
         return (parse_json_response(text) if output_schema else text), cost
+    except (ValueError, RuntimeError):
+        raise
     except Exception as e:
         print(f"unexpected error: {e}")
         raise

@@ -53,6 +53,15 @@ def test_send_claude_request_200_devuelve_json():
         assert api_claude_refactor.send_claude_request(URL, HEADERS, PAYLOAD) == RESPUESTA_OK
 
 
+def test_send_claude_request_mensaje_credencial_no_nombra_otro_proveedor():
+    with patch("api_claude_refactor.requests.post", return_value=respuesta_falsa(401)):
+        with pytest.raises(ValueError) as excinfo:
+            api_claude_refactor.send_claude_request(URL, HEADERS, PAYLOAD)
+    mensaje = str(excinfo.value)
+    assert mensaje == "Credencial inválida o sin permiso. Revisa la API key de tu proveedor en .env."
+    assert "GEMINI" not in mensaje
+
+
 # --- with_retry ---
 
 def test_with_retry_reintenta_ante_timeout_error():
@@ -154,3 +163,31 @@ def test_get_claude_response_429_y_luego_200_registra_costo_una_vez(monkeypatch)
     assert costo == pytest.approx(0.007)
     assert api_claude_refactor.costo_total_sesion == pytest.approx(0.007)
     mock_sleep.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "error", [ValueError("simulado"), RuntimeError("simulado")], ids=["value_error", "runtime_error"]
+)
+def test_get_claude_response_errores_esperados_no_imprimen_unexpected_error(monkeypatch, capsys, error):
+    monkeypatch.setenv("CLAUDE_API_KEY", "clave-falsa-de-prueba")
+    with patch("api_claude_refactor.with_retry", side_effect=error):
+        with pytest.raises(type(error)):
+            api_claude_refactor.get_claude_response("prompt de prueba")
+    assert "unexpected error" not in capsys.readouterr().out
+
+
+def test_get_claude_response_error_inesperado_imprime_y_relanza(monkeypatch, capsys):
+    monkeypatch.setenv("CLAUDE_API_KEY", "clave-falsa-de-prueba")
+    with patch("api_claude_refactor.with_retry", side_effect=KeyError("simulado")):
+        with pytest.raises(KeyError):
+            api_claude_refactor.get_claude_response("prompt de prueba")
+    assert "unexpected error" in capsys.readouterr().out
+
+
+# --- latency_test ---
+
+def test_latency_test_registra_costo_de_cada_peticion(monkeypatch):
+    monkeypatch.setenv("CLAUDE_API_KEY", "clave-falsa-de-prueba")
+    with patch("api_claude_refactor.send_claude_request", return_value=RESPUESTA_OK):
+        api_claude_refactor.latency_test(ciclos=3)
+    assert api_claude_refactor.costo_total_sesion == pytest.approx(3 * 0.007)
