@@ -97,7 +97,7 @@ Si los precios cambian, actualízalos en `INPUT_PRICING` y `OUTPUT_PRICING` de `
 python scripts/ensayo_rate_limit_simulado.py
 ```
 
-El registro está en [docs/registro_rate_limit.md](docs/registro_rate_limit.md). No es un 429 real del proveedor; el ensayo real queda pendiente.
+El registro está en [docs/registro_rate_limit.md](docs/registro_rate_limit.md). Ese ensayo es simulado: no es un 429 real del proveedor. El ensayo real está en [docs/registro_rate_limit_real.md](docs/registro_rate_limit_real.md) y no alcanzó ningún 429 en 30 peticiones secuenciales.
 
 ## Pipeline de texto
 
@@ -122,6 +122,16 @@ python scripts/ejecutar_pipeline.py --confirmar-api-real
 
 Hace 3 llamadas **REALES** a la API de Claude, con un costo aproximado de USD 0.005. El tope de gasto por defecto es `--tope-usd 0.05`; sin `--confirmar-api-real` el script sale con código 2 sin tocar la red. Escribe el registro en `docs/registro_pipeline.md`.
 
+**Resultados de la corrida real** (2026-10-28, 3 casos, costo total USD 0.00354; detalle en [docs/registro_pipeline.md](docs/registro_pipeline.md)):
+
+| Caso | Coincidencia texto crudo | Coincidencia texto procesado |
+|---|---|---|
+| 1 | 77.3 % | 81.0 % |
+| 2 | 45.0 % | 63.2 % |
+| 3 | 50.0 % | 66.7 % |
+
+El texto procesado mejora la coincidencia en los 3 casos. Ningún caso llega a 100 % porque las respuestas del modelo son más largas que la referencia y usan sinónimos.
+
 ## Ensayo real de rate limit
 
 Envía N peticiones seguidas a Claude pidiendo una respuesta de una sola palabra, para intentar provocar un 429 real del proveedor. Registra la petición del primer 429, las esperas del backoff, las llamadas HTTP y el costo:
@@ -138,6 +148,8 @@ python scripts/ensayo_rate_limit_real.py --confirmar-api-real --concurrencia 10 
 - `--tope-usd 0.05` es el tope de gasto por defecto; al alcanzarlo el ensayo se corta.
 - El costo esperado es muy bajo (respuestas de ~1 token).
 - Puede NO aparecer ningún 429; en ese caso el registro lo dice así.
+
+**Resultado del ensayo secuencial real** (2026-10-28): 30 peticiones en 33.6 s, 30 llamadas HTTP, 0 respuestas 429, 0 esperas y costo total USD 0.00318. No se alcanzó ningún 429 en 30 peticiones secuenciales (unas 54 peticiones por minuto); detalle en [docs/registro_rate_limit_real.md](docs/registro_rate_limit_real.md). La variante concurrente (`--concurrencia`) se ejecuta por separado y su resultado se registra en su propio archivo.
 
 Genera `docs/registro_rate_limit_real.md` (secuencial) o `docs/registro_rate_limit_real_concurrente.md` (concurrente); no pisa [docs/registro_rate_limit.md](docs/registro_rate_limit.md), que es el ensayo simulado.
 

@@ -1,6 +1,6 @@
 # Registro del ensayo de rate limit (Bloque 13)
 
-> **Aviso:** este ensayo es **SIMULADO** con mocks: `requests.post` y `time.sleep` se reemplazan por versiones falsas. **No es un 429 real del proveedor**, no usó la red ni la API key, y por eso el costo es el estimado a partir de tokens ficticios. Un ensayo real contra la API queda **PENDIENTE** de autorización del usuario.
+> **Aviso:** este ensayo es **SIMULADO** con mocks: `requests.post` y `time.sleep` se reemplazan por versiones falsas. **No es un 429 real del proveedor**, no usó la red ni la API key, y por eso el costo es el estimado a partir de tokens ficticios. El ensayo real contra la API está en [registro_rate_limit_real.md](registro_rate_limit_real.md): con 30 peticiones secuenciales no se alcanzó ningún 429.
 
 ## Registro del ensayo de rate limit
 
@@ -58,4 +58,4 @@ Costo total del ensayo: $0.00561
 
 - No prueba el comportamiento real del proveedor (cabecera `retry-after`, cuota real).
 - No mide latencia real.
-- El ensayo real contra la API queda pendiente.
+- El ensayo real contra la API está en [registro_rate_limit_real.md](registro_rate_limit_real.md): 30 peticiones secuenciales, ningún 429.
