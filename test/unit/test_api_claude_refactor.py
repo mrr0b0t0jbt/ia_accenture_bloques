@@ -1,4 +1,5 @@
-from unittest.mock import patch, Mock
+import threading
+from unittest.mock import patch, Mock, MagicMock
 
 import pytest
 
@@ -132,6 +133,28 @@ def test_registrar_costo_dos_llamadas_acumulan():
     costo_1 = api_claude_refactor.registrar_costo({"usage": {"input_tokens": 1000, "output_tokens": 500}})
     costo_2 = api_claude_refactor.registrar_costo({"usage": {"input_tokens": 300, "output_tokens": 200}})
     assert api_claude_refactor.costo_total_sesion == pytest.approx(costo_1 + costo_2)
+
+
+def test_registrar_costo_usa_el_lock_para_actualizar_el_acumulado(monkeypatch):
+    lock = MagicMock()
+    monkeypatch.setattr(api_claude_refactor, "_lock_costo", lock)
+    costo = api_claude_refactor.registrar_costo({"usage": {"input_tokens": 1000, "output_tokens": 500}})
+    lock.__enter__.assert_called_once()
+    lock.__exit__.assert_called_once()
+    assert costo == pytest.approx(0.007)
+    assert api_claude_refactor.costo_total_sesion == pytest.approx(0.007)
+
+
+def test_registrar_costo_acumula_bien_desde_varios_hilos():
+    # comprobación de cordura: no detecta de forma determinista la falta del lock porque el GIL
+    # oculta la carrera casi siempre; la prueba del MagicMock es la que garantiza el uso del lock
+    response = {"usage": {"input_tokens": 1000, "output_tokens": 500}}
+    hilos = [threading.Thread(target=api_claude_refactor.registrar_costo, args=(response,)) for _ in range(40)]
+    for hilo in hilos:
+        hilo.start()
+    for hilo in hilos:
+        hilo.join()
+    assert api_claude_refactor.costo_total_sesion == pytest.approx(40 * 0.007)
 
 
 # --- get_claude_response ---

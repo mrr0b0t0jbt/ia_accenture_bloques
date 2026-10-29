@@ -1,5 +1,6 @@
 import time
 import random
+import threading
 
 import requests
 import os
@@ -14,6 +15,7 @@ load_dotenv()
 INPUT_PRICING = 2 / 1_000_000
 OUTPUT_PRICING = 10 / 1_000_000
 costo_total_sesion = 0.0
+_lock_costo = threading.Lock()
 
 def build_claude_prompt(prompt, system=None, output_schema=None):
     if not prompt:
@@ -83,8 +85,11 @@ def registrar_costo(response: dict) -> float:
     global costo_total_sesion
     cost = calculate_cost(response, INPUT_PRICING, OUTPUT_PRICING)
     total_tokens = response["usage"]["input_tokens"] + response["usage"]["output_tokens"]
-    costo_total_sesion += cost
-    print(f"Operación: {total_tokens} tokens, costo estimado: ${cost:.5f} (acumulado: ${costo_total_sesion:.5f})")
+    # el print va fuera del lock para no retener a otros hilos mientras se escribe en consola
+    with _lock_costo:
+        costo_total_sesion += cost
+        mensaje = f"Operación: {total_tokens} tokens, costo estimado: ${cost:.5f} (acumulado: ${costo_total_sesion:.5f})"
+    print(mensaje)
     return cost
 
 def extract_claude_response(data):
