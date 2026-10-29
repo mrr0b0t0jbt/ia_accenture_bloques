@@ -104,6 +104,15 @@ def test_with_retry_espera_acotada_y_creciente():
         assert esperado <= espera <= esperado * 1.1
 
 
+def test_with_retry_suma_el_jitter_a_la_espera_base():
+    func = Mock(side_effect=[TimeoutError("simulado"), "ok"])
+    with patch("api_claude_refactor.time.sleep") as mock_sleep, \
+            patch("api_claude_refactor.random.uniform", return_value=0.1) as mock_uniform:
+        api_claude_refactor.with_retry(func, base_wait=2)
+    assert mock_sleep.call_args.args[0] == pytest.approx(2.1)
+    mock_uniform.assert_called_once_with(0, pytest.approx(0.2))
+
+
 def test_with_retry_attempts_cero_lanza_value_error():
     func = Mock()
     with pytest.raises(ValueError):
