@@ -89,7 +89,7 @@ Si los precios cambian, actualízalos en `INPUT_PRICING` y `OUTPUT_PRICING` de `
 
 **Reintento con backoff exponencial**: `with_retry` espera 2 s y duplica la espera en cada intento (2, 4, 8...), con un tope de 30 s y un jitter de hasta 10 %. Solo se reintenta `TimeoutError` (red, 429, 5xx); un 401/403 falla de inmediato. Al agotar los intentos se lanza `RuntimeError`.
 
-**Costo acumulado**: `registrar_costo` suma cada operación exitosa a `costo_total_sesion` e imprime `Operación: N tokens, costo estimado: $X (acumulado: $Y)`; `src/main.py` imprime `Costo acumulado de la sesión` al terminar. Una operación fallida no suma costo, y el acumulado se reinicia en cada ejecución.
+**Costo acumulado**: `registrar_costo` suma cada operación exitosa a `costo_total_sesion` e imprime `Operación: N tokens, costo estimado: $X (acumulado: $Y)`; `src/main.py` imprime `Costo acumulado de la sesión` al terminar. Una operación fallida no suma costo, y el acumulado se reinicia en cada ejecución. `registrar_costo` es seguro en hilos: protege el acumulado con un lock (`_lock_costo`), lo que importa en el modo concurrente del ensayo.
 
 **Ensayo simulado de rate limit** — 10 peticiones con un 429 simulado en la petición 6; NO usa la red ni la API real (`requests.post` y `time.sleep` están mockeados):
 
@@ -149,7 +149,9 @@ python scripts/ensayo_rate_limit_real.py --confirmar-api-real --concurrencia 10 
 - El costo esperado es muy bajo (respuestas de ~1 token).
 - Puede NO aparecer ningún 429; en ese caso el registro lo dice así.
 
-**Resultado del ensayo secuencial real** (2026-10-28): 30 peticiones en 33.6 s, 30 llamadas HTTP, 0 respuestas 429, 0 esperas y costo total USD 0.00318. No se alcanzó ningún 429 en 30 peticiones secuenciales (unas 54 peticiones por minuto); detalle en [docs/registro_rate_limit_real.md](docs/registro_rate_limit_real.md). La variante concurrente (`--concurrencia`) se ejecuta por separado y su resultado se registra en su propio archivo.
+**Resultado del ensayo secuencial real** (2026-10-28): 30 peticiones en 33.6 s, 30 llamadas HTTP, 0 respuestas 429, 0 esperas y costo total USD 0.00318. No se alcanzó ningún 429 en 30 peticiones secuenciales (unas 54 peticiones por minuto); detalle en [docs/registro_rate_limit_real.md](docs/registro_rate_limit_real.md).
+
+**Resultado del ensayo concurrente real** (2026-10-28): 100 peticiones en 5 olas de 20 simultáneas, 100 llamadas HTTP, 0 respuestas 429, 0 esperas, 0 fallos definitivos, duración 10.7 s (unas 560 peticiones por minuto) y costo total USD 0.01060. No se alcanzó ningún 429 en 100 peticiones; detalle en [docs/registro_rate_limit_real_concurrente.md](docs/registro_rate_limit_real_concurrente.md). Con la cuota actual de la cuenta no se pudo observar un 429 real, así que el comportamiento del backoff queda documentado por el ensayo simulado ([docs/registro_rate_limit.md](docs/registro_rate_limit.md)).
 
 Genera `docs/registro_rate_limit_real.md` (secuencial) o `docs/registro_rate_limit_real_concurrente.md` (concurrente); no pisa [docs/registro_rate_limit.md](docs/registro_rate_limit.md), que es el ensayo simulado.
 
