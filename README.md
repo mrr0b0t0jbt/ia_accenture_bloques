@@ -206,6 +206,7 @@ scripts/
   ensayo_rate_limit_real.py      ensayo de rate limit real contra Claude (con costo)
 test/
   unit/test_api_claude_refactor.py     pruebas unitarias con mocks
+  unit/test_api_gemini.py              pruebas minimas del manejo de errores del cliente Gemini, con mocks
   unit/test_pipeline_texto.py          pruebas del pipeline de texto
   unit/test_ejecutar_pipeline.py       pruebas del script del pipeline, con mocks
   unit/test_ensayo_rate_limit_real.py  pruebas del ensayo real, con mocks
