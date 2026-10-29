@@ -1,12 +1,19 @@
 import time
+import random
 
 import requests
 import os
 import json
 import re
+from typing import Callable, Any
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Sonnet 5.5: USD 2 / 10 por millón de tokens (ver docs/decision_arquitectura.md)
+INPUT_PRICING = 2 / 1_000_000
+OUTPUT_PRICING = 10 / 1_000_000
+costo_total_sesion = 0.0
 
 def build_claude_prompt(prompt, system=None, output_schema=None):
     if not prompt:
@@ -48,7 +55,7 @@ def send_claude_request(url, headers, payload):
     except requests.exceptions.JSONDecodeError as e:
         raise RuntimeError(f"Error decodificando la respuesta JSON o viene vacía: {e}")
 
-def with_retry(func, attempts=3, wait_seconds=2):
+def with_retry(func: Callable[[], Any], attempts: int = 3, base_wait: float = 2, max_wait: float = 30) -> Any:
     # solo TimeoutError (red, 429, 5xx) es transitorio; ValueError/RuntimeError no mejoran reintentando
     if attempts < 1:
         raise ValueError("attempts debe ser al menos 1")
@@ -58,8 +65,10 @@ def with_retry(func, attempts=3, wait_seconds=2):
         except TimeoutError:
             if attempt == attempts:
                 raise
-            print(f"Intento {attempt} de {attempts} falló (proveedor no disponible). Reintentando...")
-            time.sleep(wait_seconds)
+            wait = min(base_wait * 2 ** (attempt - 1), max_wait)
+            wait_with_jitter = wait + random.uniform(0, wait * 0.1)
+            print(f"Intento {attempt} de {attempts} falló. Reintentando en {wait_with_jitter:.1f}s...")
+            time.sleep(wait_with_jitter)
 
 def calculate_cost(response, input_pricing, output_pricing):
     try:
@@ -69,6 +78,14 @@ def calculate_cost(response, input_pricing, output_pricing):
         return (input_tokens * input_pricing) + (output_tokens * output_pricing)
     except (KeyError, IndexError) as e:
         raise RuntimeError(f"Error calculando el costo: {e}")
+
+def registrar_costo(response: dict) -> float:
+    global costo_total_sesion
+    cost = calculate_cost(response, INPUT_PRICING, OUTPUT_PRICING)
+    total_tokens = response["usage"]["input_tokens"] + response["usage"]["output_tokens"]
+    costo_total_sesion += cost
+    print(f"Operación: {total_tokens} tokens, costo estimado: ${cost:.5f} (acumulado: ${costo_total_sesion:.5f})")
+    return cost
 
 def extract_claude_response(data):
     try:
@@ -91,9 +108,7 @@ def get_claude_response(prompt, system=None, output_schema=None):
             response = with_retry(lambda: send_claude_request(url, headers, payload))
         except TimeoutError as e:
             raise RuntimeError("El servicio no respondió tras varios intentos. Intenta más tarde.") from e
-        # Sonnet 5.5: USD 2 / 10 por millón de tokens (ver docs/decision_arquitectura.md)
-        cost = calculate_cost(response, input_pricing=2 / 1_000_000, output_pricing=10 / 1_000_000)
-        print (f"Costo calculado: {cost}")
+        cost = registrar_costo(response)
         text = extract_claude_response(response)
         return (parse_json_response(text) if output_schema else text), cost
     except Exception as e:

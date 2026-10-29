@@ -1,3 +1,4 @@
+import api_claude_refactor
 from api_claude_refactor import get_claude_response
 
 #Llamar a la función get_claude_response desde claude.py
@@ -7,3 +8,5 @@ try:
     print(f"Respuesta: {response}")
 except (ValueError, RuntimeError) as ve:
     print(f"Error: {ve}")
+
+print(f"Costo acumulado de la sesión: ${api_claude_refactor.costo_total_sesion:.5f}")
