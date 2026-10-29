@@ -162,7 +162,6 @@ docs/                      decisión de arquitectura, diagrama y evidencias
 
 | Error | Causa probable |
 |---|---|
-| `Ocurrio un error de conexión: 401` | `CLAUDE_API_KEY` falta o es inválida en `.env` |
-| `Ocurrio un error de conexión: 400` o `403` (Gemini) | `GEMINI_API_KEY` falta o es inválida en `.env`, o el modelo no está disponible para tu clave |
+| `Credencial inválida o sin permiso` | La API key (`CLAUDE_API_KEY` o `GEMINI_API_KEY`) falta o es inválida en `.env`, o el modelo no está disponible para tu clave (401/403) |
 | `Ocurrio un error de conexión: 400` | Petición mal formada, revisa el `output_schema` del prompt |
 | `ModuleNotFoundError: No module named 'api_claude_refactor'` | Falta `PYTHONPATH=src` al ejecutar la prueba de consistencia |

@@ -1,7 +1,7 @@
 import api_claude_refactor
 from api_claude_refactor import get_claude_response
 
-#Llamar a la función get_claude_response desde claude.py
+#Llamar a la función get_claude_response desde api_claude_refactor.py
 prompt = "Confirma en una frase corta que esta conexion funciona correctamente."
 try:
     response, cost = get_claude_response(prompt)
