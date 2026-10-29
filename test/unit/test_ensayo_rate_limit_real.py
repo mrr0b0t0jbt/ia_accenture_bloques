@@ -172,6 +172,22 @@ def test_ensayo_concurrente_los_contadores_coinciden_con_las_llamadas_reales():
     assert info["olas"] == 3
 
 
+def test_ensayo_concurrente_envia_las_peticiones_de_cada_ola_en_paralelo():
+    # si las peticiones de una ola fueran en serie, la barrera se rompería (BrokenBarrierError) y la prueba fallaría
+    barrera = threading.Barrier(parties=4, timeout=5)
+
+    def fake(*args, **kwargs):
+        barrera.wait()
+        return respuesta_falsa(200)
+
+    with patch("api_claude_refactor.requests.post", side_effect=fake), \
+            patch("api_claude_refactor.time.sleep"):
+        info = ensayo.ejecutar_ensayo(8, 1.0, concurrencia=4)
+    assert info["olas"] == 2
+    assert info["llamadas_http"] == 8
+    assert info["fallos_definitivos"] == 0
+
+
 # --- main ---
 
 def test_main_sin_confirmar_api_real_devuelve_2_sin_ejecutar_el_ensayo(monkeypatch, capsys):
@@ -198,6 +214,43 @@ def test_main_con_concurrencia_sin_confirmar_api_real_devuelve_2(monkeypatch, ca
     assert ensayo.main(["--concurrencia", "5"]) == 2
     assert capsys.readouterr().err
     falso.assert_not_called()
+
+
+def test_main_pasa_n_y_concurrencia_a_ejecutar_ensayo(monkeypatch, tmp_path):
+    falso = Mock(return_value=dict(info_a_mano(None, 0), concurrencia=7, olas=8))
+    monkeypatch.setattr(ensayo, "ejecutar_ensayo", falso)
+    salida = tmp_path / "r.md"
+    assert ensayo.main(["--confirmar-api-real", "--n", "50", "--concurrencia", "7", "--salida", str(salida)]) == 0
+    falso.assert_called_once()
+    assert falso.call_args.args[0] == 50
+    assert falso.call_args.kwargs["concurrencia"] == 7
+    assert salida.exists()
+    assert "Concurrencia: 7" in salida.read_text(encoding="utf-8")
+
+
+def test_main_devuelve_1_ante_value_error_de_validacion_sin_escribir_registro(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(ensayo, "ejecutar_ensayo", Mock(side_effect=ValueError("simulado")))
+    salida = tmp_path / "r.md"
+    assert ensayo.main(["--confirmar-api-real", "--salida", str(salida)]) == 1
+    assert not salida.exists()
+    assert capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "extra, esperado, no_esperado",
+    [
+        ([], "docs/registro_rate_limit_real.md", "docs/registro_rate_limit_real_concurrente.md"),
+        (["--concurrencia", "3"], "docs/registro_rate_limit_real_concurrente.md", "docs/registro_rate_limit_real.md"),
+    ],
+    ids=["secuencial", "concurrente"],
+)
+def test_main_salida_por_defecto_segun_el_modo(monkeypatch, tmp_path, extra, esperado, no_esperado):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "docs").mkdir()
+    monkeypatch.setattr(ensayo, "ejecutar_ensayo", Mock(return_value=dict(info_a_mano(None, 0), concurrencia=3, olas=2)))
+    assert ensayo.main(["--confirmar-api-real", *extra]) == 0
+    assert (tmp_path / esperado).exists()
+    assert not (tmp_path / no_esperado).exists()
 
 
 # --- formatear_registro ---
