@@ -122,6 +122,22 @@ python scripts/ejecutar_pipeline.py --confirmar-api-real
 
 Hace 3 llamadas **REALES** a la API de Claude, con un costo aproximado de USD 0.005. El tope de gasto por defecto es `--tope-usd 0.05`; sin `--confirmar-api-real` el script sale con código 2 sin tocar la red. Escribe el registro en `docs/registro_pipeline.md`.
 
+## Ensayo real de rate limit
+
+Envía N peticiones seguidas a Claude pidiendo una respuesta de una sola palabra, para intentar provocar un 429 real del proveedor. Registra la petición del primer 429, las esperas del backoff, las llamadas HTTP y el costo:
+
+```bash
+python scripts/ensayo_rate_limit_real.py --confirmar-api-real
+```
+
+- `--confirmar-api-real` es obligatorio: sin él el script sale con código 2 sin tocar la red.
+- `--n` fija el número de peticiones (por defecto y como máximo 30).
+- `--tope-usd 0.05` es el tope de gasto por defecto; al alcanzarlo el ensayo se corta.
+- El costo esperado es muy bajo (respuestas de ~1 token).
+- Puede NO aparecer ningún 429; en ese caso el registro lo dice así.
+
+Genera `docs/registro_rate_limit_real.md`; no pisa [docs/registro_rate_limit.md](docs/registro_rate_limit.md), que es el ensayo simulado.
+
 ## Pruebas unitarias
 
 Desde la raíz del proyecto:
@@ -170,10 +186,12 @@ src/
 scripts/
   ensayo_rate_limit_simulado.py  ensayo de rate limit simulado con mocks
   ejecutar_pipeline.py           pipeline de texto sobre respuestas reales de Claude (con costo)
+  ensayo_rate_limit_real.py      ensayo de rate limit real contra Claude (con costo)
 test/
-  unit/test_api_claude_refactor.py  pruebas unitarias con mocks
-  unit/test_pipeline_texto.py       pruebas del pipeline de texto
-  unit/test_ejecutar_pipeline.py    pruebas del script del pipeline, con mocks
+  unit/test_api_claude_refactor.py     pruebas unitarias con mocks
+  unit/test_pipeline_texto.py          pruebas del pipeline de texto
+  unit/test_ejecutar_pipeline.py       pruebas del script del pipeline, con mocks
+  unit/test_ensayo_rate_limit_real.py  pruebas del ensayo real, con mocks
   test_consistencia.py         prueba de consistencia con Claude
   test_consistencia_gemini.py  misma prueba con Gemini (comparativa)
 JSON/
@@ -185,6 +203,7 @@ JSON/
 docs/                      decisión de arquitectura, diagrama y evidencias
   registro_rate_limit.md   registro del ensayo de rate limit (simulado)
   registro_pipeline.md     registro del pipeline de texto (se genera al correr el script)
+  registro_rate_limit_real.md  registro del ensayo de rate limit real (se genera al correr el ensayo)
 ```
 
 ## Problemas comunes
