@@ -41,7 +41,7 @@ cp .env.example .env             # Linux / macOS
 
 Todos los comandos se ejecutan desde la raíz del proyecto.
 
-**Prueba de conexión con Claude** — envía un prompt corto y muestra la respuesta y el costo:
+**Prueba de conexión con Claude** — envía un prompt corto y muestra la respuesta, el costo de la operación y el costo acumulado de la sesión:
 
 ```bash
 python src/main.py
@@ -83,7 +83,32 @@ El costo mostrado usa los precios por millón de tokens registrados en [docs/dec
 | Claude Sonnet 5.5 | USD 2 | USD 10 |
 | Gemini 3.1 Pro (prompts ≤ 200k tokens) | USD 2 | USD 12 |
 
-Si los precios cambian, actualízalos en `get_claude_response` y `get_gemini_response`.
+Si los precios cambian, actualízalos en `INPUT_PRICING` y `OUTPUT_PRICING` de `src/api_claude_refactor.py` (Claude) y en `get_gemini_response` (Gemini).
+
+## Reintentos y costo de la sesión
+
+**Reintento con backoff exponencial**: `with_retry` espera 2 s y duplica la espera en cada intento (2, 4, 8...), con un tope de 30 s y un jitter de hasta 10 %. Solo se reintenta `TimeoutError` (red, 429, 5xx); un 401/403 falla de inmediato. Al agotar los intentos se lanza `RuntimeError`.
+
+**Costo acumulado**: `registrar_costo` suma cada operación exitosa a `costo_total_sesion` e imprime `Operación: N tokens, costo estimado: $X (acumulado: $Y)`; `src/main.py` imprime `Costo acumulado de la sesión` al terminar. Una operación fallida no suma costo, y el acumulado se reinicia en cada ejecución.
+
+**Ensayo simulado de rate limit** — 10 peticiones con un 429 simulado en la petición 6; NO usa la red ni la API real (`requests.post` y `time.sleep` están mockeados):
+
+```bash
+python scripts/ensayo_rate_limit_simulado.py
+```
+
+El registro está en [docs/registro_rate_limit.md](docs/registro_rate_limit.md). No es un 429 real del proveedor; el ensayo real queda pendiente.
+
+## Pruebas unitarias
+
+Desde la raíz del proyecto:
+
+```bash
+.venv/bin/python -m pytest -v
+# python -m pytest -v            # con el entorno virtual activo
+```
+
+No usan la API real ni la red (todo está mockeado) y corren en menos de 2 segundos. `pytest.ini` limita la suite a `test/unit`; la prueba de consistencia sigue siendo el script aparte con `PYTHONPATH=src` y con costo (9 llamadas).
 
 ## Prueba de consistencia
 
@@ -113,11 +138,15 @@ Usa datos de prueba: dominios `.test` e IPs de documentación (`192.0.2.x`, `198
 ## Estructura
 
 ```
+pytest.ini                 limita pytest a test/unit
 src/
-  api_claude_refactor.py   cliente de Claude: arma la petición, la envía, calcula costo
+  api_claude_refactor.py   cliente de Claude: arma la petición, la envía con reintento, calcula y acumula el costo
   api_gemini.py            cliente de Gemini, solo comparativo (alternativa descartada, ver docs)
   main.py                  prueba de conexión
+scripts/
+  ensayo_rate_limit_simulado.py  ensayo de rate limit simulado con mocks
 test/
+  unit/test_api_claude_refactor.py  pruebas unitarias con mocks
   test_consistencia.py         prueba de consistencia con Claude
   test_consistencia_gemini.py  misma prueba con Gemini (comparativa)
 JSON/
@@ -126,6 +155,7 @@ JSON/
   registro_resultados.json         resultado de la última prueba con Claude
   registro_resultados_gemini.json  resultado de la última prueba con Gemini
 docs/                      decisión de arquitectura, diagrama y evidencias
+  registro_rate_limit.md   registro del ensayo de rate limit (simulado)
 ```
 
 ## Problemas comunes
