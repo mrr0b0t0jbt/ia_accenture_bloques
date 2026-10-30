@@ -112,7 +112,7 @@ El registro está en [docs/registro_rate_limit.md](docs/registro_rate_limit.md).
 | `coincidencia_por_palabras` | Proporción de palabras distintas de la referencia presentes en la respuesta (0.0 si la referencia está vacía) |
 | `comparar_antes_despues` | Coincidencia con el texto crudo (`split`) y con el texto procesado |
 
-**Límites de la métrica**: no distingue el orden de las palabras ("el perro persiguió al gato" y "el gato persiguió al perro" coinciden al 100 %) ni las repeticiones; los signos de apertura (`¿`, `¡`) se eliminan con el resto de la puntuación, y los decimales pierden el punto: `9.0` pasa a `90`.
+**Límites de la métrica**: no distingue el orden de las palabras ("el perro persiguió al gato" y "el gato persiguió al perro" coinciden al 100 %) ni las repeticiones, porque `coincidencia_por_palabras` sigue comparando conjuntos de palabras distintas (las repeticiones sí se cuentan en [Métricas de texto](#métricas-de-texto-precisión-cobertura-y-f1)); los signos de apertura (`¿`, `¡`) se eliminan con el resto de la puntuación, y los decimales pierden el punto: `9.0` pasa a `90`.
 
 **Pipeline sobre salidas del cliente** — envía las 3 consultas de `JSON/casos_pipeline.json` a Claude y compara cada respuesta con su referencia, antes y después de procesar el texto:
 
@@ -131,6 +131,40 @@ Hace 3 llamadas **REALES** a la API de Claude, con un costo aproximado de USD 0.
 | 3 | 50.0 % | 66.7 % |
 
 El texto procesado mejora la coincidencia en los 3 casos. Ningún caso llega a 100 % porque las respuestas del modelo son más largas que la referencia y usan sinónimos.
+
+## Métricas de texto (precisión, cobertura y F1)
+
+`src/metricas_texto.py` compara los tokens de la respuesta con los de la referencia contando las repeticiones (intersección de `Counter`):
+
+| Función | Qué hace |
+|---|---|
+| `contar_coincidencias` | Tokens compartidos, cada uno hasta el mínimo de veces que aparece en ambos lados; lanza `TypeError` si recibe algo que no sea una lista |
+| `calcular_precision_cobertura_f1` | Precisión (coincidencias / tokens de la respuesta), cobertura (coincidencias / tokens de la referencia) y F1; 0.0 si alguna lista está vacía |
+| `calcular_metricas` | `procesar_texto` a ambos textos + `calcular_precision_cobertura_f1` |
+| `resumir_metricas` | Promedio simple de precisión, cobertura y F1 (0.0 con lista vacía) |
+| `ordenar_peores_primero` | Lista nueva ordenada por F1 ascendente |
+| `seleccionar_muestra_revision` | Los n peores y los n mejores por F1 (n = 5 por defecto), sin duplicados |
+
+**Ejemplo**: referencia "el gato duerme en el sofa" (6 tokens) y respuesta "el gato duerme en el sillon todo el dia" (9 tokens) comparten 5 tokens ("el" cuenta 2 veces, no 3): precisión 5/9 = 0.56, cobertura 5/6 = 0.83 y F1 0.67.
+
+**Límites de la métrica**:
+
+- **Sinónimos**: "el auto es veloz" contra "el vehículo es rápido" da F1 0.5, aunque digan lo mismo.
+- **Dato equivocado**: "python fue creado en 1991" contra "python fue creado en 1989" da F1 0.8, aunque el año esté mal.
+- **Negación ausente**: "python no es un lenguaje compilado" contra "python es un lenguaje compilado" da F1 0.909, aunque la respuesta afirme lo contrario.
+
+**Métricas sobre salidas del cliente** — envía las consultas de `JSON/casos_metricas.json` (20 casos de ciberseguridad) a Claude y calcula precisión, cobertura y F1 de cada respuesta:
+
+```bash
+python scripts/ejecutar_metricas.py --confirmar-api-real
+```
+
+- Hace llamadas **REALES** a la API de Claude, con costo.
+- `--confirmar-api-real` es obligatorio: sin él el script sale con código 2 sin tocar la red.
+- `--tope-usd` es US$ 0.05 por defecto y como máximo; un valor mayor o menor o igual a 0 sale con código 1.
+- Acepta como máximo 25 casos; con más sale con código 1 antes de llamar a la API.
+- Escribe los resultados en `docs/resultados_metricas.json` (`--salida` lo cambia) y reescribe el archivo después de cada caso, para no perder lo hecho si algo falla a mitad.
+- Aún no hay resultados de una corrida real.
 
 ## Ensayo real de rate limit
 
@@ -200,15 +234,19 @@ src/
   api_gemini.py            cliente de Gemini, solo comparativo (alternativa descartada, ver docs)
   main.py                  prueba de conexión
   pipeline_texto.py        limpieza, tokenización y coincidencia por palabras
+  metricas_texto.py        precisión, cobertura y F1 sobre tokens, contando repeticiones
 scripts/
   ensayo_rate_limit_simulado.py  ensayo de rate limit simulado con mocks
   ejecutar_pipeline.py           pipeline de texto sobre respuestas reales de Claude (con costo)
+  ejecutar_metricas.py           precisión, cobertura y F1 sobre respuestas reales de Claude (con costo)
   ensayo_rate_limit_real.py      ensayo de rate limit real contra Claude (con costo)
 test/
   unit/test_api_claude_refactor.py     pruebas unitarias con mocks
   unit/test_api_gemini.py              pruebas minimas del manejo de errores del cliente Gemini, con mocks
   unit/test_pipeline_texto.py          pruebas del pipeline de texto
   unit/test_ejecutar_pipeline.py       pruebas del script del pipeline, con mocks
+  unit/test_metricas_texto.py          pruebas de las métricas de texto
+  unit/test_ejecutar_metricas.py       pruebas del script de métricas, con mocks
   unit/test_ensayo_rate_limit_real.py  pruebas del ensayo real, con mocks
   test_consistencia.py         prueba de consistencia con Claude
   test_consistencia_gemini.py  misma prueba con Gemini (comparativa)
@@ -218,6 +256,7 @@ JSON/
   registro_resultados.json         resultado de la última prueba con Claude
   registro_resultados_gemini.json  resultado de la última prueba con Gemini
   casos_pipeline.json              consultas y referencias del pipeline de texto
+  casos_metricas.json              consultas y referencias de las métricas de texto
 docs/                      decisión de arquitectura, diagrama y evidencias
   registro_rate_limit.md   registro del ensayo de rate limit (simulado)
   registro_pipeline.md     registro del pipeline de texto (se genera al correr el script)
