@@ -112,7 +112,7 @@ El registro está en [docs/registro_rate_limit.md](docs/registro_rate_limit.md).
 | `coincidencia_por_palabras` | Proporción de palabras distintas de la referencia presentes en la respuesta (0.0 si la referencia está vacía) |
 | `comparar_antes_despues` | Coincidencia con el texto crudo (`split`) y con el texto procesado |
 
-**Límites de la métrica**: no distingue el orden de las palabras ("el perro persiguió al gato" y "el gato persiguió al perro" coinciden al 100 %) ni las repeticiones, porque `coincidencia_por_palabras` sigue comparando conjuntos de palabras distintas (las repeticiones sí se cuentan en [Métricas de texto](#métricas-de-texto-precisión-cobertura-y-f1)); los signos de apertura (`¿`, `¡`) se eliminan con el resto de la puntuación, y los decimales pierden el punto: `9.0` pasa a `90`.
+**Límites de la métrica**: no distingue el orden de las palabras ("el perro persiguió al gato" y "el gato persiguió al perro" coinciden al 100 %) ni las repeticiones, porque `coincidencia_por_palabras` sigue comparando conjuntos de palabras distintas (las repeticiones sí se cuentan en [Métricas de texto](#métricas-de-texto-precisión-cobertura-y-f1)); los signos de apertura (`¿`, `¡`) se eliminan con el resto de la puntuación, y los decimales pierden el punto: `9.0` pasa a `90`. Los guiones también se borran y unen lo que separaban: `CVE-2021-44228` pasa a `cve202144228` y `AES-256` a `aes256`.
 
 **Pipeline sobre salidas del cliente** — envía las 3 consultas de `JSON/casos_pipeline.json` a Claude y compara cada respuesta con su referencia, antes y después de procesar el texto:
 
@@ -152,6 +152,7 @@ El texto procesado mejora la coincidencia en los 3 casos. Ningún caso llega a 1
 - **Sinónimos**: "el auto es veloz" contra "el vehículo es rápido" da F1 0.5, aunque digan lo mismo.
 - **Dato equivocado**: "python fue creado en 1991" contra "python fue creado en 1989" da F1 0.8, aunque el año esté mal.
 - **Negación ausente**: "python no es un lenguaje compilado" contra "python es un lenguaje compilado" da F1 0.909, aunque la respuesta afirme lo contrario.
+- **Guiones**: la limpieza borra los guiones, así que un identificador como `CVE-2021-44228` queda como un solo token (`cve202144228`): con un dígito distinto cuenta entero como fallado. Además "AES 256" (con espacio) no coincide con "AES-256": "AES-256 usa una clave de 256 bits." contra "AES 256 usa clave de 256 bits" da F1 0.71 (5/7).
 
 **Métricas sobre salidas del cliente** — envía las consultas de `JSON/casos_metricas.json` (20 casos de ciberseguridad) a Claude y calcula precisión, cobertura y F1 de cada respuesta:
 
