@@ -1,0 +1,82 @@
+[
+  {
+    "consulta": "¿Qué es el phishing?",
+    "referencia": "El phishing es un ataque que engaña a la víctima, normalmente por correo, para que entregue credenciales o datos sensibles."
+  },
+  {
+    "consulta": "¿Qué es un ataque de fuerza bruta?",
+    "referencia": "Un ataque de fuerza bruta prueba muchas combinaciones de contraseñas hasta encontrar la correcta."
+  },
+  {
+    "consulta": "¿Qué es el ransomware?",
+    "referencia": "El ransomware es un malware que cifra los archivos de la víctima y exige un pago para devolver el acceso."
+  },
+  {
+    "consulta": "¿Qué es un firewall?",
+    "referencia": "Un firewall es un sistema que filtra el tráfico de red según reglas de seguridad."
+  },
+  {
+    "consulta": "¿Qué es una VPN?",
+    "referencia": "Una VPN crea un túnel cifrado entre el dispositivo y la red a la que se conecta."
+  },
+  {
+    "consulta": "¿Qué es el cross-site scripting (XSS)?",
+    "referencia": "El cross-site scripting es una vulnerabilidad que permite inyectar scripts maliciosos en páginas que ven otros usuarios."
+  },
+  {
+    "consulta": "¿Cuántos bits tiene la clave de AES-256?",
+    "referencia": "AES-256 usa una clave de 256 bits."
+  },
+  {
+    "consulta": "¿Cuál es el puerto por defecto de HTTPS?",
+    "referencia": "El puerto por defecto de HTTPS es el 443."
+  },
+  {
+    "consulta": "¿Qué puerto usa SSH por defecto?",
+    "referencia": "SSH usa por defecto el puerto 22."
+  },
+  {
+    "consulta": "¿En qué año se hizo pública la vulnerabilidad Heartbleed?",
+    "referencia": "Heartbleed se hizo pública en 2014."
+  },
+  {
+    "consulta": "¿De cuántos bits es el hash SHA-256?",
+    "referencia": "SHA-256 produce un hash de 256 bits."
+  },
+  {
+    "consulta": "¿Qué identificador CVE tiene Log4Shell?",
+    "referencia": "Log4Shell corresponde a la vulnerabilidad CVE-2021-44228."
+  },
+  {
+    "consulta": "¿MD5 es seguro para almacenar contraseñas?",
+    "referencia": "No, MD5 no es seguro para almacenar contraseñas porque es rápido y tiene colisiones conocidas."
+  },
+  {
+    "consulta": "¿HTTP cifra en tránsito?",
+    "referencia": "No, HTTP no cifra en tránsito; los datos viajan en texto plano."
+  },
+  {
+    "consulta": "¿Un antivirus basta para proteger un endpoint?",
+    "referencia": "No, un antivirus no basta por sí solo; hace falta además mantener todo actualizado, tener copias de seguridad y buenas prácticas."
+  },
+  {
+    "consulta": "¿El cifrado es lo mismo que el hash?",
+    "referencia": "No, el cifrado es reversible con la clave y el hash no se puede revertir."
+  },
+  {
+    "consulta": "¿Qué es el principio de mínimo privilegio?",
+    "referencia": "El principio de mínimo privilegio dice que cada usuario o proceso debe tener solo los permisos necesarios para su tarea."
+  },
+  {
+    "consulta": "¿Qué es un zero-day?",
+    "referencia": "Un zero-day es una vulnerabilidad desconocida para el fabricante y sin parche disponible."
+  },
+  {
+    "consulta": "¿Para qué sirve un SIEM?",
+    "referencia": "Un SIEM centraliza y correlaciona los registros de seguridad para detectar incidentes."
+  },
+  {
+    "consulta": "¿Qué clasifica el modelo de amenazas STRIDE?",
+    "referencia": "STRIDE clasifica las amenazas en suplantación, manipulación, repudio, divulgación de información, denegación de servicio y elevación de privilegios."
+  }
+]
