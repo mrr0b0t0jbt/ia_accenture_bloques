@@ -165,7 +165,8 @@ python scripts/ejecutar_metricas.py --confirmar-api-real
 - `--tope-usd` es US$ 0.05 por defecto y como máximo; un valor mayor o menor o igual a 0 sale con código 1.
 - Acepta como máximo 25 casos; con más sale con código 1 antes de llamar a la API.
 - Escribe los resultados en `docs/resultados_metricas.json` (`--salida` lo cambia) y reescribe el archivo después de cada caso, para no perder lo hecho si algo falla a mitad.
-- Aún no hay resultados de una corrida real.
+
+**Resultados de la corrida real** (2026-10-30, 20 casos, costo estimado USD 0.018 con una llamada adicional por una consulta que se enfocó; detalle en [docs/resultados_metricas.json](docs/resultados_metricas.json)): precisión promedio 0.40, cobertura promedio 0.80 y F1 promedio 0.52. Las 20 respuestas resultaron correctas y aun así 19 tienen precisión menor que cobertura: la métrica penaliza la longitud, no los errores. La revisión manual de 10 casos (5 peores y 5 mejores, con rúbrica de corrección factual, completitud y contradicción) está en [docs/revision_manual.json](docs/revision_manual.json) y lo que la métrica no puede decir, con ejemplos, en [docs/limites_metrica.md](docs/limites_metrica.md).
 
 ## Ensayo real de rate limit
 
@@ -263,6 +264,9 @@ docs/                      decisión de arquitectura, diagrama y evidencias
   registro_pipeline.md     registro del pipeline de texto (se genera al correr el script)
   registro_rate_limit_real.md  registro del ensayo de rate limit real (se genera al correr el ensayo)
   registro_rate_limit_real_concurrente.md  registro del ensayo concurrente (se genera al correr el ensayo con --concurrencia mayor que 1)
+  resultados_metricas.json  resultados de la corrida real de métricas (se genera al correr ejecutar_metricas.py)
+  revision_manual.json     revisión manual de 10 casos con la rúbrica de tres preguntas
+  limites_metrica.md       límites conocidos de la métrica y recomendación de uso
 ```
 
 ## Problemas comunes
