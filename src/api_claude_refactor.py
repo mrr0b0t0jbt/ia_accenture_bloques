@@ -133,8 +133,8 @@ def latency_test(ciclos: int = 5):
         registrar_costo(data)
         latencies.append(duration)
     prom_latency = sum(latencies) / len(latencies)
-    print(f"Latencia promedio después de {ciclos} ciclos: {prom_latency} segundos")  
-    
+    print(f"Latencia promedio después de {ciclos} ciclos: {prom_latency} segundos")
+
 if __name__ == "__main__":
     response, cost = get_claude_response("Confirma en una frase corta que esta conexion funciona correctamente.")
     print(f"Respuesta: {response}")
