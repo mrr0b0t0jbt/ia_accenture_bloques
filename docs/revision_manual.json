@@ -1,0 +1,82 @@
+[
+  {
+    "consulta": "¿Qué identificador CVE tiene Log4Shell?",
+    "f1": 0.26,
+    "correccion_factual": "si",
+    "completitud": "si",
+    "contradiccion": "no",
+    "nota": "CVE-2021-44228 es correcto, y lo que agrega (ejecución remota de código en Apache Log4j 2) también. El F1 es bajo solo por longitud: la respuesta tiene casi tres veces los tokens de la referencia (precisión 0,18). Respuesta correcta penalizada."
+  },
+  {
+    "consulta": "¿Un antivirus basta para proteger un endpoint?",
+    "f1": 0.31,
+    "correccion_factual": "si",
+    "completitud": "si",
+    "contradiccion": "no",
+    "nota": "Cubre la referencia (parches, copias de seguridad) y agrega EDR, MFA y cifrado de disco, todo coherente con ella. «Parches al día» no coincide con «mantener todo actualizado» (sinónimo). Penalizada por longitud y paráfrasis."
+  },
+  {
+    "consulta": "¿Para qué sirve un SIEM?",
+    "f1": 0.31,
+    "correccion_factual": "si",
+    "completitud": "si",
+    "contradiccion": "no",
+    "nota": "Dice lo mismo que la referencia (recopilar, centralizar y correlacionar registros para detectar incidentes) y agrega alertas en tiempo real y cumplimiento normativo, ambos correctos. F1 bajo por longitud."
+  },
+  {
+    "consulta": "¿Qué es el phishing?",
+    "f1": 0.32,
+    "correccion_factual": "si",
+    "completitud": "si",
+    "contradiccion": "no",
+    "nota": "Equivalente a la referencia (engaño, correo o mensajes, robo de credenciales y datos). «Engaña» y «engañar» cuentan como tokens distintos: la métrica no lematiza. Penalizada por longitud y por falta de lematización."
+  },
+  {
+    "consulta": "¿Qué es una VPN de acceso a una red privada, como una red empresarial?",
+    "f1": 0.35,
+    "correccion_factual": "si",
+    "completitud": "si",
+    "contradiccion": "no",
+    "nota": "Con la consulta enfocada a red privada, la respuesta (túnel cifrado para acceder a la red de una empresa como si se estuviera dentro) coincide con la referencia. El F1 sigue en 0,35 (precisión 0,24): el puntaje bajo es por longitud, no por la ambigüedad. La primera versión de la consulta («¿Qué es una VPN?») produjo una respuesta orientada a internet que la referencia no cubría: una consulta ambigua también es un modo de falla."
+  },
+  {
+    "consulta": "¿Qué es un zero-day?",
+    "f1": 0.62,
+    "correccion_factual": "si",
+    "completitud": "si",
+    "contradiccion": "no",
+    "nota": "Casi la misma definición que la referencia, con una cláusula extra (explotable antes de que haya corrección). F1 0,62 aunque el significado es el mismo: la longitud extra baja la precisión."
+  },
+  {
+    "consulta": "¿Qué clasifica el modelo de amenazas STRIDE?",
+    "f1": 0.65,
+    "correccion_factual": "si",
+    "completitud": "si",
+    "contradiccion": "no",
+    "nota": "Las seis categorías son correctas. Los nombres en inglés entre paréntesis (Spoofing, Tampering…) agregan tokens que bajan la precisión; los asteriscos de markdown los elimina la limpieza."
+  },
+  {
+    "consulta": "¿Qué es el ransomware?",
+    "f1": 0.75,
+    "correccion_factual": "si",
+    "completitud": "si",
+    "contradiccion": "no",
+    "nota": "Correcta; «cifra o bloquea» y «criptomonedas» son extras válidos que no contradicen la referencia. F1 0,75: verdadero positivo razonable."
+  },
+  {
+    "consulta": "¿Qué puerto usa SSH por defecto?",
+    "f1": 0.93,
+    "correccion_factual": "si",
+    "completitud": "si",
+    "contradiccion": "no",
+    "nota": "Puerto 22 correcto; «(TCP)» es un extra. F1 0,93: verdadero positivo."
+  },
+  {
+    "consulta": "¿Cuál es el puerto por defecto de HTTPS?",
+    "f1": 1.0,
+    "correccion_factual": "si",
+    "completitud": "si",
+    "contradiccion": "no",
+    "nota": "Puerto 443 correcto; los asteriscos de markdown no afectan. F1 1,00: verdadero positivo."
+  }
+]

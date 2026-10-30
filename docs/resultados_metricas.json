@@ -1,0 +1,182 @@
+[
+  {
+    "consulta": "¿Qué es el phishing?",
+    "referencia": "El phishing es un ataque que engaña a la víctima, normalmente por correo, para que entregue credenciales o datos sensibles.",
+    "respuesta": "El phishing es una técnica de fraude en línea en la que los delincuentes se hacen pasar por una entidad de confianza (como un banco o una empresa) mediante correos, mensajes o sitios web falsos para engañar a las personas y robarles datos personales, contraseñas o información financiera.",
+    "precision": 0.22916666666666666,
+    "cobertura": 0.55,
+    "f1": 0.32352941176470584,
+    "costo": 0.00106
+  },
+  {
+    "consulta": "¿Qué es un ataque de fuerza bruta?",
+    "referencia": "Un ataque de fuerza bruta prueba muchas combinaciones de contraseñas hasta encontrar la correcta.",
+    "respuesta": "Un ataque de fuerza bruta es un método que consiste en probar sistemáticamente todas las combinaciones posibles de contraseñas, claves u otros datos de acceso hasta dar con la correcta.",
+    "precision": 0.36666666666666664,
+    "cobertura": 0.7857142857142857,
+    "f1": 0.5,
+    "costo": 0.000796
+  },
+  {
+    "consulta": "¿Qué es el ransomware?",
+    "referencia": "El ransomware es un malware que cifra los archivos de la víctima y exige un pago para devolver el acceso.",
+    "respuesta": "El ransomware es un tipo de software malicioso que cifra o bloquea los archivos o sistemas de la víctima y exige un pago (rescate), normalmente en criptomonedas, para devolver el acceso.",
+    "precision": 0.6129032258064516,
+    "cobertura": 0.95,
+    "f1": 0.7450980392156863,
+    "costo": 0.0007920000000000001
+  },
+  {
+    "consulta": "¿Qué es un firewall?",
+    "referencia": "Un firewall es un sistema que filtra el tráfico de red según reglas de seguridad.",
+    "respuesta": "Un firewall (cortafuegos) es un sistema de seguridad, ya sea software o hardware, que controla y filtra el tráfico de red entrante y saliente según reglas predefinidas para bloquear accesos no autorizados y proteger un equipo o una red.",
+    "precision": 0.38461538461538464,
+    "cobertura": 1.0,
+    "f1": 0.5555555555555556,
+    "costo": 0.0009700000000000002
+  },
+  {
+    "consulta": "¿Qué es una VPN de acceso a una red privada, como una red empresarial?",
+    "referencia": "Una VPN crea un túnel cifrado entre el dispositivo y la red a la que se conecta.",
+    "respuesta": "Una VPN de acceso remoto es una tecnología que crea un túnel cifrado a través de Internet para que un usuario o dispositivo externo se conecte de forma segura a la red privada de una empresa, accediendo a sus recursos internos (servidores, archivos, aplicaciones) como si estuviera físicamente dentro de ella.",
+    "precision": 0.23529411764705882,
+    "cobertura": 0.7058823529411765,
+    "f1": 0.35294117647058826,
+    "costo": 0.001254
+  },
+  {
+    "consulta": "¿Qué es el cross-site scripting (XSS)?",
+    "referencia": "El cross-site scripting es una vulnerabilidad que permite inyectar scripts maliciosos en páginas que ven otros usuarios.",
+    "respuesta": "El cross-site scripting (XSS) es una vulnerabilidad de seguridad web en la que un atacante logra inyectar código malicioso (normalmente JavaScript) en páginas que otros usuarios visitan, de modo que se ejecute en sus navegadores y pueda robar sesiones, datos o suplantar acciones del usuario.",
+    "precision": 0.28888888888888886,
+    "cobertura": 0.7647058823529411,
+    "f1": 0.41935483870967744,
+    "costo": 0.001248
+  },
+  {
+    "consulta": "¿Cuántos bits tiene la clave de AES-256?",
+    "referencia": "AES-256 usa una clave de 256 bits.",
+    "respuesta": "La clave de AES-256 tiene 256 bits (equivalentes a 32 bytes).",
+    "precision": 0.45454545454545453,
+    "cobertura": 0.7142857142857143,
+    "f1": 0.5555555555555556,
+    "costo": 0.00041000000000000005
+  },
+  {
+    "consulta": "¿Cuál es el puerto por defecto de HTTPS?",
+    "referencia": "El puerto por defecto de HTTPS es el 443.",
+    "respuesta": "El puerto por defecto de HTTPS es el **443**.",
+    "precision": 1.0,
+    "cobertura": 1.0,
+    "f1": 1.0,
+    "costo": 0.000302
+  },
+  {
+    "consulta": "¿Qué puerto usa SSH por defecto?",
+    "referencia": "SSH usa por defecto el puerto 22.",
+    "respuesta": "SSH usa por defecto el puerto 22 (TCP).",
+    "precision": 0.875,
+    "cobertura": 1.0,
+    "f1": 0.9333333333333333,
+    "costo": 0.000304
+  },
+  {
+    "consulta": "¿En qué año se hizo pública la vulnerabilidad Heartbleed?",
+    "referencia": "Heartbleed se hizo pública en 2014.",
+    "respuesta": "La vulnerabilidad Heartbleed se hizo pública en 2014, concretamente en abril de ese año.",
+    "precision": 0.42857142857142855,
+    "cobertura": 1.0,
+    "f1": 0.6,
+    "costo": 0.000494
+  },
+  {
+    "consulta": "¿De cuántos bits es el hash SHA-256?",
+    "referencia": "SHA-256 produce un hash de 256 bits.",
+    "respuesta": "El hash SHA-256 tiene una longitud de 256 bits (equivalente a 32 bytes o 64 caracteres hexadecimales).",
+    "precision": 0.29411764705882354,
+    "cobertura": 0.7142857142857143,
+    "f1": 0.4166666666666667,
+    "costo": 0.000586
+  },
+  {
+    "consulta": "¿Qué identificador CVE tiene Log4Shell?",
+    "referencia": "Log4Shell corresponde a la vulnerabilidad CVE-2021-44228.",
+    "respuesta": "Log4Shell se identifica como **CVE-2021-44228**, una vulnerabilidad crítica de ejecución remota de código en Apache Log4j 2.",
+    "precision": 0.17647058823529413,
+    "cobertura": 0.5,
+    "f1": 0.2608695652173913,
+    "costo": 0.0006500000000000001
+  },
+  {
+    "consulta": "¿MD5 es seguro para almacenar contraseñas?",
+    "referencia": "No, MD5 no es seguro para almacenar contraseñas porque es rápido y tiene colisiones conocidas.",
+    "respuesta": "No, MD5 no es seguro para almacenar contraseñas porque es demasiado rápido, vulnerable a colisiones y fácil de romper con tablas rainbow o fuerza bruta, por lo que deberías usar algoritmos diseñados para ello como bcrypt, scrypt o Argon2 con sal.",
+    "precision": 0.3170731707317073,
+    "cobertura": 0.8666666666666667,
+    "f1": 0.4642857142857143,
+    "costo": 0.00118
+  },
+  {
+    "consulta": "¿HTTP cifra en tránsito?",
+    "referencia": "No, HTTP no cifra en tránsito; los datos viajan en texto plano.",
+    "respuesta": "No, HTTP envía los datos en texto plano sin cifrar; para cifrarlos en tránsito se necesita HTTPS, que usa HTTP sobre TLS.",
+    "precision": 0.4090909090909091,
+    "cobertura": 0.75,
+    "f1": 0.5294117647058824,
+    "costo": 0.0006780000000000001
+  },
+  {
+    "consulta": "¿Un antivirus basta para proteger un endpoint?",
+    "referencia": "No, un antivirus no basta por sí solo; hace falta además mantener todo actualizado, tener copias de seguridad y buenas prácticas.",
+    "respuesta": "No, un antivirus por sí solo no basta: hoy se necesita una defensa por capas que incluya EDR, parches al día, cifrado de disco, control de privilegios, firewall, autenticación multifactor, copias de seguridad y formación de los usuarios, porque muchas amenazas modernas (ransomware, ataques sin archivos, phishing, exploits de día cero) evaden la detección basada en firmas.",
+    "precision": 0.21052631578947367,
+    "cobertura": 0.5714285714285714,
+    "f1": 0.3076923076923077,
+    "costo": 0.001498
+  },
+  {
+    "consulta": "¿El cifrado es lo mismo que el hash?",
+    "referencia": "No, el cifrado es reversible con la clave y el hash no se puede revertir.",
+    "respuesta": "No, el cifrado es un proceso reversible que transforma datos con una clave para poder recuperarlos después, mientras que el hash es una función unidireccional que genera una huella de tamaño fijo y no permite recuperar el dato original.",
+    "precision": 0.28205128205128205,
+    "cobertura": 0.7333333333333333,
+    "f1": 0.4074074074074074,
+    "costo": 0.000874
+  },
+  {
+    "consulta": "¿Qué es el principio de mínimo privilegio?",
+    "referencia": "El principio de mínimo privilegio dice que cada usuario o proceso debe tener solo los permisos necesarios para su tarea.",
+    "respuesta": "El principio de mínimo privilegio establece que a cada usuario, programa o proceso se le deben otorgar únicamente los permisos y accesos estrictamente necesarios para realizar su función, reduciendo así el riesgo y el impacto de errores, abusos o ataques.",
+    "precision": 0.375,
+    "cobertura": 0.75,
+    "f1": 0.5,
+    "costo": 0.001016
+  },
+  {
+    "consulta": "¿Qué es un zero-day?",
+    "referencia": "Un zero-day es una vulnerabilidad desconocida para el fabricante y sin parche disponible.",
+    "respuesta": "Un zero-day es una vulnerabilidad de software desconocida para su fabricante y sin parche disponible, que los atacantes pueden explotar antes de que se pueda corregir.",
+    "precision": 0.46153846153846156,
+    "cobertura": 0.9230769230769231,
+    "f1": 0.6153846153846155,
+    "costo": 0.000692
+  },
+  {
+    "consulta": "¿Para qué sirve un SIEM?",
+    "referencia": "Un SIEM centraliza y correlaciona los registros de seguridad para detectar incidentes.",
+    "respuesta": "Un SIEM (Security Information and Event Management) sirve para recopilar, centralizar y correlacionar registros y eventos de seguridad de toda la infraestructura de una organización, con el fin de detectar amenazas, generar alertas en tiempo real, facilitar la investigación de incidentes y cumplir con requisitos normativos.",
+    "precision": 0.1956521739130435,
+    "cobertura": 0.75,
+    "f1": 0.3103448275862069,
+    "costo": 0.0012180000000000001
+  },
+  {
+    "consulta": "¿Qué clasifica el modelo de amenazas STRIDE?",
+    "referencia": "STRIDE clasifica las amenazas en suplantación, manipulación, repudio, divulgación de información, denegación de servicio y elevación de privilegios.",
+    "respuesta": "STRIDE clasifica las amenazas de seguridad en seis categorías: suplantación de identidad (*Spoofing*), manipulación de datos (*Tampering*), repudio (*Repudiation*), divulgación de información (*Information disclosure*), denegación de servicio (*Denial of service*) y elevación de privilegios (*Elevation of privilege*).",
+    "precision": 0.4864864864864865,
+    "cobertura": 1.0,
+    "f1": 0.6545454545454547,
+    "costo": 0.001336
+  }
+]
