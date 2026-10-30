@@ -88,6 +88,13 @@ def test_precision_cobertura_f1_con_listas_vacias_da_ceros(referencia, respuesta
     assert calcular_precision_cobertura_f1(referencia, respuesta) == {"precision": 0.0, "cobertura": 0.0, "f1": 0.0}
 
 
+@pytest.mark.parametrize("referencia, respuesta", [("", ["a"]), (["a"], "")])
+def test_precision_cobertura_f1_con_str_vacio_lanza_type_error(referencia, respuesta):
+    # el tipo se valida antes que las listas vacías
+    with pytest.raises(TypeError):
+        calcular_precision_cobertura_f1(referencia, respuesta)
+
+
 def test_precision_cobertura_f1_sin_coincidencias_da_ceros():
     assert calcular_precision_cobertura_f1(["a"], ["b"]) == {"precision": 0.0, "cobertura": 0.0, "f1": 0.0}
 

@@ -81,6 +81,23 @@ def test_ejecutar_casos_corta_al_superar_el_tope(tmp_path):
     assert info["costo_total"] == pytest.approx(0.06)
 
 
+def test_ejecutar_casos_un_value_error_no_corta_los_siguientes(tmp_path):
+    obtener_respuesta = Mock(side_effect=[ValueError("respuesta inválida"), ("dos", 0.01), ("tres", 0.01)])
+    info = ejecutar_metricas.ejecutar_casos(CASOS, obtener_respuesta, 1.0, tmp_path / "salida.json")
+    assert info["errores"] == [{"consulta": "consulta 1", "error": "respuesta inválida"}]
+    assert [r["consulta"] for r in info["resultados"]] == ["consulta 2", "consulta 3"]
+
+
+def test_ejecutar_casos_la_salida_conserva_caracteres_no_ascii(tmp_path):
+    salida = tmp_path / "salida.json"
+    obtener_respuesta = Mock(return_value=("¿Qué? La canción.", 0.001))
+    ejecutar_metricas.ejecutar_casos(CASOS[:1], obtener_respuesta, 1.0, salida)
+    texto = salida.read_text(encoding="utf-8")
+    assert "¿Qué?" in texto
+    assert "ó" in texto
+    assert "\\u00bf" not in texto
+
+
 # --- main ---
 
 def test_main_sin_confirmar_api_real_devuelve_2_sin_importar_el_cliente(monkeypatch, capsys, tmp_path):
@@ -115,6 +132,42 @@ def test_main_con_mas_de_25_casos_devuelve_1_sin_llamar_al_cliente(monkeypatch, 
     assert ejecutar_metricas.main(["--confirmar-api-real", "--casos", str(casos), "--salida", str(salida)]) == 1
     falso.assert_not_called()
     assert not salida.exists()
+
+
+def test_main_con_exactamente_25_casos_los_ejecuta_todos(monkeypatch, tmp_path):
+    falso = _inyectar_cliente_falso(monkeypatch, 0.0001)
+    casos = _escribir_casos(tmp_path, 25)
+    salida = tmp_path / "salida.json"
+    assert ejecutar_metricas.main(["--confirmar-api-real", "--casos", str(casos), "--salida", str(salida)]) == 0
+    assert falso.call_count == 25
+
+
+def test_main_tope_usd_maximo_es_exactamente_0_05(monkeypatch, tmp_path):
+    assert ejecutar_metricas.TOPE_USD_MAXIMO == 0.05
+    falso = _inyectar_cliente_falso(monkeypatch, 0.001)
+    casos = _escribir_casos(tmp_path, 1)
+    salida = tmp_path / "salida.json"
+    argv = ["--confirmar-api-real", "--casos", str(casos), "--salida", str(salida), "--tope-usd"]
+    assert ejecutar_metricas.main(argv + ["0.051"]) == 1
+    falso.assert_not_called()
+    assert ejecutar_metricas.main(argv + ["0.05"]) == 0
+
+
+@pytest.mark.parametrize("tope", ["0", "-0.01"])
+def test_main_tope_no_positivo_devuelve_1(monkeypatch, tmp_path, tope):
+    falso = _inyectar_cliente_falso(monkeypatch, 0.001)
+    casos = _escribir_casos(tmp_path, 1)
+    salida = tmp_path / "salida.json"
+    argv = ["--confirmar-api-real", "--casos", str(casos), "--salida", str(salida), "--tope-usd", tope]
+    assert ejecutar_metricas.main(argv) == 1
+    falso.assert_not_called()
+
+
+def test_main_salida_vacia_devuelve_1(monkeypatch, tmp_path):
+    falso = _inyectar_cliente_falso(monkeypatch, 0.001)
+    casos = _escribir_casos(tmp_path, 1)
+    assert ejecutar_metricas.main(["--confirmar-api-real", "--casos", str(casos), "--salida", ""]) == 1
+    falso.assert_not_called()
 
 
 def test_main_con_cliente_falso_escribe_la_salida(monkeypatch, capsys, tmp_path):
