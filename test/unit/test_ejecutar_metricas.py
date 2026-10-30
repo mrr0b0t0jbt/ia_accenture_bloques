@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import sys
 import types
 from pathlib import Path
@@ -167,6 +168,34 @@ def test_main_salida_vacia_devuelve_1(monkeypatch, tmp_path):
     falso = _inyectar_cliente_falso(monkeypatch, 0.001)
     casos = _escribir_casos(tmp_path, 1)
     assert ejecutar_metricas.main(["--confirmar-api-real", "--casos", str(casos), "--salida", ""]) == 1
+    falso.assert_not_called()
+
+
+def test_main_salida_es_un_directorio_devuelve_1(monkeypatch, tmp_path):
+    falso = _inyectar_cliente_falso(monkeypatch, 0.001)
+    casos = _escribir_casos(tmp_path, 1)
+    assert ejecutar_metricas.main(["--confirmar-api-real", "--casos", str(casos), "--salida", str(tmp_path)]) == 1
+    falso.assert_not_called()
+
+
+def test_main_salida_igual_a_casos_devuelve_1_sin_pisarlo(monkeypatch, tmp_path):
+    falso = _inyectar_cliente_falso(monkeypatch, 0.001)
+    casos = _escribir_casos(tmp_path, 1)
+    original = casos.read_text(encoding="utf-8")
+    assert ejecutar_metricas.main(["--confirmar-api-real", "--casos", str(casos), "--salida", str(casos)]) == 1
+    falso.assert_not_called()
+    assert casos.read_text(encoding="utf-8") == original
+
+
+def test_main_salida_sin_permiso_de_escritura_devuelve_1(monkeypatch, tmp_path):
+    falso = _inyectar_cliente_falso(monkeypatch, 0.001)
+    casos = _escribir_casos(tmp_path, 1)
+    salida = tmp_path / "salida.json"
+    salida.write_text("[]", encoding="utf-8")
+    with monkeypatch.context() as m:
+        m.setattr(os, "access", lambda *a, **k: False)
+        codigo = ejecutar_metricas.main(["--confirmar-api-real", "--casos", str(casos), "--salida", str(salida)])
+    assert codigo == 1
     falso.assert_not_called()
 
 

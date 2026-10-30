@@ -92,6 +92,15 @@ def main(argv: list[str] | None = None) -> int:
     if not os.path.isdir(directorio):
         print(f"Error: el directorio de --salida no existe: {directorio}", file=sys.stderr)
         return 1
+    if os.path.isdir(args.salida):
+        print(f"Error: --salida es un directorio: {args.salida}", file=sys.stderr)
+        return 1
+    if os.path.realpath(args.salida) == os.path.realpath(args.casos):
+        print("Error: --salida no puede ser el mismo archivo que --casos.", file=sys.stderr)
+        return 1
+    if not os.access(args.salida if os.path.exists(args.salida) else directorio, os.W_OK):
+        print(f"Error: no se puede escribir en --salida: {args.salida}", file=sys.stderr)
+        return 1
     if not 0 < args.tope_usd <= TOPE_USD_MAXIMO:
         print(f"Error: --tope-usd debe ser mayor que 0 y como máximo {TOPE_USD_MAXIMO}.", file=sys.stderr)
         return 1

@@ -161,3 +161,12 @@ def test_seleccionar_muestra_revision_con_pocos_casos_no_duplica():
 
 def test_seleccionar_muestra_revision_lista_vacia():
     assert seleccionar_muestra_revision([]) == []
+
+
+def test_seleccionar_muestra_revision_n_negativo_lanza_value_error():
+    with pytest.raises(ValueError):
+        seleccionar_muestra_revision([_resultado(f1) for f1 in [0.1, 0.5, 0.9]], n=-1)
+
+
+def test_seleccionar_muestra_revision_n_cero_devuelve_lista_vacia():
+    assert seleccionar_muestra_revision([_resultado(f1) for f1 in [0.1, 0.5, 0.9]], n=0) == []

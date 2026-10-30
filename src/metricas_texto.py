@@ -46,5 +46,7 @@ def ordenar_peores_primero(resultados: list[dict]) -> list[dict]:
 
 def seleccionar_muestra_revision(resultados: list[dict], n: int = 5) -> list[dict]:
     """Toma los n peores y los n mejores por F1, sin duplicados y en orden ascendente."""
+    if n < 0:
+        raise ValueError("n no puede ser negativo")
     ordenados = ordenar_peores_primero(resultados)
     return ordenados[:n] + ordenados[max(n, len(ordenados) - n):]
