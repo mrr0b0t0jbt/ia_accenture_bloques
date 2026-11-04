@@ -169,3 +169,45 @@ def test_main_sin_flag_en_interprete_limpio_no_carga_langchain_ni_el_cliente(tmp
     )
     assert proceso.returncode == 0, proceso.stderr
     assert json.loads(proceso.stdout) == {"codigo": 2, "cargados": []}
+
+
+@pytest.mark.parametrize(
+    "casos",
+    [
+        {"avisos": [], "mensajes": [{"mensaje": "Mensaje ficticio."}]},
+        {"avisos": [], "mensajes": [{"mensaje": "Mensaje ficticio.", "esperada": "otra"}]},
+        {"avisos": [{"titulo": "Aviso ficticio."}], "mensajes": []},
+        {"avisos": []},
+    ],
+    ids=["mensaje_sin_esperada", "esperada_desconocida", "aviso_sin_texto", "json_sin_mensajes"],
+)
+def test_main_con_casos_invalidos_devuelve_1_sin_crear_modelo_ni_salida(monkeypatch, tmp_path, capsys, casos):
+    falso = MagicMock()
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", falso)
+    salida = tmp_path / "salida.json"
+    argv = ["--confirmar-api-real", "--casos", _escribir_casos(tmp_path, casos), "--salida", str(salida)]
+    assert ejecutar_cadenas.main(argv) == 1
+    falso.assert_not_called()
+    assert not salida.exists()
+    assert capsys.readouterr().err.startswith("Error: ")
+
+
+def test_main_devuelve_1_si_ningun_caso_da_un_resultado_util(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda: MagicMock(side_effect=ConnectionError("simulado")))
+    salida = tmp_path / "salida.json"
+    assert ejecutar_cadenas.main(["--confirmar-api-real", "--casos", CASOS, "--salida", str(salida)]) == 1
+    captura = capsys.readouterr()
+    assert "Costo total estimado" in captura.out
+    assert "resultado útil" in captura.err
+    assert len(json.loads(salida.read_text(encoding="utf-8"))["resultados"]) == 4
+
+
+def test_main_devuelve_0_si_al_menos_un_caso_da_un_resultado_util(monkeypatch, tmp_path):
+    error = ConnectionError("simulado")
+    # el aviso falla en su primer paso, el primer mensaje responde y los otros dos fallan al clasificar
+    modelo = MagicMock(side_effect=[error, AIMessage(content="incidente"), AIMessage(content="respuesta útil"), error, error])
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda: modelo)
+    salida = tmp_path / "salida.json"
+    assert ejecutar_cadenas.main(["--confirmar-api-real", "--casos", CASOS, "--salida", str(salida)]) == 0
+    resultados = json.loads(salida.read_text(encoding="utf-8"))["resultados"]
+    assert [r.get("respuesta") == "respuesta útil" for r in resultados] == [False, True, False, False]
