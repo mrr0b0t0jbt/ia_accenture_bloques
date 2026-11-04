@@ -236,7 +236,7 @@ python scripts/ejecutar_cadenas.py --confirmar-api-real
 
 **Límites conocidos** (documentados, no corregidos):
 
-- **El tope se revisa entre casos**: el primer caso siempre corre y el caso en curso puede pasarse. Con tope 1e-9 el aviso completo corrió igual: 3 llamadas, USD 0.0012 estimados (revisión de QA, no una corrida real). Con los casos del repo, el peor caso calculado, no medido, ronda USD 0.054.
+- **El tope se revisa entre casos**: el primer caso siempre corre y el caso en curso puede pasarse. Con tope 1e-9 el aviso completo corrió igual: 3 llamadas, USD 0.0012 estimados (dato de la revisión de QA contra un servidor falso local, no de la API real; no es una corrida real). Con los casos del repo, el peor caso calculado, no medido, ronda USD 0.054.
 - **`MAX_LLAMADAS` no cuenta peticiones HTTP**: cuenta las llamadas del plan (9). Con `max_retries=2`, un servidor que falla produce hasta 3 intentos por llamada, y el medidor de uso no ve las peticiones fallidas.
 - **Clave de solo espacios**: `crear_modelo` solo rechaza la cadena vacía. Una clave de espacios o tabs pasa y el problema aparece como error de conexión en la primera llamada.
 - **Medidor de uso sin validar contra la API**: se probó con un servidor falso local, no con la respuesta real. Si la respuesta real no trae el nombre del modelo, el costo estimado quedaría en 0 y el script solo registraría un warning; por eso la primera corrida real se revisa a mano.

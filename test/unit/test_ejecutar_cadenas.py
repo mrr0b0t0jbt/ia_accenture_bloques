@@ -146,6 +146,19 @@ def test_ejecutar_casos_corta_entre_casos_al_llegar_al_tope(tmp_path):
     assert len(llamadas) == 3
 
 
+def test_ejecutar_casos_corta_cuando_el_costo_iguala_exactamente_el_tope(tmp_path):
+    casos = ejecutar_cadenas.cargar_casos(CASOS)
+    ruta = str(tmp_path / "salida.json")
+    primera = ejecutar_cadenas.ejecutar_casos(casos, _modelo_falso([]), 1.0, ruta)
+    # el tope se toma del propio resultado: recalcularlo a mano podría diferir por redondeo de punto flotante
+    costo = primera["resultados"][0]["costo_estimado"]
+    llamadas = []
+    salida = ejecutar_cadenas.ejecutar_casos(casos, _modelo_falso(llamadas), costo, ruta)
+    assert len(salida["resultados"]) == 1
+    assert salida["cortado_por_tope"] is True
+    assert len(llamadas) == 3
+
+
 def test_ruta_que_falla_marca_hubo_fallo_con_la_respuesta_generica(tmp_path):
     modelo = MagicMock(side_effect=[AIMessage(content="incidente"), ConnectionError("simulado")])
     casos = {"avisos": [], "mensajes": [MENSAJE_FICTICIO]}
@@ -178,8 +191,19 @@ def test_main_sin_flag_en_interprete_limpio_no_carga_langchain_ni_el_cliente(tmp
         {"avisos": [], "mensajes": [{"mensaje": "Mensaje ficticio.", "esperada": "otra"}]},
         {"avisos": [{"titulo": "Aviso ficticio."}], "mensajes": []},
         {"avisos": []},
+        {"avisos": [], "mensajes": [{"mensaje": "   ", "esperada": "consulta"}]},
+        {"avisos": [{"texto": "   "}], "mensajes": []},
+        {"avisos": [], "mensajes": [{"mensaje": "", "esperada": "consulta"}]},
     ],
-    ids=["mensaje_sin_esperada", "esperada_desconocida", "aviso_sin_texto", "json_sin_mensajes"],
+    ids=[
+        "mensaje_sin_esperada",
+        "esperada_desconocida",
+        "aviso_sin_texto",
+        "json_sin_mensajes",
+        "mensaje_solo_espacios",
+        "aviso_solo_espacios",
+        "mensaje_vacio",
+    ],
 )
 def test_main_con_casos_invalidos_devuelve_1_sin_crear_modelo_ni_salida(monkeypatch, tmp_path, capsys, casos):
     falso = MagicMock()
