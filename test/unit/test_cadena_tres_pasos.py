@@ -65,4 +65,4 @@ def test_crear_modelo_con_clave_falsa_devuelve_chat_anthropic(monkeypatch):
     modelo = modelo_langchain.crear_modelo()
     assert isinstance(modelo, ChatAnthropic)
     assert modelo.model == "claude-sonnet-5-5"
-    assert modelo.temperature == 0
+    assert modelo.temperature is None

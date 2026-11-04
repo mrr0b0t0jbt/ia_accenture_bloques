@@ -178,7 +178,7 @@ python scripts/ejecutar_metricas.py --confirmar-api-real
 | 2 | `{puntos}` | Reescribirlos en lenguaje simple |
 | 3 | `{texto_simple}` | Formatearlos como checklist en viñetas markdown, máximo 3 líneas |
 
-`construir_cadena(modelo)` devuelve la chain completa sin ejecutarla y `construir_pasos(modelo)` las tres sub-chains por separado. Ningún módulo crea el modelo ni lee la clave al importarse: `crear_modelo()` (`src/modelo_langchain.py`) lo crea cuando se le llama y las pruebas inyectan un mock. Los reintentos son los de LangChain (`max_retries=2` del modelo), no `with_retry`.
+`construir_cadena(modelo)` devuelve la chain completa sin ejecutarla y `construir_pasos(modelo)` las tres sub-chains por separado. Ningún módulo crea el modelo ni lee la clave al importarse: `crear_modelo()` (`src/modelo_langchain.py`) lo crea cuando se le llama y las pruebas inyectan un mock. Los reintentos son los de LangChain (`max_retries=2` del modelo), no `with_retry`. `claude-sonnet-5-5` no admite `temperature` distinta de la de por defecto (ni `top_k`), por eso `crear_modelo` no la configura; el control del determinismo de la clase no aplica a este modelo.
 
 Se prueba con `test/unit/test_cadena_tres_pasos.py`, sin red. La corrida real está en [LangChain: corrida real con topes](#langchain-corrida-real-con-topes).
 

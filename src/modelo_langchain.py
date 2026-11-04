@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 
 
-def crear_modelo(temperature: float = 0, max_tokens: int = 1024, timeout: float = 30):
+def crear_modelo(max_tokens: int = 1024, timeout: float = 30):
     """Crea el ChatAnthropic de Sonnet 5.5 con la clave de .env."""
     load_dotenv()
     clave = os.getenv("CLAUDE_API_KEY")
@@ -12,10 +12,10 @@ def crear_modelo(temperature: float = 0, max_tokens: int = 1024, timeout: float 
     # import perezoso: importar este módulo no carga langchain_anthropic
     from langchain_anthropic import ChatAnthropic
 
+    # Sonnet 5.5 solo admite la temperatura por defecto
     return ChatAnthropic(
         model="claude-sonnet-5-5",
         api_key=clave,
-        temperature=temperature,
         max_tokens=max_tokens,
         timeout=timeout,
         max_retries=2,
