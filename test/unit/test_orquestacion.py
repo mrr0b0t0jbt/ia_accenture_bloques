@@ -1,11 +1,13 @@
 import logging
 from unittest.mock import MagicMock
 
+import pytest
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 
 import enrutamiento
 from enrutamiento import (
+    MENSAJE_ERROR,
     RESPUESTA_GENERICA,
     construir_cadena_con_enrutamiento,
     construir_flujo,
@@ -75,3 +77,17 @@ def test_flujo_completo_el_respaldo_de_la_ruta_actua_antes_del_try_except():
     modelo = MagicMock(side_effect=[AIMessage(content="incidente"), ConnectionError("simulado")])
     assert procesar_mensaje_seguro(construir_flujo(modelo), "mensaje de prueba") == RESPUESTA_GENERICA
     assert modelo.call_count == 2
+
+
+@pytest.mark.parametrize("tipo_error", [NameError, ValueError, TypeError])
+def test_procesar_mensaje_seguro_captura_cualquier_excepcion_y_la_registra(tipo_error, caplog):
+    cadena = RunnableLambda(MagicMock(side_effect=tipo_error("simulado")))
+    with caplog.at_level(logging.ERROR, logger="enrutamiento"):
+        assert procesar_mensaje_seguro(cadena, "mensaje de prueba") == MENSAJE_ERROR
+    assert any(registro.levelno == logging.ERROR for registro in caplog.records)
+
+
+@pytest.mark.parametrize("tipo_error", [ValueError, KeyError])
+def test_ruta_segura_responde_generica_ante_errores_que_no_son_de_red(tipo_error):
+    ruta_rota = RunnableLambda(MagicMock(side_effect=tipo_error("simulado")))
+    assert construir_ruta_segura(ruta_rota).invoke(ENTRADA) == RESPUESTA_GENERICA
