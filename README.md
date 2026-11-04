@@ -192,7 +192,7 @@ Se prueba con `test/unit/test_cadena_tres_pasos.py`, sin red. La corrida real es
 | `vulnerabilidad` | Un hallazgo o CVE a evaluar | Evaluar la severidad y la remediación |
 | `consulta` | Pregunta general (**ruta por defecto**) | Responder con precisión |
 
-**Riesgo de la ruta por defecto**: una categoría inesperada (por ejemplo, si el modelo responde con una frase en vez de una palabra) cae en `consulta` sin avisar, así que un incidente mal clasificado se respondería como una pregunta general. Para depurar, mira qué devuelve la clasificación por sí sola:
+**Riesgo de la ruta por defecto**: la clasificación tolera mayúsculas, espacios y puntuación en los extremos, pero no interpreta frases. Una categoría inesperada (por ejemplo, si el modelo responde con una frase en vez de una palabra) cae en `consulta` y solo deja un `logger.warning` (`Categoria inesperada`), así que un incidente mal clasificado se respondería como una pregunta general. Para depurar, mira qué devuelve la clasificación por sí sola:
 
 ```python
 paso_clasificacion = construir_paso_clasificacion(modelo)
@@ -233,6 +233,13 @@ python scripts/ejecutar_cadenas.py --confirmar-api-real
 - `MAX_LLAMADAS` (12) es un límite fijo en el código: si los casos requieren más llamadas, sale con código 1 antes de crear el modelo. Cuenta las llamadas del plan, no los reintentos internos del modelo (`max_retries=2`).
 - El costo se calcula con `UsageMetadataCallbackHandler` y los precios de `src/api_claude_refactor.py`: es una **estimación**, no el cobro real.
 - Escribe los resultados en `docs/resultados_cadenas.json` (`--salida` lo cambia) y reescribe el archivo después de cada caso. Informa si una categoría obtenida difiere de la esperada y si una respuesta es un texto de respaldo.
+
+**Límites conocidos** (documentados, no corregidos):
+
+- **El tope se revisa entre casos**: el primer caso siempre corre y el caso en curso puede pasarse. Con tope 1e-9 el aviso completo corrió igual: 3 llamadas, USD 0.0012 estimados (revisión de QA, no una corrida real). Con los casos del repo, el peor caso calculado, no medido, ronda USD 0.054.
+- **`MAX_LLAMADAS` no cuenta peticiones HTTP**: cuenta las llamadas del plan (9). Con `max_retries=2`, un servidor que falla produce hasta 3 intentos por llamada, y el medidor de uso no ve las peticiones fallidas.
+- **Clave de solo espacios**: `crear_modelo` solo rechaza la cadena vacía. Una clave de espacios o tabs pasa y el problema aparece como error de conexión en la primera llamada.
+- **Medidor de uso sin validar contra la API**: se probó con un servidor falso local, no con la respuesta real. Si la respuesta real no trae el nombre del modelo, el costo estimado quedaría en 0 y el script solo registraría un warning; por eso la primera corrida real se revisa a mano.
 
 Todavía no hay resultados reales de esta corrida.
 
@@ -322,6 +329,7 @@ test/
   unit/test_metricas_texto.py          pruebas de las métricas de texto
   unit/test_ejecutar_metricas.py       pruebas del script de métricas, con mocks
   unit/test_ensayo_rate_limit_real.py  pruebas del ensayo real, con mocks
+  unit/test_modelo_langchain.py        pruebas de crear_modelo y de su validación, sin red
   unit/test_cadena_tres_pasos.py       pruebas de la chain de tres pasos, con mocks
   unit/test_enrutamiento.py            pruebas del enrutamiento condicional, con mocks
   unit/test_orquestacion.py            pruebas de los fallos controlados y del flujo completo, con mocks
