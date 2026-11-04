@@ -202,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
     if problema:
         print(f"Error: {problema}", file=sys.stderr)
         return 1
-    llamadas =LLAMADAS_POR_AVISO * len(casos["avisos"]) + LLAMADAS_POR_MENSAJE * len(casos["mensajes"])
+    llamadas = LLAMADAS_POR_AVISO * len(casos["avisos"]) + LLAMADAS_POR_MENSAJE * len(casos["mensajes"])
     if llamadas > MAX_LLAMADAS:
         print(f"Error: los casos requieren {llamadas} llamadas; el máximo es {MAX_LLAMADAS}.", file=sys.stderr)
         return 1
