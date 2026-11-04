@@ -1,0 +1,21 @@
+{
+  "avisos": [
+    {
+      "texto": "El fabricante ficticio Ejemplo Redes publicó el aviso CVE-0000-00001 para su producto PuertaDemo 3.2. Una falla en el panel de administración permite a un atacante remoto sin credenciales ejecutar comandos en el equipo. Hay código de explotación público y se han reportado intentos en entornos de prueba. El fabricante recomienda actualizar a la versión 3.3 y restringir el acceso al panel a la red interna."
+    }
+  ],
+  "mensajes": [
+    {
+      "mensaje": "Hace diez minutos el servidor app01.ejemplo.test empezó a cifrar archivos y aparecen notas de rescate en sus carpetas compartidas.",
+      "esperada": "incidente"
+    },
+    {
+      "mensaje": "Un escaneo encontró CVE-0000-00002 en la biblioteca ficticia LibDemo 1.4 que usa nuestro portal interno. ¿Qué tan grave es y cómo se corrige?",
+      "esperada": "vulnerabilidad"
+    },
+    {
+      "mensaje": "¿Cuál es la diferencia entre una política de contraseñas y la autenticación multifactor?",
+      "esperada": "consulta"
+    }
+  ]
+}

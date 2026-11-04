@@ -180,7 +180,7 @@ python scripts/ejecutar_metricas.py --confirmar-api-real
 
 `construir_cadena(modelo)` devuelve la chain completa sin ejecutarla y `construir_pasos(modelo)` las tres sub-chains por separado. Ningún módulo crea el modelo ni lee la clave al importarse: `crear_modelo()` (`src/modelo_langchain.py`) lo crea cuando se le llama y las pruebas inyectan un mock. Los reintentos son los de LangChain (`max_retries=2` del modelo), no `with_retry`.
 
-Se prueba con `test/unit/test_cadena_tres_pasos.py`, sin red. Todavía no hay corrida real de esta chain ni resultados.
+Se prueba con `test/unit/test_cadena_tres_pasos.py`, sin red. La corrida real está en [LangChain: corrida real con topes](#langchain-corrida-real-con-topes).
 
 ## LangChain: enrutamiento
 
@@ -218,6 +218,23 @@ paso_clasificacion.invoke({"mensaje": "..."})
 | [x] | Bifurcación | `test_categoria_inventada_cae_en_la_ruta_por_defecto` |
 | [x] | Rutas | `test_ruta_elegida_recibe_el_mensaje_original_y_la_categoria` |
 | [x] | Flujo completo | `test_flujo_completo_el_respaldo_de_la_ruta_actua_antes_del_try_except` |
+
+## LangChain: corrida real con topes
+
+Pasa el aviso y los 3 mensajes ficticios de `JSON/casos_cadenas.json` por la chain de tres pasos y el enrutamiento:
+
+```bash
+python scripts/ejecutar_cadenas.py --confirmar-api-real
+```
+
+- Hace 9 llamadas **REALES** a la API de Claude (3 de la chain y 2 por mensaje: clasificación y ruta), con costo. El costo aún no se ha medido; con el máximo de 1024 tokens de salida, las 9 llamadas sumarían cerca de USD 0.09 sin contar la entrada, y por eso el tope puede cortar la corrida antes de terminar.
+- `--confirmar-api-real` es obligatorio: sin él el script sale con código 2 sin cargar LangChain ni tocar la red.
+- `--tope-usd` es US$ 0.05 por defecto y como máximo; un valor mayor o menor o igual a 0 sale con código 1. Se comprueba entre casos, así que el caso en curso puede sobrepasarlo.
+- `MAX_LLAMADAS` (12) es un límite fijo en el código: si los casos requieren más llamadas, sale con código 1 antes de crear el modelo. Cuenta las llamadas del plan, no los reintentos internos del modelo (`max_retries=2`).
+- El costo se calcula con `UsageMetadataCallbackHandler` y los precios de `src/api_claude_refactor.py`: es una **estimación**, no el cobro real.
+- Escribe los resultados en `docs/resultados_cadenas.json` (`--salida` lo cambia) y reescribe el archivo después de cada caso. Informa si una categoría obtenida difiere de la esperada y si una respuesta es un texto de respaldo.
+
+Todavía no hay resultados reales de esta corrida.
 
 ## Ensayo real de rate limit
 
@@ -296,6 +313,7 @@ scripts/
   ejecutar_pipeline.py           pipeline de texto sobre respuestas reales de Claude (con costo)
   ejecutar_metricas.py           precisión, cobertura y F1 sobre respuestas reales de Claude (con costo)
   ensayo_rate_limit_real.py      ensayo de rate limit real contra Claude (con costo)
+  ejecutar_cadenas.py            chain de tres pasos y enrutamiento sobre respuestas reales de Claude (con costo)
 test/
   unit/test_api_claude_refactor.py     pruebas unitarias con mocks
   unit/test_api_gemini.py              pruebas minimas del manejo de errores del cliente Gemini, con mocks
@@ -307,6 +325,7 @@ test/
   unit/test_cadena_tres_pasos.py       pruebas de la chain de tres pasos, con mocks
   unit/test_enrutamiento.py            pruebas del enrutamiento condicional, con mocks
   unit/test_orquestacion.py            pruebas de los fallos controlados y del flujo completo, con mocks
+  unit/test_ejecutar_cadenas.py        pruebas del script de las cadenas, con un modelo falso
   test_consistencia.py         prueba de consistencia con Claude
   test_consistencia_gemini.py  misma prueba con Gemini (comparativa)
 JSON/
@@ -316,12 +335,14 @@ JSON/
   registro_resultados_gemini.json  resultado de la última prueba con Gemini
   casos_pipeline.json              consultas y referencias del pipeline de texto
   casos_metricas.json              consultas y referencias de las métricas de texto
+  casos_cadenas.json               aviso y mensajes ficticios de las cadenas de LangChain
 docs/                      decisión de arquitectura, diagrama y evidencias
   registro_rate_limit.md   registro del ensayo de rate limit (simulado)
   registro_pipeline.md     registro del pipeline de texto (se genera al correr el script)
   registro_rate_limit_real.md  registro del ensayo de rate limit real (se genera al correr el ensayo)
   registro_rate_limit_real_concurrente.md  registro del ensayo concurrente (se genera al correr el ensayo con --concurrencia mayor que 1)
   resultados_metricas.json  resultados de la corrida real de métricas (se genera al correr ejecutar_metricas.py)
+  resultados_cadenas.json  resultados de la corrida real de las cadenas (se genera al correr ejecutar_cadenas.py)
   revision_manual.json     revisión manual de 10 casos con la rúbrica de tres preguntas
   limites_metrica.md       límites conocidos de la métrica y recomendación de uso
 ```
