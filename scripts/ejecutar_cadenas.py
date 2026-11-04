@@ -31,6 +31,32 @@ def cargar_casos(ruta: str) -> dict:
         return json.load(archivo)
 
 
+def _es_texto_no_vacio(valor) -> bool:
+    """Indica si el valor es una cadena con algo más que espacios."""
+    return isinstance(valor, str) and bool(valor.strip())
+
+
+def validar_casos(casos) -> str | None:
+    """Devuelve el primer problema de estructura de los casos, o None si no hay ninguno."""
+    # import diferido: enrutamiento carga langchain_core, y aquí ya se pasó el flag
+    from enrutamiento import CATEGORIAS
+
+    if not isinstance(casos, dict):
+        return "el archivo de casos no es un objeto JSON."
+    for clave in ("avisos", "mensajes"):
+        if not isinstance(casos.get(clave), list):
+            return f"el archivo de casos no tiene la lista {clave}."
+    for n, aviso in enumerate(casos["avisos"]):
+        if not isinstance(aviso, dict) or not _es_texto_no_vacio(aviso.get("texto")):
+            return f"avisos[{n}] no tiene el campo texto válido."
+    for n, mensaje in enumerate(casos["mensajes"]):
+        if not isinstance(mensaje, dict) or not _es_texto_no_vacio(mensaje.get("mensaje")):
+            return f"mensajes[{n}] no tiene el campo mensaje válido."
+        if mensaje.get("esperada") not in CATEGORIAS:
+            return f"mensajes[{n}] no tiene el campo esperada válido."
+    return None
+
+
 def guardar_resultados(salida: dict, ruta_salida: str) -> None:
     """Reescribe el archivo de salida completo con los resultados."""
     with open(ruta_salida, "w", encoding="utf-8") as archivo:
@@ -172,7 +198,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: --tope-usd debe ser mayor que 0 y como máximo {TOPE_USD_MAXIMO}.", file=sys.stderr)
         return 1
     casos = cargar_casos(args.casos)
-    llamadas = LLAMADAS_POR_AVISO * len(casos["avisos"]) + LLAMADAS_POR_MENSAJE * len(casos["mensajes"])
+    problema = validar_casos(casos)
+    if problema:
+        print(f"Error: {problema}", file=sys.stderr)
+        return 1
+    llamadas =LLAMADAS_POR_AVISO * len(casos["avisos"]) + LLAMADAS_POR_MENSAJE * len(casos["mensajes"])
     if llamadas > MAX_LLAMADAS:
         print(f"Error: los casos requieren {llamadas} llamadas; el máximo es {MAX_LLAMADAS}.", file=sys.stderr)
         return 1
@@ -185,7 +215,11 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
-    informar(ejecutar_casos(casos, modelo, args.tope_usd, args.salida))
+    salida = ejecutar_casos(casos, modelo, args.tope_usd, args.salida)
+    informar(salida)
+    if not any("error" not in r and not r.get("hubo_fallo") for r in salida["resultados"]):
+        print("Error: ningún caso dio un resultado útil.", file=sys.stderr)
+        return 1
     return 0
 
 

@@ -1,4 +1,5 @@
 import logging
+import string
 
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
@@ -9,6 +10,8 @@ logger = logging.getLogger(__name__)
 RESPUESTA_GENERICA = "Gracias por tu mensaje. Un miembro del equipo te responderá pronto."
 MENSAJE_ERROR = "No pudimos procesar tu mensaje en este momento. Intenta de nuevo más tarde."
 respuesta_generica = RunnableLambda(lambda _: RESPUESTA_GENERICA, name="respuesta_generica")
+CATEGORIAS = ("incidente", "vulnerabilidad", "consulta")
+_RELLENO_CATEGORIA = string.whitespace + string.punctuation + "¿¡«»“”‘’"
 
 PLANTILLA_CLASIFICACION = PromptTemplate.from_template(
     "Clasifica el siguiente mensaje en una sola palabra: incidente, vulnerabilidad o consulta. "
@@ -30,8 +33,11 @@ PLANTILLAS_RUTAS = {
 
 
 def _normalizar_categoria(categoria: str) -> str:
-    """Quita espacios y mayúsculas de la categoría que devolvió el modelo."""
-    return categoria.strip().lower()
+    """Quita mayúsculas, y espacios y puntuación de los extremos, de la categoría que devolvió el modelo."""
+    normalizada = categoria.lower().strip(_RELLENO_CATEGORIA)
+    if normalizada not in CATEGORIAS:
+        logger.warning("Categoria inesperada: %r", categoria)
+    return normalizada
 
 
 def construir_paso_clasificacion(modelo) -> RunnableSerializable:
@@ -60,9 +66,24 @@ def construir_cadena_con_enrutamiento(
     return RunnablePassthrough.assign(categoria=paso_clasificacion) | bifurcacion
 
 
+def _registrar_fallo(cadena) -> RunnableLambda:
+    """Envuelve una ruta para registrar su excepción y relanzarla hacia el respaldo siguiente."""
+
+    def invocar(entrada, config):
+        try:
+            return cadena.invoke(entrada, config)
+        except Exception:
+            logger.exception("Fallo una ruta")
+            raise
+
+    return RunnableLambda(invocar, name="ruta_con_registro")
+
+
 def construir_ruta_segura(cadena, respaldos=None) -> RunnableSerializable:
-    """Envuelve una ruta con sus respaldos en orden y la respuesta genérica al final."""
-    return cadena.with_fallbacks([*(respaldos or []), respuesta_generica])
+    """Envuelve una ruta con sus respaldos en orden, registrando sus fallos, y la respuesta genérica al final."""
+    return _registrar_fallo(cadena).with_fallbacks(
+        [*(_registrar_fallo(respaldo) for respaldo in respaldos or []), respuesta_generica]
+    )
 
 
 def construir_rutas_seguras(modelo, modelo_secundario=None) -> dict[str, RunnableSerializable]:

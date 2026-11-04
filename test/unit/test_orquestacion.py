@@ -1,11 +1,13 @@
 import logging
 from unittest.mock import MagicMock
 
+import pytest
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 
 import enrutamiento
 from enrutamiento import (
+    MENSAJE_ERROR,
     RESPUESTA_GENERICA,
     construir_cadena_con_enrutamiento,
     construir_flujo,
@@ -21,6 +23,10 @@ def _lanzar_error_de_conexion(_entrada: dict) -> str:
 
 
 RUTA_ROTA = RunnableLambda(_lanzar_error_de_conexion)
+
+
+def _registros_error(caplog) -> list[logging.LogRecord]:
+    return [registro for registro in caplog.records if registro.levelno == logging.ERROR]
 
 
 def _espiar_generica(monkeypatch) -> MagicMock:
@@ -75,3 +81,39 @@ def test_flujo_completo_el_respaldo_de_la_ruta_actua_antes_del_try_except():
     modelo = MagicMock(side_effect=[AIMessage(content="incidente"), ConnectionError("simulado")])
     assert procesar_mensaje_seguro(construir_flujo(modelo), "mensaje de prueba") == RESPUESTA_GENERICA
     assert modelo.call_count == 2
+
+
+@pytest.mark.parametrize("tipo_error", [NameError, ValueError, TypeError])
+def test_procesar_mensaje_seguro_captura_cualquier_excepcion_y_la_registra(tipo_error, caplog):
+    cadena = RunnableLambda(MagicMock(side_effect=tipo_error("simulado")))
+    with caplog.at_level(logging.ERROR, logger="enrutamiento"):
+        assert procesar_mensaje_seguro(cadena, "mensaje de prueba") == MENSAJE_ERROR
+    assert any(registro.levelno == logging.ERROR for registro in caplog.records)
+
+
+@pytest.mark.parametrize("tipo_error", [ValueError, KeyError])
+def test_ruta_segura_responde_generica_ante_errores_que_no_son_de_red(tipo_error):
+    ruta_rota = RunnableLambda(MagicMock(side_effect=tipo_error("simulado")))
+    assert construir_ruta_segura(ruta_rota).invoke(ENTRADA) == RESPUESTA_GENERICA
+
+
+def test_error_de_programacion_en_una_ruta_queda_registrado_con_traceback(caplog):
+    ruta_rota = RunnableLambda(MagicMock(side_effect=NameError("simulado")))
+    with caplog.at_level(logging.ERROR, logger="enrutamiento"):
+        assert construir_ruta_segura(ruta_rota).invoke(ENTRADA) == RESPUESTA_GENERICA
+    errores = _registros_error(caplog)
+    assert len(errores) == 1
+    assert "Fallo una ruta" in errores[0].getMessage()
+    assert errores[0].exc_info
+
+
+def test_ruta_y_respaldo_rotos_dejan_dos_registros_y_la_respuesta_generica(caplog):
+    with caplog.at_level(logging.ERROR, logger="enrutamiento"):
+        assert construir_ruta_segura(RUTA_ROTA, [RUTA_ROTA]).invoke(ENTRADA) == RESPUESTA_GENERICA
+    assert len(_registros_error(caplog)) == 2
+
+
+def test_camino_normal_de_la_ruta_segura_no_registra_errores(caplog):
+    with caplog.at_level(logging.ERROR, logger="enrutamiento"):
+        assert construir_ruta_segura(RunnableLambda(lambda _: "ruta ok")).invoke(ENTRADA) == "ruta ok"
+    assert _registros_error(caplog) == []
