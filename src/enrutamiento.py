@@ -1,6 +1,14 @@
+import logging
+
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnableBranch, RunnableLambda, RunnablePassthrough, RunnableSerializable
+
+logger = logging.getLogger(__name__)
+
+RESPUESTA_GENERICA = "Gracias por tu mensaje. Un miembro del equipo te responderá pronto."
+MENSAJE_ERROR = "No pudimos procesar tu mensaje en este momento. Intenta de nuevo más tarde."
+respuesta_generica = RunnableLambda(lambda _: RESPUESTA_GENERICA, name="respuesta_generica")
 
 PLANTILLA_CLASIFICACION = PromptTemplate.from_template(
     "Clasifica el siguiente mensaje en una sola palabra: incidente, vulnerabilidad o consulta. "
@@ -52,9 +60,33 @@ def construir_cadena_con_enrutamiento(
     return RunnablePassthrough.assign(categoria=paso_clasificacion) | bifurcacion
 
 
-def construir_flujo(modelo) -> RunnableSerializable:
-    """Arma la clasificación y las tres rutas con un solo modelo."""
+def construir_ruta_segura(cadena, respaldos=None) -> RunnableSerializable:
+    """Envuelve una ruta con sus respaldos en orden y la respuesta genérica al final."""
+    return cadena.with_fallbacks([*(respaldos or []), respuesta_generica])
+
+
+def construir_rutas_seguras(modelo, modelo_secundario=None) -> dict[str, RunnableSerializable]:
+    """Devuelve las tres rutas con respaldo; el primero es la misma plantilla con modelo_secundario, si lo hay."""
     rutas = construir_rutas(modelo)
+    respaldos = construir_rutas(modelo_secundario) if modelo_secundario else None
+    return {
+        categoria: construir_ruta_segura(ruta, [respaldos[categoria]] if respaldos else None)
+        for categoria, ruta in rutas.items()
+    }
+
+
+def procesar_mensaje_seguro(cadena, mensaje: str, config=None) -> str:
+    """Ejecuta el flujo y, si falla lo que los respaldos no cubren, devuelve un texto fijo."""
+    try:
+        return cadena.invoke({"mensaje": mensaje}, config=config)
+    except Exception:
+        logger.exception("Error procesando mensaje")
+        return MENSAJE_ERROR
+
+
+def construir_flujo(modelo, modelo_secundario=None) -> RunnableSerializable:
+    """Arma la clasificación y las tres rutas seguras."""
+    rutas = construir_rutas_seguras(modelo, modelo_secundario)
     return construir_cadena_con_enrutamiento(
         construir_paso_clasificacion(modelo),
         cadena_incidente=rutas["incidente"],

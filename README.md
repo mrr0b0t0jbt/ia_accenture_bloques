@@ -199,6 +199,26 @@ paso_clasificacion = construir_paso_clasificacion(modelo)
 paso_clasificacion.invoke({"mensaje": "..."})
 ```
 
+## LangChain: fallos controlados
+
+`src/enrutamiento.py` tiene dos capas, y la primera actúa antes que la segunda:
+
+| Capa | Cuándo usarla | Qué devuelve |
+|---|---|---|
+| `construir_ruta_segura` (`with_fallbacks`) | Falla un paso que tiene una alternativa razonable: una ruta | El primer respaldo que funcione (la misma plantilla con `modelo_secundario`, si se pasó) y, al final, `RESPUESTA_GENERICA` |
+| `procesar_mensaje_seguro` (`try/except`) | Falla lo que no tiene respaldo, como la clasificación: sin categoría no hay ruta posible | Registra el error con `logger.exception` y devuelve un texto fijo |
+
+`with_fallbacks` solo reacciona a una excepción: **no cubre un paso colgado salvo que el modelo tenga timeout**. `crear_modelo` ya lo fija (30 s por defecto). No hay un modelo secundario fijado: `modelo_secundario` es un parámetro opcional.
+
+**Checklist de orquestación**:
+
+| Revisado | Pieza | Prueba que la cubre |
+|---|---|---|
+| [x] | Clasificación | `test_clasificacion_normaliza_espacios_y_mayusculas` |
+| [x] | Bifurcación | `test_categoria_inventada_cae_en_la_ruta_por_defecto` |
+| [x] | Rutas | `test_ruta_elegida_recibe_el_mensaje_original_y_la_categoria` |
+| [x] | Flujo completo | `test_flujo_completo_el_respaldo_de_la_ruta_actua_antes_del_try_except` |
+
 ## Ensayo real de rate limit
 
 Envía N peticiones seguidas a Claude pidiendo una respuesta de una sola palabra, para intentar provocar un 429 real del proveedor. Registra la petición del primer 429, las esperas del backoff, las llamadas HTTP y el costo:
@@ -270,7 +290,7 @@ src/
   metricas_texto.py        precisión, cobertura y F1 sobre tokens, contando repeticiones
   modelo_langchain.py      crea el ChatAnthropic de Sonnet 5.5 a pedido
   cadena_tres_pasos.py     chain de tres pasos: aviso, puntos clave, lenguaje simple, checklist
-  enrutamiento.py          clasifica mensajes y los envía a la ruta de su categoría
+  enrutamiento.py          clasifica mensajes, los envía a la ruta de su categoría y controla los fallos
 scripts/
   ensayo_rate_limit_simulado.py  ensayo de rate limit simulado con mocks
   ejecutar_pipeline.py           pipeline de texto sobre respuestas reales de Claude (con costo)
@@ -286,6 +306,7 @@ test/
   unit/test_ensayo_rate_limit_real.py  pruebas del ensayo real, con mocks
   unit/test_cadena_tres_pasos.py       pruebas de la chain de tres pasos, con mocks
   unit/test_enrutamiento.py            pruebas del enrutamiento condicional, con mocks
+  unit/test_orquestacion.py            pruebas de los fallos controlados y del flujo completo, con mocks
   test_consistencia.py         prueba de consistencia con Claude
   test_consistencia_gemini.py  misma prueba con Gemini (comparativa)
 JSON/
