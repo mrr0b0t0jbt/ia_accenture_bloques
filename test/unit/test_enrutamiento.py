@@ -1,7 +1,9 @@
 import importlib
+import logging
 import sys
 from unittest.mock import MagicMock
 
+import pytest
 from langchain_core.messages import AIMessage
 
 import enrutamiento
@@ -51,6 +53,38 @@ def test_categoria_inventada_cae_en_la_ruta_por_defecto():
 def test_clasificacion_normaliza_espacios_y_mayusculas():
     modelo = MagicMock(return_value=AIMessage(content=" Incidente \n"))
     assert construir_paso_clasificacion(modelo).invoke({"mensaje": "mensaje de prueba"}) == "incidente"
+
+
+@pytest.mark.parametrize(
+    "respuesta, esperada",
+    [
+        ("Incidente.", "incidente"),
+        ("**incidente**", "incidente"),
+        ("'vulnerabilidad'", "vulnerabilidad"),
+        (" Consulta! \n", "consulta"),
+    ],
+)
+def test_clasificacion_quita_la_puntuacion_de_los_extremos(respuesta, esperada):
+    modelo = MagicMock(return_value=AIMessage(content=respuesta))
+    assert construir_paso_clasificacion(modelo).invoke({"mensaje": "mensaje de prueba"}) == esperada
+
+
+def test_categoria_con_frase_se_devuelve_tal_cual_y_deja_un_warning(caplog):
+    modelo = MagicMock(return_value=AIMessage(content="incidente de seguridad"))
+    with caplog.at_level(logging.WARNING, logger="enrutamiento"):
+        categoria = construir_paso_clasificacion(modelo).invoke({"mensaje": "mensaje de prueba"})
+    assert categoria == "incidente de seguridad"
+    assert any(
+        registro.levelno == logging.WARNING and "Categoria inesperada" in registro.getMessage()
+        for registro in caplog.records
+    )
+
+
+def test_categoria_conocida_no_deja_warning(caplog):
+    modelo = MagicMock(return_value=AIMessage(content="incidente"))
+    with caplog.at_level(logging.WARNING, logger="enrutamiento"):
+        construir_paso_clasificacion(modelo).invoke({"mensaje": "mensaje de prueba"})
+    assert not [registro for registro in caplog.records if registro.levelno == logging.WARNING]
 
 
 def test_ruta_elegida_recibe_el_mensaje_original_y_la_categoria():
