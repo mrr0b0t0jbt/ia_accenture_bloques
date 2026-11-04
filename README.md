@@ -168,6 +168,74 @@ python scripts/ejecutar_metricas.py --confirmar-api-real
 
 **Resultados de la corrida real** (2026-10-30, 20 casos, costo estimado USD 0.018 con una llamada adicional por una consulta que se enfocó; detalle en [docs/resultados_metricas.json](docs/resultados_metricas.json)): precisión promedio 0.40, cobertura promedio 0.80 y F1 promedio 0.52. Las 20 respuestas resultaron correctas y aun así 19 tienen precisión menor que cobertura: la métrica penaliza la longitud, no los errores. La revisión manual de 10 casos (5 peores y 5 mejores, con rúbrica de corrección factual, completitud y contradicción) está en [docs/revision_manual.json](docs/revision_manual.json) y lo que la métrica no puede decir, con ejemplos, en [docs/limites_metrica.md](docs/limites_metrica.md).
 
+## LangChain: chain de tres pasos
+
+`src/cadena_tres_pasos.py` encadena tres prompts con `langchain-anthropic`. Convierte un aviso de seguridad en una checklist de remediación para alguien sin conocimientos técnicos:
+
+| Paso | Entrada | Responsabilidad |
+|---|---|---|
+| 1 | `{texto}` | Extraer los 3 puntos clave, uno por línea, sin desarrollarlos |
+| 2 | `{puntos}` | Reescribirlos en lenguaje simple |
+| 3 | `{texto_simple}` | Formatearlos como checklist en viñetas markdown, máximo 3 líneas |
+
+`construir_cadena(modelo)` devuelve la chain completa sin ejecutarla y `construir_pasos(modelo)` las tres sub-chains por separado. Ningún módulo crea el modelo ni lee la clave al importarse: `crear_modelo()` (`src/modelo_langchain.py`) lo crea cuando se le llama y las pruebas inyectan un mock. Los reintentos son los de LangChain (`max_retries=2` del modelo), no `with_retry`.
+
+Se prueba con `test/unit/test_cadena_tres_pasos.py`, sin red. La corrida real está en [LangChain: corrida real con topes](#langchain-corrida-real-con-topes).
+
+## LangChain: enrutamiento
+
+`src/enrutamiento.py` clasifica los mensajes dirigidos a un equipo de seguridad y envía cada uno a la ruta con el prompt que le corresponde:
+
+| Categoría | Cuándo | Qué pide la ruta |
+|---|---|---|
+| `incidente` | Algo sospechoso o roto ahora | Contener, priorizar y dar pasos inmediatos |
+| `vulnerabilidad` | Un hallazgo o CVE a evaluar | Evaluar la severidad y la remediación |
+| `consulta` | Pregunta general (**ruta por defecto**) | Responder con precisión |
+
+**Riesgo de la ruta por defecto**: una categoría inesperada (por ejemplo, si el modelo responde con una frase en vez de una palabra) cae en `consulta` sin avisar, así que un incidente mal clasificado se respondería como una pregunta general. Para depurar, mira qué devuelve la clasificación por sí sola:
+
+```python
+paso_clasificacion = construir_paso_clasificacion(modelo)
+paso_clasificacion.invoke({"mensaje": "..."})
+```
+
+## LangChain: fallos controlados
+
+`src/enrutamiento.py` tiene dos capas, y la primera actúa antes que la segunda:
+
+| Capa | Cuándo usarla | Qué devuelve |
+|---|---|---|
+| `construir_ruta_segura` (`with_fallbacks`) | Falla un paso que tiene una alternativa razonable: una ruta | El primer respaldo que funcione (la misma plantilla con `modelo_secundario`, si se pasó) y, al final, `RESPUESTA_GENERICA` |
+| `procesar_mensaje_seguro` (`try/except`) | Falla lo que no tiene respaldo, como la clasificación: sin categoría no hay ruta posible | Registra el error con `logger.exception` y devuelve un texto fijo |
+
+`with_fallbacks` solo reacciona a una excepción: **no cubre un paso colgado salvo que el modelo tenga timeout**. `crear_modelo` ya lo fija (30 s por defecto). No hay un modelo secundario fijado: `modelo_secundario` es un parámetro opcional.
+
+**Checklist de orquestación**:
+
+| Revisado | Pieza | Prueba que la cubre |
+|---|---|---|
+| [x] | Clasificación | `test_clasificacion_normaliza_espacios_y_mayusculas` |
+| [x] | Bifurcación | `test_categoria_inventada_cae_en_la_ruta_por_defecto` |
+| [x] | Rutas | `test_ruta_elegida_recibe_el_mensaje_original_y_la_categoria` |
+| [x] | Flujo completo | `test_flujo_completo_el_respaldo_de_la_ruta_actua_antes_del_try_except` |
+
+## LangChain: corrida real con topes
+
+Pasa el aviso y los 3 mensajes ficticios de `JSON/casos_cadenas.json` por la chain de tres pasos y el enrutamiento:
+
+```bash
+python scripts/ejecutar_cadenas.py --confirmar-api-real
+```
+
+- Hace 9 llamadas **REALES** a la API de Claude (3 de la chain y 2 por mensaje: clasificación y ruta), con costo. El costo aún no se ha medido; con el máximo de 1024 tokens de salida, las 9 llamadas sumarían cerca de USD 0.09 sin contar la entrada, y por eso el tope puede cortar la corrida antes de terminar.
+- `--confirmar-api-real` es obligatorio: sin él el script sale con código 2 sin cargar LangChain ni tocar la red.
+- `--tope-usd` es US$ 0.05 por defecto y como máximo; un valor mayor o menor o igual a 0 sale con código 1. Se comprueba entre casos, así que el caso en curso puede sobrepasarlo.
+- `MAX_LLAMADAS` (12) es un límite fijo en el código: si los casos requieren más llamadas, sale con código 1 antes de crear el modelo. Cuenta las llamadas del plan, no los reintentos internos del modelo (`max_retries=2`).
+- El costo se calcula con `UsageMetadataCallbackHandler` y los precios de `src/api_claude_refactor.py`: es una **estimación**, no el cobro real.
+- Escribe los resultados en `docs/resultados_cadenas.json` (`--salida` lo cambia) y reescribe el archivo después de cada caso. Informa si una categoría obtenida difiere de la esperada y si una respuesta es un texto de respaldo.
+
+Todavía no hay resultados reales de esta corrida.
+
 ## Ensayo real de rate limit
 
 Envía N peticiones seguidas a Claude pidiendo una respuesta de una sola palabra, para intentar provocar un 429 real del proveedor. Registra la petición del primer 429, las esperas del backoff, las llamadas HTTP y el costo:
@@ -237,11 +305,15 @@ src/
   main.py                  prueba de conexión
   pipeline_texto.py        limpieza, tokenización y coincidencia por palabras
   metricas_texto.py        precisión, cobertura y F1 sobre tokens, contando repeticiones
+  modelo_langchain.py      crea el ChatAnthropic de Sonnet 5.5 a pedido
+  cadena_tres_pasos.py     chain de tres pasos: aviso, puntos clave, lenguaje simple, checklist
+  enrutamiento.py          clasifica mensajes, los envía a la ruta de su categoría y controla los fallos
 scripts/
   ensayo_rate_limit_simulado.py  ensayo de rate limit simulado con mocks
   ejecutar_pipeline.py           pipeline de texto sobre respuestas reales de Claude (con costo)
   ejecutar_metricas.py           precisión, cobertura y F1 sobre respuestas reales de Claude (con costo)
   ensayo_rate_limit_real.py      ensayo de rate limit real contra Claude (con costo)
+  ejecutar_cadenas.py            chain de tres pasos y enrutamiento sobre respuestas reales de Claude (con costo)
 test/
   unit/test_api_claude_refactor.py     pruebas unitarias con mocks
   unit/test_api_gemini.py              pruebas minimas del manejo de errores del cliente Gemini, con mocks
@@ -250,6 +322,10 @@ test/
   unit/test_metricas_texto.py          pruebas de las métricas de texto
   unit/test_ejecutar_metricas.py       pruebas del script de métricas, con mocks
   unit/test_ensayo_rate_limit_real.py  pruebas del ensayo real, con mocks
+  unit/test_cadena_tres_pasos.py       pruebas de la chain de tres pasos, con mocks
+  unit/test_enrutamiento.py            pruebas del enrutamiento condicional, con mocks
+  unit/test_orquestacion.py            pruebas de los fallos controlados y del flujo completo, con mocks
+  unit/test_ejecutar_cadenas.py        pruebas del script de las cadenas, con un modelo falso
   test_consistencia.py         prueba de consistencia con Claude
   test_consistencia_gemini.py  misma prueba con Gemini (comparativa)
 JSON/
@@ -259,12 +335,14 @@ JSON/
   registro_resultados_gemini.json  resultado de la última prueba con Gemini
   casos_pipeline.json              consultas y referencias del pipeline de texto
   casos_metricas.json              consultas y referencias de las métricas de texto
+  casos_cadenas.json               aviso y mensajes ficticios de las cadenas de LangChain
 docs/                      decisión de arquitectura, diagrama y evidencias
   registro_rate_limit.md   registro del ensayo de rate limit (simulado)
   registro_pipeline.md     registro del pipeline de texto (se genera al correr el script)
   registro_rate_limit_real.md  registro del ensayo de rate limit real (se genera al correr el ensayo)
   registro_rate_limit_real_concurrente.md  registro del ensayo concurrente (se genera al correr el ensayo con --concurrencia mayor que 1)
   resultados_metricas.json  resultados de la corrida real de métricas (se genera al correr ejecutar_metricas.py)
+  resultados_cadenas.json  resultados de la corrida real de las cadenas (se genera al correr ejecutar_cadenas.py)
   revision_manual.json     revisión manual de 10 casos con la rúbrica de tres preguntas
   limites_metrica.md       límites conocidos de la métrica y recomendación de uso
 ```
