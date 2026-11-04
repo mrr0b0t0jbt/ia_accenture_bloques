@@ -168,6 +168,20 @@ python scripts/ejecutar_metricas.py --confirmar-api-real
 
 **Resultados de la corrida real** (2026-10-30, 20 casos, costo estimado USD 0.018 con una llamada adicional por una consulta que se enfocó; detalle en [docs/resultados_metricas.json](docs/resultados_metricas.json)): precisión promedio 0.40, cobertura promedio 0.80 y F1 promedio 0.52. Las 20 respuestas resultaron correctas y aun así 19 tienen precisión menor que cobertura: la métrica penaliza la longitud, no los errores. La revisión manual de 10 casos (5 peores y 5 mejores, con rúbrica de corrección factual, completitud y contradicción) está en [docs/revision_manual.json](docs/revision_manual.json) y lo que la métrica no puede decir, con ejemplos, en [docs/limites_metrica.md](docs/limites_metrica.md).
 
+## LangChain: chain de tres pasos
+
+`src/cadena_tres_pasos.py` encadena tres prompts con `langchain-anthropic`. Convierte un aviso de seguridad en una checklist de remediación para alguien sin conocimientos técnicos:
+
+| Paso | Entrada | Responsabilidad |
+|---|---|---|
+| 1 | `{texto}` | Extraer los 3 puntos clave, uno por línea, sin desarrollarlos |
+| 2 | `{puntos}` | Reescribirlos en lenguaje simple |
+| 3 | `{texto_simple}` | Formatearlos como checklist en viñetas markdown, máximo 3 líneas |
+
+`construir_cadena(modelo)` devuelve la chain completa sin ejecutarla y `construir_pasos(modelo)` las tres sub-chains por separado. Ningún módulo crea el modelo ni lee la clave al importarse: `crear_modelo()` (`src/modelo_langchain.py`) lo crea cuando se le llama y las pruebas inyectan un mock. Los reintentos son los de LangChain (`max_retries=2` del modelo), no `with_retry`.
+
+Se prueba con `test/unit/test_cadena_tres_pasos.py`, sin red. Todavía no hay corrida real de esta chain ni resultados.
+
 ## Ensayo real de rate limit
 
 Envía N peticiones seguidas a Claude pidiendo una respuesta de una sola palabra, para intentar provocar un 429 real del proveedor. Registra la petición del primer 429, las esperas del backoff, las llamadas HTTP y el costo:
@@ -237,6 +251,8 @@ src/
   main.py                  prueba de conexión
   pipeline_texto.py        limpieza, tokenización y coincidencia por palabras
   metricas_texto.py        precisión, cobertura y F1 sobre tokens, contando repeticiones
+  modelo_langchain.py      crea el ChatAnthropic de Sonnet 5.5 a pedido
+  cadena_tres_pasos.py     chain de tres pasos: aviso, puntos clave, lenguaje simple, checklist
 scripts/
   ensayo_rate_limit_simulado.py  ensayo de rate limit simulado con mocks
   ejecutar_pipeline.py           pipeline de texto sobre respuestas reales de Claude (con costo)
@@ -250,6 +266,7 @@ test/
   unit/test_metricas_texto.py          pruebas de las métricas de texto
   unit/test_ejecutar_metricas.py       pruebas del script de métricas, con mocks
   unit/test_ensayo_rate_limit_real.py  pruebas del ensayo real, con mocks
+  unit/test_cadena_tres_pasos.py       pruebas de la chain de tres pasos, con mocks
   test_consistencia.py         prueba de consistencia con Claude
   test_consistencia_gemini.py  misma prueba con Gemini (comparativa)
 JSON/
