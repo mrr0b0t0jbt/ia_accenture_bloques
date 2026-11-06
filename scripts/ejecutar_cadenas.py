@@ -18,7 +18,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 logger = logging.getLogger(__name__)
 
-TOPE_USD_MAXIMO = 0.05
+TOPE_USD_MAXIMO = 0.10
+MAX_TOKENS_MAXIMO = 2048
 MAX_LLAMADAS = 12
 LLAMADAS_POR_AVISO = 3
 LLAMADAS_POR_MENSAJE = 2
@@ -169,6 +170,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--casos", default="JSON/casos_cadenas.json")
     parser.add_argument("--salida", default="docs/resultados_cadenas.json")
     parser.add_argument("--tope-usd", type=float, default=TOPE_USD_MAXIMO)
+    parser.add_argument("--max-tokens", type=int, default=MAX_TOKENS_MAXIMO)
     parser.add_argument("--confirmar-api-real", action="store_true")
     args = parser.parse_args(argv)
     if not args.confirmar_api_real:
@@ -197,6 +199,9 @@ def main(argv: list[str] | None = None) -> int:
     if not 0 < args.tope_usd <= TOPE_USD_MAXIMO:
         print(f"Error: --tope-usd debe ser mayor que 0 y como máximo {TOPE_USD_MAXIMO}.", file=sys.stderr)
         return 1
+    if not 0 < args.max_tokens <= MAX_TOKENS_MAXIMO:
+        print(f"Error: --max-tokens debe ser mayor que 0 y como máximo {MAX_TOKENS_MAXIMO}.", file=sys.stderr)
+        return 1
     casos = cargar_casos(args.casos)
     problema = validar_casos(casos)
     if problema:
@@ -211,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
     from modelo_langchain import crear_modelo
 
     try:
-        modelo = crear_modelo()
+        modelo = crear_modelo(max_tokens=args.max_tokens)
     except ValueError as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
