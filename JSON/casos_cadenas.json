@@ -10,7 +10,7 @@
       "esperada": "incidente"
     },
     {
-      "mensaje": "Un escaneo encontró CVE-0000-00002 en la biblioteca ficticia LibDemo 1.4 que usa nuestro portal interno. ¿Qué tan grave es y cómo se corrige?",
+      "mensaje": "El escaneo de la herramienta interna de laboratorio reportó CVE-2099-10002 en LibDemo 1.4 (biblioteca ficticia de pruebas) usada por un portal interno: ejecución remota de código por deserialización insegura, CVSS 9.8 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H), sin parche publicado. Es un caso de laboratorio con datos inventados. ¿Qué prioridad le damos y cómo lo mitigamos?",
       "esperada": "vulnerabilidad"
     },
     {
