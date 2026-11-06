@@ -18,7 +18,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 logger = logging.getLogger(__name__)
 
-TOPE_USD_MAXIMO = 0.05
+TOPE_USD_MAXIMO = 0.10
+MAX_TOKENS_MAXIMO = 2048
 MAX_LLAMADAS = 12
 LLAMADAS_POR_AVISO = 3
 LLAMADAS_POR_MENSAJE = 2
@@ -109,6 +110,25 @@ def procesar_mensaje(modelo, caso: dict, config: dict) -> dict:
     }
 
 
+def _crear_detector_de_corte():
+    """Crea el callback que anota si alguna llamada terminó cortada por el límite de tokens."""
+    # import diferido: sin el flag no se carga langchain
+    from langchain_core.callbacks import BaseCallbackHandler
+
+    class DetectorDeCorte(BaseCallbackHandler):
+        truncado = False
+
+        def on_llm_end(self, response, **kwargs) -> None:
+            for generaciones in response.generations:
+                for generacion in generaciones:
+                    metadata = generacion.message.response_metadata
+                    # stop_reason es de Claude; finish_reason, de Gemini
+                    if metadata.get("stop_reason") == "max_tokens" or str(metadata.get("finish_reason")).upper() == "MAX_TOKENS":
+                        self.truncado = True
+
+    return DetectorDeCorte()
+
+
 def ejecutar_casos(casos: dict, modelo, tope_usd: float, ruta_salida: str) -> dict:
     """Procesa cada caso, mide su uso y corta entre casos al llegar al tope de gasto."""
     from api_claude_refactor import INPUT_PRICING, OUTPUT_PRICING
@@ -122,8 +142,9 @@ def ejecutar_casos(casos: dict, modelo, tope_usd: float, ruta_salida: str) -> di
             salida["cortado_por_tope"] = True
             break
         medidor = UsageMetadataCallbackHandler()
+        detector = _crear_detector_de_corte()
         try:
-            resultado = procesar(modelo, caso, {"callbacks": [medidor]})
+            resultado = procesar(modelo, caso, {"callbacks": [medidor, detector]})
         except Exception as error:
             # un caso fallido no corta los siguientes
             logger.exception("Error procesando caso")
@@ -134,7 +155,13 @@ def ejecutar_casos(casos: dict, modelo, tope_usd: float, ruta_salida: str) -> di
         tokens_salida = sum(uso["output_tokens"] for uso in medidor.usage_metadata.values())
         costo = tokens_entrada * INPUT_PRICING + tokens_salida * OUTPUT_PRICING
         salida["resultados"].append(
-            {**resultado, "tokens_entrada": tokens_entrada, "tokens_salida": tokens_salida, "costo_estimado": costo}
+            {
+                **resultado,
+                "tokens_entrada": tokens_entrada,
+                "tokens_salida": tokens_salida,
+                "costo_estimado": costo,
+                "truncado": detector.truncado,
+            }
         )
         salida["costo_total_estimado"] += costo
         # guardado incremental: si algo falla a mitad no se pierde lo ya pagado
@@ -151,6 +178,8 @@ def informar(salida: dict) -> None:
             print(f"  Error: {resultado['error']}")
         if resultado.get("hubo_fallo"):
             print("  Fallo: la respuesta es un texto de respaldo, no del modelo.")
+        if resultado.get("truncado"):
+            print("  AVISO: respuesta cortada por max_tokens.")
         if "categoria_esperada" in resultado:
             esperada, obtenida = resultado["categoria_esperada"], resultado["categoria_obtenida"]
             if obtenida != esperada:
@@ -169,6 +198,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--casos", default="JSON/casos_cadenas.json")
     parser.add_argument("--salida", default="docs/resultados_cadenas.json")
     parser.add_argument("--tope-usd", type=float, default=TOPE_USD_MAXIMO)
+    parser.add_argument("--max-tokens", type=int, default=MAX_TOKENS_MAXIMO)
     parser.add_argument("--confirmar-api-real", action="store_true")
     args = parser.parse_args(argv)
     if not args.confirmar_api_real:
@@ -197,6 +227,9 @@ def main(argv: list[str] | None = None) -> int:
     if not 0 < args.tope_usd <= TOPE_USD_MAXIMO:
         print(f"Error: --tope-usd debe ser mayor que 0 y como máximo {TOPE_USD_MAXIMO}.", file=sys.stderr)
         return 1
+    if not 0 < args.max_tokens <= MAX_TOKENS_MAXIMO:
+        print(f"Error: --max-tokens debe ser mayor que 0 y como máximo {MAX_TOKENS_MAXIMO}.", file=sys.stderr)
+        return 1
     casos = cargar_casos(args.casos)
     problema = validar_casos(casos)
     if problema:
@@ -211,7 +244,7 @@ def main(argv: list[str] | None = None) -> int:
     from modelo_langchain import crear_modelo
 
     try:
-        modelo = crear_modelo()
+        modelo = crear_modelo(max_tokens=args.max_tokens)
     except ValueError as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1

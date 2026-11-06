@@ -52,6 +52,18 @@ def _modelo_falso(llamadas: list[str], respuestas: list[str] = RESPUESTAS) -> Ge
     return GenericFakeChatModel(messages=generar())
 
 
+def _modelo_con_metadata(respuestas: list[tuple[str, dict]]) -> GenericFakeChatModel:
+    mensajes = [
+        AIMessage(
+            content=texto,
+            usage_metadata={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+            response_metadata={"model_name": "modelo-falso", **metadata},
+        )
+        for texto, metadata in respuestas
+    ]
+    return GenericFakeChatModel(messages=iter(mensajes))
+
+
 def _escribir_casos(tmp_path: Path, casos: dict) -> str:
     ruta = tmp_path / "casos.json"
     ruta.write_text(json.dumps(casos), encoding="utf-8")
@@ -87,7 +99,7 @@ def test_main_salida_en_directorio_inexistente_devuelve_1_sin_crear_modelo(monke
 
 def test_main_con_modelo_falso_procesa_4_casos_con_9_llamadas_y_escribe_el_json(monkeypatch, tmp_path, capsys):
     llamadas = []
-    monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda: _modelo_falso(llamadas))
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda **kwargs: _modelo_falso(llamadas))
     salida = tmp_path / "salida.json"
     assert ejecutar_cadenas.main(["--confirmar-api-real", "--casos", CASOS, "--salida", str(salida)]) == 0
     assert len(llamadas) == 9
@@ -104,7 +116,7 @@ def test_main_con_modelo_falso_procesa_4_casos_con_9_llamadas_y_escribe_el_json(
     assert "estimación" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("tope", ["0.051", "1", "0.0501"])
+@pytest.mark.parametrize("tope", ["0.101", "1", "0.1001"])
 def test_main_tope_sobre_el_maximo_devuelve_1_sin_crear_modelo(monkeypatch, tmp_path, tope):
     falso = MagicMock()
     monkeypatch.setattr(modelo_langchain, "crear_modelo", falso)
@@ -114,9 +126,48 @@ def test_main_tope_sobre_el_maximo_devuelve_1_sin_crear_modelo(monkeypatch, tmp_
 
 
 def test_main_tope_igual_al_maximo_se_acepta(monkeypatch, tmp_path):
-    monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda: _modelo_falso([]))
-    argv = ["--confirmar-api-real", "--casos", CASOS, "--salida", str(tmp_path / "salida.json"), "--tope-usd", "0.05"]
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda **kwargs: _modelo_falso([]))
+    argv = ["--confirmar-api-real", "--casos", CASOS, "--salida", str(tmp_path / "salida.json"), "--tope-usd", "0.10"]
     assert ejecutar_cadenas.main(argv) == 0
+
+
+def test_constantes_de_tope_y_de_max_tokens():
+    assert ejecutar_cadenas.TOPE_USD_MAXIMO == 0.10
+    assert ejecutar_cadenas.MAX_TOKENS_MAXIMO == 2048
+
+
+@pytest.mark.parametrize("max_tokens", ["2049", "0", "-1"])
+def test_main_max_tokens_fuera_de_rango_devuelve_1_sin_crear_modelo(monkeypatch, tmp_path, max_tokens):
+    falso = MagicMock()
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", falso)
+    argv = ["--confirmar-api-real", "--casos", CASOS, "--salida", str(tmp_path / "salida.json"), "--max-tokens", max_tokens]
+    assert ejecutar_cadenas.main(argv) == 1
+    falso.assert_not_called()
+
+
+def test_main_sin_max_tokens_crea_el_modelo_con_2048(monkeypatch, tmp_path):
+    capturados = {}
+
+    def crear(**kwargs):
+        capturados.update(kwargs)
+        return _modelo_falso([])
+
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", crear)
+    assert ejecutar_cadenas.main(["--confirmar-api-real", "--casos", CASOS, "--salida", str(tmp_path / "salida.json")]) == 0
+    assert capturados == {"max_tokens": 2048}
+
+
+def test_main_con_max_tokens_1000_crea_el_modelo_con_1000(monkeypatch, tmp_path):
+    capturados = {}
+
+    def crear(**kwargs):
+        capturados.update(kwargs)
+        return _modelo_falso([])
+
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", crear)
+    argv = ["--confirmar-api-real", "--casos", CASOS, "--salida", str(tmp_path / "salida.json"), "--max-tokens", "1000"]
+    assert ejecutar_cadenas.main(argv) == 0
+    assert capturados == {"max_tokens": 1000}
 
 
 def test_main_con_13_llamadas_devuelve_1_sin_crear_modelo(monkeypatch, tmp_path):
@@ -129,7 +180,7 @@ def test_main_con_13_llamadas_devuelve_1_sin_crear_modelo(monkeypatch, tmp_path)
 
 def test_main_con_exactamente_12_llamadas_se_ejecuta(monkeypatch, tmp_path):
     llamadas = []
-    monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda: _modelo_falso(llamadas, ["consulta"] * 12))
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda **kwargs: _modelo_falso(llamadas, ["consulta"] * 12))
     casos = _escribir_casos(tmp_path, {"avisos": [AVISO_FICTICIO] * 2, "mensajes": [MENSAJE_FICTICIO] * 3})
     assert ejecutar_cadenas.main(["--confirmar-api-real", "--casos", casos, "--salida", str(tmp_path / "salida.json")]) == 0
     assert len(llamadas) == 12
@@ -175,6 +226,42 @@ def test_camino_normal_no_marca_hubo_fallo(tmp_path):
     assert salida["resultados"][0]["hubo_fallo"] is False
 
 
+def test_respuesta_de_ruta_cortada_marca_truncado_solo_en_su_caso(tmp_path):
+    fin = {"stop_reason": "end_turn"}
+    modelo = _modelo_con_metadata(
+        [("puntos", fin), ("simple", fin), ("- [ ] lista", fin), ("consulta", fin), ("respuesta a medias", {"stop_reason": "max_tokens"})]
+    )
+    ruta = tmp_path / "salida.json"
+    ejecutar_cadenas.ejecutar_casos({"avisos": [AVISO_FICTICIO], "mensajes": [MENSAJE_FICTICIO]}, modelo, 0.05, str(ruta))
+    aviso, mensaje = json.loads(ruta.read_text(encoding="utf-8"))["resultados"]
+    assert aviso["truncado"] is False
+    assert mensaje["truncado"] is True
+
+
+def test_respuestas_completas_no_marcan_truncado(tmp_path):
+    fin = {"stop_reason": "end_turn"}
+    modelo = _modelo_con_metadata([("puntos", fin), ("simple", fin), ("- [ ] lista", fin), ("consulta", fin), ("respuesta", fin)])
+    casos = {"avisos": [AVISO_FICTICIO], "mensajes": [MENSAJE_FICTICIO]}
+    salida = ejecutar_cadenas.ejecutar_casos(casos, modelo, 0.05, str(tmp_path / "salida.json"))
+    assert [r["truncado"] for r in salida["resultados"]] == [False, False]
+
+
+def test_finish_reason_max_tokens_marca_truncado(tmp_path):
+    modelo = _modelo_con_metadata([("consulta", {}), ("respuesta a medias", {"finish_reason": "MAX_TOKENS"})])
+    casos = {"avisos": [], "mensajes": [MENSAJE_FICTICIO]}
+    salida = ejecutar_cadenas.ejecutar_casos(casos, modelo, 0.05, str(tmp_path / "salida.json"))
+    assert salida["resultados"][0]["truncado"] is True
+
+
+def test_informar_avisa_solo_de_las_respuestas_truncadas(capsys):
+    salida = {"resultados": [{"respuesta": "a medias", "truncado": True}], "cortado_por_tope": False, "costo_total_estimado": 0.0}
+    ejecutar_cadenas.informar(salida)
+    assert "AVISO: respuesta cortada por max_tokens." in capsys.readouterr().out
+    salida["resultados"][0]["truncado"] = False
+    ejecutar_cadenas.informar(salida)
+    assert "AVISO" not in capsys.readouterr().out
+
+
 def test_main_sin_flag_en_interprete_limpio_no_carga_langchain_ni_el_cliente(tmp_path):
     script = str(RAIZ / "scripts" / "ejecutar_cadenas.py")
     proceso = subprocess.run(
@@ -217,7 +304,7 @@ def test_main_con_casos_invalidos_devuelve_1_sin_crear_modelo_ni_salida(monkeypa
 
 
 def test_main_devuelve_1_si_ningun_caso_da_un_resultado_util(monkeypatch, tmp_path, capsys):
-    monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda: MagicMock(side_effect=ConnectionError("simulado")))
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda **kwargs: MagicMock(side_effect=ConnectionError("simulado")))
     salida = tmp_path / "salida.json"
     assert ejecutar_cadenas.main(["--confirmar-api-real", "--casos", CASOS, "--salida", str(salida)]) == 1
     captura = capsys.readouterr()
@@ -230,7 +317,7 @@ def test_main_devuelve_0_si_al_menos_un_caso_da_un_resultado_util(monkeypatch, t
     error = ConnectionError("simulado")
     # el aviso falla en su primer paso, el primer mensaje responde y los otros dos fallan al clasificar
     modelo = MagicMock(side_effect=[error, AIMessage(content="incidente"), AIMessage(content="respuesta útil"), error, error])
-    monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda: modelo)
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda **kwargs: modelo)
     salida = tmp_path / "salida.json"
     assert ejecutar_cadenas.main(["--confirmar-api-real", "--casos", CASOS, "--salida", str(salida)]) == 0
     resultados = json.loads(salida.read_text(encoding="utf-8"))["resultados"]

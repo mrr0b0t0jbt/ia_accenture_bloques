@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 
 
-def crear_modelo(max_tokens: int = 1024, timeout: float = 30):
+def crear_modelo(max_tokens: int = 2048, timeout: float = 30):
     """Crea el ChatAnthropic de Sonnet 5.5 con la clave de .env."""
     load_dotenv()
     clave = os.getenv("CLAUDE_API_KEY")
