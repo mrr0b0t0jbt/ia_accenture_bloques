@@ -192,7 +192,7 @@ Se prueba con `test/unit/test_cadena_tres_pasos.py`, sin red. La corrida real es
 | `vulnerabilidad` | Un hallazgo o CVE a evaluar | Evaluar la severidad y la remediación |
 | `consulta` | Pregunta general (**ruta por defecto**) | Responder con precisión |
 
-**Límite de longitud del incidente**: el prompt de la ruta `incidente` pide un máximo de 10 pasos numerados y menos de 350 palabras, porque con `max_tokens` 2048 la respuesta sin ese límite se cortó (2054 tokens de salida en la segunda corrida real).
+**Límite de longitud del incidente**: el prompt de la ruta `incidente` pide un máximo de 10 pasos numerados y menos de 350 palabras, porque con `max_tokens` 2048 la respuesta sin ese límite se cortó (en la segunda corrida real la ruta llegó al tope de 2048 tokens de salida).
 
 **Riesgo de la ruta por defecto**: la clasificación tolera mayúsculas, espacios y puntuación en los extremos, pero no interpreta frases. Una categoría inesperada (por ejemplo, si el modelo responde con una frase en vez de una palabra) cae en `consulta` y solo deja un `logger.warning` (`Categoria inesperada`), así que un incidente mal clasificado se respondería como una pregunta general. Para depurar, mira qué devuelve la clasificación por sí sola:
 
@@ -241,12 +241,24 @@ python scripts/ejecutar_cadenas.py --confirmar-api-real
 **Límites conocidos** (documentados, no corregidos):
 
 - **El tope se revisa entre casos**: el primer caso siempre corre y el caso en curso puede pasarse. Con tope 1e-9 el aviso completo corrió igual: 3 llamadas, USD 0.0012 estimados (dato de la revisión de QA contra un servidor falso local, no de la API real; no es una corrida real). Con los casos del repo y `max_tokens` 2048, las 9 llamadas al máximo serían unos USD 0.18 teóricos; es un cálculo, no una medición.
-- **Timeout de 30 s con `max_tokens` 2048** (sin medir): `crear_modelo` mantiene `timeout=30`. Una respuesta larga podría agotarlo; en una ruta, el respaldo entregaría `RESPUESTA_GENERICA` y no quedaría marcada como `truncado`, sino con `hubo_fallo`.
+- **Timeout de 30 s con `max_tokens` 2048** (sin problemas en las corridas reales): `crear_modelo` mantiene `timeout=30`. Una respuesta larga podría agotarlo; en una ruta, el respaldo entregaría `RESPUESTA_GENERICA` y no quedaría marcada como `truncado`, sino con `hubo_fallo`. En las tres corridas reales no ocurrió.
 - **`MAX_LLAMADAS` no cuenta peticiones HTTP**: cuenta las llamadas del plan (9). Con `max_retries=2`, un servidor que falla produce hasta 3 intentos por llamada, y el medidor de uso no ve las peticiones fallidas.
 - **Clave de solo espacios**: `crear_modelo` solo rechaza la cadena vacía. Una clave de espacios o tabs pasa y el problema aparece como error de conexión en la primera llamada.
 - **Medidor de uso contrastado con la consola**: el medidor se contrastó con la consola de Anthropic en la primera corrida real: la consola marcó 1.492 tokens de entrada y 3.795 de salida, igual a lo medido por el script. El costo sigue siendo una estimación con los precios del proyecto.
 
-**Corrida real anterior** (con `max_tokens` 1024 y tope USD 0.05): las 3 respuestas de las rutas gastaron unos 1030-1123 tokens de salida y llegaron cortadas a mitad de frase; costo total estimado USD 0.04093. Todavía no hay resultados reales con `max_tokens` 2048.
+**Corridas reales** (9 llamadas cada una, Claude Sonnet 5.5; el costo es una estimación del medidor con los precios del proyecto):
+
+| Corrida | `max_tokens` | Tope USD | Costo estimado | Registro |
+|---|---|---|---|---|
+| 1 (2026-11-04) | 1024 | 0.05 | 0.04093 | [docs/resultados_cadenas.json](docs/resultados_cadenas.json) |
+| 2 (2026-11-06) | 2048 | 0.10 | 0.05561 | [docs/resultados_cadenas_2048.json](docs/resultados_cadenas_2048.json) |
+| 3 (2026-11-06) | 2048 | 0.10 | 0.05489 | [docs/resultados_cadenas_v3.json](docs/resultados_cadenas_v3.json) |
+
+- **Corrida 1**: las 3 respuestas de las rutas gastaron entre 1030 y 1123 tokens de salida y llegaron cortadas a mitad de frase. El caso de vulnerabilidad no se evaluó: el modelo respondió que `CVE-0000-00002` no es un identificador válido.
+- **Corrida 2**: con 2048 tokens, el incidente siguió cortado (la ruta llegó al tope de 2048 y el caso sumó 2054 tokens de salida con la clasificación); vulnerabilidad y consulta salieron completas, pero la vulnerabilidad volvió a negarse a dar una severidad por el ID ficticio.
+- **Corrida 3** (prompt de incidente con límite de longitud y caso de vulnerabilidad con ID de laboratorio, descripción y CVSS inventados): las 3 categorías coincidieron con las esperadas y ningún caso cayó en un texto de respaldo. El incidente salió completo (1090 tokens de salida, unas 369 palabras: el límite de 350 es una instrucción al modelo, no un tope exacto). El modelo evaluó el caso de vulnerabilidad (severidad crítica según el CVSS dado), pero esa respuesta llegó cortada por `max_tokens` (el caso sumó 2200 tokens de salida) y el script la marcó con `truncado` y el AVISO. Es el único caso cortado de la corrida.
+- En ninguna corrida se agotó el `timeout` de 30 s (`hubo_fallo` fue falso en todos los casos).
+- Los resultados dependen del modelo y varían entre corridas; son tres muestras, no una medición estadística.
 
 ## Ensayo real de rate limit
 
