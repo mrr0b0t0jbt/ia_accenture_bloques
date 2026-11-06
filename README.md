@@ -192,6 +192,8 @@ Se prueba con `test/unit/test_cadena_tres_pasos.py`, sin red. La corrida real es
 | `vulnerabilidad` | Un hallazgo o CVE a evaluar | Evaluar la severidad y la remediación |
 | `consulta` | Pregunta general (**ruta por defecto**) | Responder con precisión |
 
+**Límite de longitud del incidente**: el prompt de la ruta `incidente` pide un máximo de 10 pasos numerados y menos de 350 palabras, porque con `max_tokens` 2048 la respuesta sin ese límite se cortó (2054 tokens de salida en la segunda corrida real).
+
 **Riesgo de la ruta por defecto**: la clasificación tolera mayúsculas, espacios y puntuación en los extremos, pero no interpreta frases. Una categoría inesperada (por ejemplo, si el modelo responde con una frase en vez de una palabra) cae en `consulta` y solo deja un `logger.warning` (`Categoria inesperada`), así que un incidente mal clasificado se respondería como una pregunta general. Para depurar, mira qué devuelve la clasificación por sí sola:
 
 ```python
@@ -242,7 +244,7 @@ python scripts/ejecutar_cadenas.py --confirmar-api-real
 - **Timeout de 30 s con `max_tokens` 2048** (sin medir): `crear_modelo` mantiene `timeout=30`. Una respuesta larga podría agotarlo; en una ruta, el respaldo entregaría `RESPUESTA_GENERICA` y no quedaría marcada como `truncado`, sino con `hubo_fallo`.
 - **`MAX_LLAMADAS` no cuenta peticiones HTTP**: cuenta las llamadas del plan (9). Con `max_retries=2`, un servidor que falla produce hasta 3 intentos por llamada, y el medidor de uso no ve las peticiones fallidas.
 - **Clave de solo espacios**: `crear_modelo` solo rechaza la cadena vacía. Una clave de espacios o tabs pasa y el problema aparece como error de conexión en la primera llamada.
-- **Medidor de uso sin validar contra la API**: se probó con un servidor falso local, no con la respuesta real. Si la respuesta real no trae el nombre del modelo, el costo estimado quedaría en 0 y el script solo registraría un warning; por eso la primera corrida real se revisa a mano.
+- **Medidor de uso contrastado con la consola**: el medidor se contrastó con la consola de Anthropic en la primera corrida real: la consola marcó 1.492 tokens de entrada y 3.795 de salida, igual a lo medido por el script. El costo sigue siendo una estimación con los precios del proyecto.
 
 **Corrida real anterior** (con `max_tokens` 1024 y tope USD 0.05): las 3 respuestas de las rutas gastaron unos 1030-1123 tokens de salida y llegaron cortadas a mitad de frase; costo total estimado USD 0.04093. Todavía no hay resultados reales con `max_tokens` 2048.
 
