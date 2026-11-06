@@ -227,21 +227,24 @@ Pasa el aviso y los 3 mensajes ficticios de `JSON/casos_cadenas.json` por la cha
 python scripts/ejecutar_cadenas.py --confirmar-api-real
 ```
 
-- Hace 9 llamadas **REALES** a la API de Claude (3 de la chain y 2 por mensaje: clasificación y ruta), con costo. El costo aún no se ha medido; con el máximo de 1024 tokens de salida, las 9 llamadas sumarían cerca de USD 0.09 sin contar la entrada, y por eso el tope puede cortar la corrida antes de terminar.
+- Hace 9 llamadas **REALES** a la API de Claude (3 de la chain y 2 por mensaje: clasificación y ruta), con costo. Con el máximo de 2048 tokens de salida, las 9 llamadas sumarían unos USD 0.18 teóricos sin contar la entrada, pero el tope se revisa entre casos y el caso más caro realista ronda USD 0.02-0.03.
 - `--confirmar-api-real` es obligatorio: sin él el script sale con código 2 sin cargar LangChain ni tocar la red.
-- `--tope-usd` es US$ 0.05 por defecto y como máximo; un valor mayor o menor o igual a 0 sale con código 1. Se comprueba entre casos, así que el caso en curso puede sobrepasarlo.
+- `--tope-usd` es US$ 0.10 por defecto y como máximo; un valor mayor o menor o igual a 0 sale con código 1. Se comprueba entre casos, así que el caso en curso puede sobrepasarlo.
+- `--max-tokens` es 2048 por defecto y como máximo; un valor mayor o menor o igual a 0 sale con código 1 antes de crear el modelo.
+- Cada resultado del JSON trae el campo `truncado`: `true` si alguna llamada de ese caso terminó cortada por el límite de tokens. Para esos casos se imprime `AVISO: respuesta cortada por max_tokens.`, sin cambiar el código de salida.
 - `MAX_LLAMADAS` (12) es un límite fijo en el código: si los casos requieren más llamadas, sale con código 1 antes de crear el modelo. Cuenta las llamadas del plan, no los reintentos internos del modelo (`max_retries=2`).
 - El costo se calcula con `UsageMetadataCallbackHandler` y los precios de `src/api_claude_refactor.py`: es una **estimación**, no el cobro real.
 - Escribe los resultados en `docs/resultados_cadenas.json` (`--salida` lo cambia) y reescribe el archivo después de cada caso. Informa si una categoría obtenida difiere de la esperada y si una respuesta es un texto de respaldo.
 
 **Límites conocidos** (documentados, no corregidos):
 
-- **El tope se revisa entre casos**: el primer caso siempre corre y el caso en curso puede pasarse. Con tope 1e-9 el aviso completo corrió igual: 3 llamadas, USD 0.0012 estimados (dato de la revisión de QA contra un servidor falso local, no de la API real; no es una corrida real). Con los casos del repo, el peor caso calculado, no medido, ronda USD 0.054.
+- **El tope se revisa entre casos**: el primer caso siempre corre y el caso en curso puede pasarse. Con tope 1e-9 el aviso completo corrió igual: 3 llamadas, USD 0.0012 estimados (dato de la revisión de QA contra un servidor falso local, no de la API real; no es una corrida real). Con los casos del repo y `max_tokens` 2048, las 9 llamadas al máximo serían unos USD 0.18 teóricos; es un cálculo, no una medición.
+- **Timeout de 30 s con `max_tokens` 2048** (sin medir): `crear_modelo` mantiene `timeout=30`. Una respuesta larga podría agotarlo; en una ruta, el respaldo entregaría `RESPUESTA_GENERICA` y no quedaría marcada como `truncado`, sino con `hubo_fallo`.
 - **`MAX_LLAMADAS` no cuenta peticiones HTTP**: cuenta las llamadas del plan (9). Con `max_retries=2`, un servidor que falla produce hasta 3 intentos por llamada, y el medidor de uso no ve las peticiones fallidas.
 - **Clave de solo espacios**: `crear_modelo` solo rechaza la cadena vacía. Una clave de espacios o tabs pasa y el problema aparece como error de conexión en la primera llamada.
 - **Medidor de uso sin validar contra la API**: se probó con un servidor falso local, no con la respuesta real. Si la respuesta real no trae el nombre del modelo, el costo estimado quedaría en 0 y el script solo registraría un warning; por eso la primera corrida real se revisa a mano.
 
-Todavía no hay resultados reales de esta corrida.
+**Corrida real anterior** (con `max_tokens` 1024 y tope USD 0.05): las 3 respuestas de las rutas gastaron unos 1030-1123 tokens de salida y llegaron cortadas a mitad de frase; costo total estimado USD 0.04093. Todavía no hay resultados reales con `max_tokens` 2048.
 
 ## Ensayo real de rate limit
 
