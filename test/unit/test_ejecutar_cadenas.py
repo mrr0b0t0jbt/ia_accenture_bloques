@@ -52,6 +52,18 @@ def _modelo_falso(llamadas: list[str], respuestas: list[str] = RESPUESTAS) -> Ge
     return GenericFakeChatModel(messages=generar())
 
 
+def _modelo_con_metadata(respuestas: list[tuple[str, dict]]) -> GenericFakeChatModel:
+    mensajes = [
+        AIMessage(
+            content=texto,
+            usage_metadata={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+            response_metadata={"model_name": "modelo-falso", **metadata},
+        )
+        for texto, metadata in respuestas
+    ]
+    return GenericFakeChatModel(messages=iter(mensajes))
+
+
 def _escribir_casos(tmp_path: Path, casos: dict) -> str:
     ruta = tmp_path / "casos.json"
     ruta.write_text(json.dumps(casos), encoding="utf-8")
@@ -212,6 +224,42 @@ def test_camino_normal_no_marca_hubo_fallo(tmp_path):
     casos = {"avisos": [], "mensajes": [MENSAJE_FICTICIO]}
     salida = ejecutar_cadenas.ejecutar_casos(casos, modelo, 0.05, str(tmp_path / "salida.json"))
     assert salida["resultados"][0]["hubo_fallo"] is False
+
+
+def test_respuesta_de_ruta_cortada_marca_truncado_solo_en_su_caso(tmp_path):
+    fin = {"stop_reason": "end_turn"}
+    modelo = _modelo_con_metadata(
+        [("puntos", fin), ("simple", fin), ("- [ ] lista", fin), ("consulta", fin), ("respuesta a medias", {"stop_reason": "max_tokens"})]
+    )
+    ruta = tmp_path / "salida.json"
+    ejecutar_cadenas.ejecutar_casos({"avisos": [AVISO_FICTICIO], "mensajes": [MENSAJE_FICTICIO]}, modelo, 0.05, str(ruta))
+    aviso, mensaje = json.loads(ruta.read_text(encoding="utf-8"))["resultados"]
+    assert aviso["truncado"] is False
+    assert mensaje["truncado"] is True
+
+
+def test_respuestas_completas_no_marcan_truncado(tmp_path):
+    fin = {"stop_reason": "end_turn"}
+    modelo = _modelo_con_metadata([("puntos", fin), ("simple", fin), ("- [ ] lista", fin), ("consulta", fin), ("respuesta", fin)])
+    casos = {"avisos": [AVISO_FICTICIO], "mensajes": [MENSAJE_FICTICIO]}
+    salida = ejecutar_cadenas.ejecutar_casos(casos, modelo, 0.05, str(tmp_path / "salida.json"))
+    assert [r["truncado"] for r in salida["resultados"]] == [False, False]
+
+
+def test_finish_reason_max_tokens_marca_truncado(tmp_path):
+    modelo = _modelo_con_metadata([("consulta", {}), ("respuesta a medias", {"finish_reason": "MAX_TOKENS"})])
+    casos = {"avisos": [], "mensajes": [MENSAJE_FICTICIO]}
+    salida = ejecutar_cadenas.ejecutar_casos(casos, modelo, 0.05, str(tmp_path / "salida.json"))
+    assert salida["resultados"][0]["truncado"] is True
+
+
+def test_informar_avisa_solo_de_las_respuestas_truncadas(capsys):
+    salida = {"resultados": [{"respuesta": "a medias", "truncado": True}], "cortado_por_tope": False, "costo_total_estimado": 0.0}
+    ejecutar_cadenas.informar(salida)
+    assert "AVISO: respuesta cortada por max_tokens." in capsys.readouterr().out
+    salida["resultados"][0]["truncado"] = False
+    ejecutar_cadenas.informar(salida)
+    assert "AVISO" not in capsys.readouterr().out
 
 
 def test_main_sin_flag_en_interprete_limpio_no_carga_langchain_ni_el_cliente(tmp_path):
