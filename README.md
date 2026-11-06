@@ -8,7 +8,7 @@ La elección del modelo está justificada en [docs/decision_arquitectura.md](doc
 
 - Python 3.14 (versión con la que se desarrolló; las dependencias están fijadas para ella)
 - Una API key de Anthropic ([console.anthropic.com](https://console.anthropic.com))
-- Opcional: una API key de Gemini, solo para `src/api_gemini.py`
+- Opcional: una API key de Gemini, solo para `src/api_gemini.py` y `scripts/ejecutar_cadenas.py --proveedor gemini`
 
 ## Instalación
 
@@ -35,7 +35,7 @@ cp .env.example .env             # Linux / macOS
 | Variable | Obligatoria | Uso |
 |---|---|---|
 | `CLAUDE_API_KEY` | sí | API key de Anthropic |
-| `GEMINI_API_KEY` | no | Solo para `src/api_gemini.py` |
+| `GEMINI_API_KEY` | no | Solo para `src/api_gemini.py` y `scripts/ejecutar_cadenas.py --proveedor gemini` |
 
 ## Ejecución
 
@@ -82,8 +82,9 @@ El costo mostrado usa los precios por millón de tokens registrados en [docs/dec
 |---|---|---|
 | Claude Sonnet 5.5 | USD 2 | USD 10 |
 | Gemini 3.1 Pro (prompts ≤ 200k tokens) | USD 2 | USD 12 |
+| Gemini 3.5 Flash-Lite (informados por el usuario, no verificados contra la documentación oficial ni registrados en ese documento) | USD 0.30 | USD 2.50 |
 
-Si los precios cambian, actualízalos en `INPUT_PRICING` y `OUTPUT_PRICING` de `src/api_claude_refactor.py` (Claude) y en `get_gemini_response` (Gemini).
+Si los precios cambian, actualízalos en `INPUT_PRICING` y `OUTPUT_PRICING` de `src/api_claude_refactor.py` (Claude), en `get_gemini_response` (Gemini) y en `PRECIOS_GEMINI` de `scripts/ejecutar_cadenas.py` (Gemini 3.5 Flash-Lite en las cadenas).
 
 ## Reintentos y costo de la sesión
 
@@ -194,6 +195,8 @@ Se prueba con `test/unit/test_cadena_tres_pasos.py`, sin red. La corrida real es
 
 **Límite de longitud del incidente**: el prompt de la ruta `incidente` pide un máximo de 10 pasos numerados y menos de 350 palabras, porque con `max_tokens` 2048 la respuesta sin ese límite se cortó (en la segunda corrida real la ruta llegó al tope de 2048 tokens de salida).
 
+**Límite de longitud de la vulnerabilidad**: el prompt de la ruta `vulnerabilidad` pide un máximo de 8 pasos o secciones y menos de 400 palabras, porque la tercera corrida real, anterior a este límite, mostró su respuesta cortada por `max_tokens`. Todavía no hay una corrida real con este límite.
+
 **Riesgo de la ruta por defecto**: la clasificación tolera mayúsculas, espacios y puntuación en los extremos, pero no interpreta frases. Una categoría inesperada (por ejemplo, si el modelo responde con una frase en vez de una palabra) cae en `consulta` y solo deja un `logger.warning` (`Categoria inesperada`), así que un incidente mal clasificado se respondería como una pregunta general. Para depurar, mira qué devuelve la clasificación por sí sola:
 
 ```python
@@ -237,6 +240,17 @@ python scripts/ejecutar_cadenas.py --confirmar-api-real
 - `MAX_LLAMADAS` (12) es un límite fijo en el código: si los casos requieren más llamadas, sale con código 1 antes de crear el modelo. Cuenta las llamadas del plan, no los reintentos internos del modelo (`max_retries=2`).
 - El costo se calcula con `UsageMetadataCallbackHandler` y los precios de `src/api_claude_refactor.py`: es una **estimación**, no el cobro real.
 - Escribe los resultados en `docs/resultados_cadenas.json` (`--salida` lo cambia) y reescribe el archivo después de cada caso. Informa si una categoría obtenida difiere de la esperada y si una respuesta es un texto de respaldo.
+
+**Con Gemini** (`src/modelo_gemini.py`, modelo `gemini-3.5-flash-lite`):
+
+```bash
+python scripts/ejecutar_cadenas.py --confirmar-api-real --proveedor gemini
+```
+
+- Requiere `GEMINI_API_KEY` en `.env`. `--proveedor` acepta `claude` (por defecto) o `gemini`; las demás opciones y topes son los mismos, y `--max-tokens` es aquí `max_output_tokens`.
+- No se configura `temperature` porque este modelo usa muestreo fijo.
+- El costo se calcula con los precios que informó el usuario (entrada USD 0.30, salida USD 2.50 por millón de tokens) y se rotula como **estimación** en el campo `nota_costo` del JSON, junto con `proveedor`. La consola y los textos de ayuda siguen con los mensajes generales (la nota de "los precios del proyecto" y la mención a Claude).
+- Todavía no hay una corrida real de Gemini.
 
 **Límites conocidos** (documentados, no corregidos):
 
@@ -330,6 +344,7 @@ src/
   pipeline_texto.py        limpieza, tokenización y coincidencia por palabras
   metricas_texto.py        precisión, cobertura y F1 sobre tokens, contando repeticiones
   modelo_langchain.py      crea el ChatAnthropic de Sonnet 5.5 a pedido
+  modelo_gemini.py         crea el ChatGoogleGenerativeAI de Gemini 3.5 Flash-Lite a pedido
   cadena_tres_pasos.py     chain de tres pasos: aviso, puntos clave, lenguaje simple, checklist
   enrutamiento.py          clasifica mensajes, los envía a la ruta de su categoría y controla los fallos
 scripts/
@@ -337,7 +352,7 @@ scripts/
   ejecutar_pipeline.py           pipeline de texto sobre respuestas reales de Claude (con costo)
   ejecutar_metricas.py           precisión, cobertura y F1 sobre respuestas reales de Claude (con costo)
   ensayo_rate_limit_real.py      ensayo de rate limit real contra Claude (con costo)
-  ejecutar_cadenas.py            chain de tres pasos y enrutamiento sobre respuestas reales de Claude (con costo)
+  ejecutar_cadenas.py            chain de tres pasos y enrutamiento sobre respuestas reales de Claude o Gemini (con costo)
 test/
   unit/test_api_claude_refactor.py     pruebas unitarias con mocks
   unit/test_api_gemini.py              pruebas minimas del manejo de errores del cliente Gemini, con mocks
@@ -347,6 +362,7 @@ test/
   unit/test_ejecutar_metricas.py       pruebas del script de métricas, con mocks
   unit/test_ensayo_rate_limit_real.py  pruebas del ensayo real, con mocks
   unit/test_modelo_langchain.py        pruebas de crear_modelo y de su validación, sin red
+  unit/test_modelo_gemini.py           pruebas de crear_modelo_gemini y del armado de su petición, sin red
   unit/test_cadena_tres_pasos.py       pruebas de la chain de tres pasos, con mocks
   unit/test_enrutamiento.py            pruebas del enrutamiento condicional, con mocks
   unit/test_orquestacion.py            pruebas de los fallos controlados y del flujo completo, con mocks
