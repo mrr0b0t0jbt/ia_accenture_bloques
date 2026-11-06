@@ -20,7 +20,8 @@ PLANTILLA_CLASIFICACION = PromptTemplate.from_template(
 PLANTILLAS_RUTAS = {
     "incidente": PromptTemplate.from_template(
         "Eres parte de un equipo de respuesta a incidentes. Indica cómo contener y priorizar este incidente, "
-        "con los pasos inmediatos a seguir.\n\nMensaje:\n{mensaje}"
+        "con los pasos inmediatos a seguir. Responde en un máximo de 10 pasos numerados y menos de 350 palabras."
+        "\n\nMensaje:\n{mensaje}"
     ),
     "vulnerabilidad": PromptTemplate.from_template(
         "Eres analista de vulnerabilidades. Evalúa la severidad de este hallazgo y propón su remediación."

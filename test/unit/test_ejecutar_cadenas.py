@@ -303,6 +303,17 @@ def test_main_con_casos_invalidos_devuelve_1_sin_crear_modelo_ni_salida(monkeypa
     assert capsys.readouterr().err.startswith("Error: ")
 
 
+def test_archivo_real_de_casos_es_valido_y_su_vulnerabilidad_trae_el_id_de_laboratorio():
+    casos = ejecutar_cadenas.cargar_casos(CASOS)
+    assert ejecutar_cadenas.validar_casos(casos) is None
+    assert len(casos["avisos"]) == 1
+    assert len(casos["mensajes"]) == 3
+    assert [m["esperada"] for m in casos["mensajes"]] == ["incidente", "vulnerabilidad", "consulta"]
+    vulnerabilidad = casos["mensajes"][1]["mensaje"]
+    assert "CVE-2099-10002" in vulnerabilidad
+    assert "CVE-0000" not in vulnerabilidad
+
+
 def test_main_devuelve_1_si_ningun_caso_da_un_resultado_util(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda **kwargs: MagicMock(side_effect=ConnectionError("simulado")))
     salida = tmp_path / "salida.json"

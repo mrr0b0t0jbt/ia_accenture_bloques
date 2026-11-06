@@ -93,6 +93,20 @@ def test_ruta_elegida_recibe_el_mensaje_original_y_la_categoria():
     assert rutas["cadena_incidente"].call_args.args[0] == {"mensaje": "mensaje de prueba", "categoria": "incidente"}
 
 
+def test_plantilla_de_incidente_limita_la_longitud_y_conserva_el_mensaje():
+    prompt = enrutamiento.PLANTILLAS_RUTAS["incidente"].invoke({"mensaje": "texto de prueba"}).to_string()
+    assert "10 pasos" in prompt
+    assert "350 palabras" in prompt
+    assert "texto de prueba" in prompt
+
+
+def test_limite_de_longitud_es_solo_del_incidente_y_las_plantillas_siguen_distintas():
+    plantillas = enrutamiento.PLANTILLAS_RUTAS
+    assert "350 palabras" not in plantillas["vulnerabilidad"].template
+    assert "350 palabras" not in plantillas["consulta"].template
+    assert len({plantilla.template for plantilla in plantillas.values()}) == 3
+
+
 def test_importar_el_modulo_no_crea_modelo_ni_requiere_clave(monkeypatch):
     monkeypatch.delenv("CLAUDE_API_KEY", raising=False)
     monkeypatch.setitem(sys.modules, "langchain_anthropic", None)
