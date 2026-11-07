@@ -30,6 +30,7 @@ MAX_TOKENS_POR_DEFECTO = 1024
 MAX_LLAMADAS = 30
 MAX_TURNOS = 10
 MAX_ITERACIONES = 4
+MAX_CARACTERES_MENSAJE = 2000
 MOTIVO_LLAMADAS = "limite de llamadas"
 MOTIVO_TOPE = "tope de gasto"
 SALIDA_MAX_ITERACIONES = "Agent stopped due to max iterations."
@@ -55,6 +56,8 @@ def validar_casos_agente(casos) -> str | None:
         for campo in ("id", "sesion", "mensaje"):
             if not ejecutar_cadenas._es_texto_no_vacio(turno.get(campo)):
                 return f"turnos[{n}] no tiene el campo {campo} válido."
+        if len(turno["mensaje"]) > MAX_CARACTERES_MENSAJE:
+            return f"turnos[{n}] tiene un mensaje de más de {MAX_CARACTERES_MENSAJE} caracteres."
         esperadas = turno.get("herramientas_esperadas")
         if not isinstance(esperadas, list) or not all(isinstance(nombre, str) for nombre in esperadas):
             return f"turnos[{n}] no tiene el campo herramientas_esperadas válido."
@@ -122,6 +125,7 @@ def ejecutar_turnos(
         "costo_total_estimado": 0.0,
         "cortado_por_tope": False,
         "cortado_por_llamadas": False,
+        "cortado_por_falta_de_uso": False,
     }
     for turno in casos["turnos"]:
         if costo_actual() >= tope_usd:
@@ -164,6 +168,9 @@ def ejecutar_turnos(
         llamadas = limitador.llamadas - llamadas_antes
         if llamadas and not tokens_entrada and not tokens_salida:
             logger.warning("Turno sin datos de uso: el costo estimado puede quedar subestimado")
+            # sin datos de uso el tope de gasto no se puede controlar; un turno con error no activa este corte
+            if "error" not in registro:
+                salida["cortado_por_falta_de_uso"] = True
         registro.update(
             llamadas=llamadas,
             tokens_entrada=tokens_entrada,
@@ -177,7 +184,7 @@ def ejecutar_turnos(
         salida["costo_total_estimado"] = costo_actual()
         # guardado incremental: si algo falla a mitad no se pierde lo ya pagado
         ejecutar_cadenas.guardar_resultados(salida, ruta_salida)
-        if salida["cortado_por_llamadas"] or salida["cortado_por_tope"]:
+        if salida["cortado_por_llamadas"] or salida["cortado_por_tope"] or salida["cortado_por_falta_de_uso"]:
             break
     ejecutar_cadenas.guardar_resultados(salida, ruta_salida)
     return salida
@@ -203,6 +210,8 @@ def informar(salida: dict) -> None:
         print("La ejecución se detuvo al alcanzar el tope de gasto.")
     if salida["cortado_por_llamadas"]:
         print("La ejecución se detuvo al alcanzar el límite de llamadas.")
+    if salida.get("cortado_por_falta_de_uso"):
+        print("La ejecución se detuvo: un turno no devolvió datos de uso y el tope de gasto no se puede controlar sin ellos.")
     print(f"Llamadas totales: {salida['llamadas_totales']}")
     print(f"Costo total estimado: ${salida['costo_total_estimado']:.5f}")
     print(salida["nota_costo"])
@@ -230,7 +239,7 @@ def main(argv: list[str] | None = None) -> int:
     if os.path.isdir(args.salida):
         print(f"Error: --salida es un directorio: {args.salida}", file=sys.stderr)
         return 1
-    if os.path.realpath(args.salida) == os.path.realpath(args.casos):
+    if ejecutar_cadenas.es_el_mismo_archivo(args.salida, args.casos):
         print("Error: --salida no puede ser el mismo archivo que --casos.", file=sys.stderr)
         return 1
     if not os.access(args.salida if os.path.exists(args.salida) else directorio, os.W_OK):

@@ -63,9 +63,23 @@ def validar_casos(casos) -> str | None:
 
 
 def guardar_resultados(salida: dict, ruta_salida: str) -> None:
-    """Reescribe el archivo de salida completo con los resultados."""
-    with open(ruta_salida, "w", encoding="utf-8") as archivo:
-        json.dump(salida, archivo, indent=2, ensure_ascii=False)
+    """Reescribe el archivo de salida completo; si falla, el archivo anterior queda intacto."""
+    ruta_temporal = ruta_salida + ".tmp"
+    try:
+        with open(ruta_temporal, "w", encoding="utf-8") as archivo:
+            json.dump(salida, archivo, indent=2, ensure_ascii=False)
+        os.replace(ruta_temporal, ruta_salida)
+    except BaseException:
+        if os.path.exists(ruta_temporal):
+            os.remove(ruta_temporal)
+        raise
+
+
+def es_el_mismo_archivo(ruta_a: str, ruta_b: str) -> bool:
+    """Indica si dos rutas apuntan al mismo archivo, incluso por enlace simbólico o duro."""
+    if os.path.realpath(ruta_a) == os.path.realpath(ruta_b):
+        return True
+    return os.path.exists(ruta_a) and os.path.exists(ruta_b) and os.path.samefile(ruta_a, ruta_b)
 
 
 def procesar_aviso(modelo, caso: dict, config: dict) -> dict:
@@ -230,7 +244,7 @@ def main(argv: list[str] | None = None) -> int:
     if os.path.isdir(args.salida):
         print(f"Error: --salida es un directorio: {args.salida}", file=sys.stderr)
         return 1
-    if os.path.realpath(args.salida) == os.path.realpath(args.casos):
+    if es_el_mismo_archivo(args.salida, args.casos):
         print("Error: --salida no puede ser el mismo archivo que --casos.", file=sys.stderr)
         return 1
     if not os.access(args.salida if os.path.exists(args.salida) else directorio, os.W_OK):

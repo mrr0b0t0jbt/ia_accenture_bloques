@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -291,3 +292,47 @@ def test_tope_igual_al_costo_exacto_de_un_turno_no_ejecuta_el_siguiente(tmp_path
     assert [turno["id"] for turno in salida["resultados"]] == ["t1"]
     assert salida["cortado_por_tope"] is True
     assert len(modelo.entradas) == 1
+
+
+def test_turno_sin_datos_de_uso_corta_la_corrida(tmp_path):
+    modelo = ModeloDeGuion(guion=[AIMessage(content="uno"), AIMessage(content="dos")])
+    casos = {"turnos": [_turno("t1"), _turno("t2")]}
+    salida = ejecutar_agente.ejecutar_turnos(casos, modelo, 0.05, str(tmp_path / "s.json"))
+    assert salida["cortado_por_falta_de_uso"] is True
+    assert [turno["id"] for turno in salida["resultados"]] == ["t1"]
+    assert len(modelo.entradas) == 1
+
+
+def test_informar_avisa_cuando_la_corrida_se_corto_por_falta_de_datos_de_uso(capsys):
+    salida = {
+        "nota_costo": "Nota de costo ficticia.",
+        "resultados": [],
+        "llamadas_totales": 1,
+        "costo_total_estimado": 0.0,
+        "cortado_por_tope": False,
+        "cortado_por_llamadas": False,
+        "cortado_por_falta_de_uso": True,
+    }
+    ejecutar_agente.informar(salida)
+    assert "no devolvió datos de uso" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("largo, esperado_texto", [(2001, True), (2000, False)], ids=["2001_caracteres", "2000_caracteres"])
+def test_validar_casos_agente_limita_el_largo_del_mensaje(largo, esperado_texto):
+    casos = {"turnos": [_turno(mensaje="x" * largo)]}
+    problema = ejecutar_agente.validar_casos_agente(casos)
+    if esperado_texto:
+        assert "2000" in problema
+    else:
+        assert problema is None
+
+
+def test_main_rechaza_una_salida_que_es_un_enlace_duro_a_los_casos(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", MagicMock(side_effect=AssertionError("no debe crearse el modelo")))
+    casos = Path(_escribir_casos(tmp_path, [_turno()]))
+    original = casos.read_text(encoding="utf-8")
+    enlace = tmp_path / "enlace.json"
+    os.link(casos, enlace)
+    assert ejecutar_agente.main(["--confirmar-api-real", "--casos", str(casos), "--salida", str(enlace)]) == 1
+    assert "--salida" in capsys.readouterr().err
+    assert casos.read_text(encoding="utf-8") == original
