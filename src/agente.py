@@ -1,5 +1,7 @@
 from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables.history import RunnableWithMessageHistory
 
 from herramientas_agente import HERRAMIENTAS
 
@@ -31,4 +33,32 @@ def construir_ejecutor(modelo, herramientas=None, max_iterations: int = 4, **kwa
         max_iterations=max_iterations,
         verbose=False,
         **kwargs,
+    )
+
+
+class AlmacenHistoriales:
+    """Guarda en memoria un historial de mensajes por sesión."""
+
+    def __init__(self) -> None:
+        self._historiales: dict[str, InMemoryChatMessageHistory] = {}
+
+    def obtener(self, session_id: str) -> InMemoryChatMessageHistory:
+        """Devuelve el historial de la sesión; lo crea en el primer uso."""
+        return self._historiales.setdefault(session_id, InMemoryChatMessageHistory())
+
+    def cerrar(self, session_id: str) -> None:
+        """Elimina el historial de la sesión, si existe."""
+        self._historiales.pop(session_id, None)
+
+    def mensajes(self, session_id: str) -> int:
+        """Devuelve la cantidad de mensajes de la sesión, sin crearla si no existe."""
+        historial = self._historiales.get(session_id)
+        return len(historial.messages) if historial else 0
+
+
+def construir_agente_con_memoria(ejecutor, almacen: AlmacenHistoriales) -> RunnableWithMessageHistory:
+    """Envuelve el ejecutor para que cada session_id conserve su historial."""
+    # RunnableWithMessageHistory está deprecado; se usa porque la clase lo usa y es lo más simple sobre AgentExecutor
+    return RunnableWithMessageHistory(
+        ejecutor, almacen.obtener, input_messages_key="entrada", history_messages_key="chat_history"
     )
