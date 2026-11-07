@@ -35,6 +35,7 @@ CVES_LABORATORIO = {
     },
 }
 MAX_LONGITUD_EXPRESION = 100
+MAX_LONGITUD_CVE_REFLEJADO = 64
 _ERROR_EXPRESION = "Expresión no permitida."
 _OPERADORES_BINARIOS = {
     ast.Add: operator.add,
@@ -90,7 +91,10 @@ def calcular(expresion: str) -> str:
         return f"Error al evaluar la expresión: {error}"
     if isinstance(resultado, float) and not math.isfinite(resultado):
         return "Resultado fuera de rango."
-    return str(int(resultado)) if float(resultado).is_integer() else str(resultado)
+    # sobre 2**53 un float ya no representa enteros exactos: int() inventaría dígitos de ruido
+    if isinstance(resultado, float) and resultado.is_integer() and abs(resultado) < 2**53:
+        return str(int(resultado))
+    return str(resultado)
 
 
 class ArgumentosConsultaCve(BaseModel):
@@ -105,7 +109,8 @@ def consultar_cve(cve_id: str, incluir_mitigacion: bool = False) -> str:
         cve_id = cve_id.strip().upper()
         cve = CVES_LABORATORIO.get(cve_id)
         if cve is None:
-            return f"No se encontró el CVE de laboratorio {cve_id}."
+            reflejado = cve_id[:MAX_LONGITUD_CVE_REFLEJADO] + ("…" if len(cve_id) > MAX_LONGITUD_CVE_REFLEJADO else "")
+            return f"No se encontró el CVE de laboratorio {reflejado}."
         respuesta = f"{cve_id}: {cve['resumen']} Severidad: {cve['severidad']}."
         if incluir_mitigacion:
             respuesta += f" Mitigación: {cve['mitigacion']}"
