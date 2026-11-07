@@ -100,7 +100,7 @@ def test_plantilla_de_incidente_limita_la_longitud_y_conserva_el_mensaje():
     assert "texto de prueba" in prompt
 
 
-def test_limite_de_longitud_es_solo_del_incidente_y_las_plantillas_siguen_distintas():
+def test_limite_del_incidente_no_esta_en_las_otras_plantillas_y_las_tres_siguen_distintas():
     plantillas = enrutamiento.PLANTILLAS_RUTAS
     assert "350 palabras" not in plantillas["vulnerabilidad"].template
     assert "350 palabras" not in plantillas["consulta"].template
