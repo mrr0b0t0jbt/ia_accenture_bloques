@@ -1,5 +1,6 @@
 import ast
 import logging
+import math
 import operator
 
 from langchain_core.tools import tool
@@ -60,7 +61,8 @@ def _evaluar_nodo(nodo: ast.AST) -> int | float:
 
 def evaluar_expresion(expresion: str) -> int | float:
     """Evalúa una expresión aritmética recorriendo su árbol, sin ejecutar código."""
-    if len(expresion) > MAX_LONGITUD_EXPRESION:
+    expresion = expresion.strip()
+    if not expresion or len(expresion) > MAX_LONGITUD_EXPRESION:
         raise ValueError(_ERROR_EXPRESION)
     return _evaluar_nodo(ast.parse(expresion, mode="eval").body)
 
@@ -86,6 +88,8 @@ def calcular(expresion: str) -> str:
         return "No se puede dividir entre cero."
     except Exception as error:
         return f"Error al evaluar la expresión: {error}"
+    if isinstance(resultado, float) and not math.isfinite(resultado):
+        return "Resultado fuera de rango."
     return str(int(resultado)) if float(resultado).is_integer() else str(resultado)
 
 

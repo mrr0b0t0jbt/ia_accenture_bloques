@@ -21,6 +21,13 @@ def test_obtener_reutiliza_la_instancia_de_cada_sesion():
     assert almacen.obtener("a") is not almacen.obtener("b")
 
 
+def test_mensajes_de_una_sesion_inexistente_devuelve_0_sin_crearla():
+    almacen = AlmacenHistoriales()
+    assert almacen.mensajes("x") == 0
+    # se mira el atributo privado: la interfaz pública no permite saber si la sesión se creó
+    assert "x" not in almacen._historiales
+
+
 def test_el_segundo_turno_recibe_el_historial_del_primero():
     agente, _, modelo = _agente_con_memoria("respuesta-uno", "respuesta-dos")
     agente.invoke({"entrada": "pregunta-uno"}, config=_sesion("a"))

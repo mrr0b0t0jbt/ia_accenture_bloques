@@ -47,6 +47,42 @@ def test_calcular_devuelve_texto_ante_errores_de_evaluacion(expresion, verificar
     assert verificar(calcular.invoke({"expresion": expresion}))
 
 
+@pytest.mark.parametrize("expresion", ["True + 1", "1j", "abs(1)"])
+def test_calcular_rechaza_booleanos_complejos_y_llamadas(expresion):
+    assert calcular.invoke({"expresion": expresion}) == "Expresión no permitida."
+
+
+@pytest.mark.parametrize(
+    "expresion, esperado",
+    [("1+" * 49 + "11", "60"), ("1+" * 50 + "1", "Expresión no permitida.")],
+    ids=["100_caracteres", "101_caracteres"],
+)
+def test_calcular_aplica_el_limite_de_longitud_exacto(expresion, esperado):
+    assert calcular.invoke({"expresion": expresion}) == esperado
+
+
+@pytest.mark.parametrize(
+    "expresion, esperado",
+    [("-5 + +2", "-3"), ("7 // 2", "3"), ("7 % 3", "1"), ("10 / 2", "5")],
+)
+def test_calcular_resuelve_unarios_division_entera_modulo_y_division_exacta(expresion, esperado):
+    assert calcular.invoke({"expresion": expresion}) == esperado
+
+
+@pytest.mark.parametrize("expresion", ["1e308 * 10", "1e999 - 1e999"])
+def test_calcular_rechaza_resultados_no_finitos(expresion):
+    assert calcular.invoke({"expresion": expresion}) == "Resultado fuera de rango."
+
+
+@pytest.mark.parametrize(
+    "expresion, esperado",
+    [(" 1 + 1 ", "2"), ("", "Expresión no permitida."), ("   ", "Expresión no permitida.")],
+    ids=["espacios_en_los_bordes", "vacia", "solo_espacios"],
+)
+def test_calcular_tolera_espacios_en_los_bordes_y_la_expresion_vacia(expresion, esperado):
+    assert calcular.invoke({"expresion": expresion}) == esperado
+
+
 def test_buscar_devuelve_el_texto_de_reintentos():
     respuesta = buscar_en_documentacion.invoke({"consulta": "reintentos"})
     assert respuesta == DOCUMENTACION["reintentos"]

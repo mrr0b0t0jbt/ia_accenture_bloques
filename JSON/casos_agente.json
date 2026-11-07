@@ -1,0 +1,52 @@
+{
+  "turnos": [
+    {
+      "id": "documentacion",
+      "sesion": "s-doc",
+      "mensaje": "¿Cómo funcionan los reintentos de with_retry en este proyecto?",
+      "herramientas_esperadas": ["buscar_en_documentacion"]
+    },
+    {
+      "id": "calculo",
+      "sesion": "s-calc",
+      "mensaje": "¿Cuánto es 340 + 215?",
+      "herramientas_esperadas": ["calcular"]
+    },
+    {
+      "id": "cve",
+      "sesion": "s-cve",
+      "mensaje": "Dame el resumen y la mitigación del CVE-2099-10002.",
+      "herramientas_esperadas": ["consultar_cve_de_laboratorio"]
+    },
+    {
+      "id": "encadenada",
+      "sesion": "s-enc",
+      "mensaje": "Busca en la documentación el precio de salida por millón de tokens y calcula cuánto costarían 250000 tokens de salida.",
+      "herramientas_esperadas": ["buscar_en_documentacion", "calcular"]
+    },
+    {
+      "id": "general",
+      "sesion": "s-gen",
+      "mensaje": "¿Qué es un CVE? Responde en una frase.",
+      "herramientas_esperadas": []
+    },
+    {
+      "id": "conversacion_1",
+      "sesion": "s-conv",
+      "mensaje": "Consulta el CVE-2099-10001 e incluye su mitigación.",
+      "herramientas_esperadas": ["consultar_cve_de_laboratorio"]
+    },
+    {
+      "id": "conversacion_2",
+      "sesion": "s-conv",
+      "mensaje": "¿Cuál era su severidad? Responde con lo que ya sabes, sin usar herramientas.",
+      "herramientas_esperadas": []
+    },
+    {
+      "id": "aislamiento",
+      "sesion": "s-otra",
+      "mensaje": "¿Qué CVE te pedí consultar antes? Si no lo sabes, dilo.",
+      "herramientas_esperadas": []
+    }
+  ]
+}
