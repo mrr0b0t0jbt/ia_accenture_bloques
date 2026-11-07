@@ -69,6 +69,20 @@ def test_calcular_resuelve_unarios_division_entera_modulo_y_division_exacta(expr
     assert calcular.invoke({"expresion": expresion}) == esperado
 
 
+@pytest.mark.parametrize("expresion", ["1e308 * 10", "1e999 - 1e999"])
+def test_calcular_rechaza_resultados_no_finitos(expresion):
+    assert calcular.invoke({"expresion": expresion}) == "Resultado fuera de rango."
+
+
+@pytest.mark.parametrize(
+    "expresion, esperado",
+    [(" 1 + 1 ", "2"), ("", "Expresión no permitida."), ("   ", "Expresión no permitida.")],
+    ids=["espacios_en_los_bordes", "vacia", "solo_espacios"],
+)
+def test_calcular_tolera_espacios_en_los_bordes_y_la_expresion_vacia(expresion, esperado):
+    assert calcular.invoke({"expresion": expresion}) == esperado
+
+
 def test_buscar_devuelve_el_texto_de_reintentos():
     respuesta = buscar_en_documentacion.invoke({"consulta": "reintentos"})
     assert respuesta == DOCUMENTACION["reintentos"]
