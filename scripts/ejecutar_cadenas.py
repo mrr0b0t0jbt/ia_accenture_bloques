@@ -24,6 +24,9 @@ MAX_LLAMADAS = 12
 LLAMADAS_POR_AVISO = 3
 LLAMADAS_POR_MENSAJE = 2
 NOTA_COSTO = "El costo es una estimación calculada con los tokens informados y los precios del proyecto; no es el cobro real."
+# USD por token de entrada y salida de Gemini 3.5 Flash-Lite, informados por el usuario, no verificados contra la documentación oficial
+PRECIOS_GEMINI = (0.30 / 1_000_000, 2.50 / 1_000_000)
+NOTA_COSTO_GEMINI = "El costo es una estimación calculada con los tokens informados y los precios de Gemini 3.5 Flash-Lite que informó el usuario (entrada USD 0.30, salida USD 2.50 por millón); no es el cobro real."
 
 
 def cargar_casos(ruta: str) -> dict:
@@ -129,12 +132,19 @@ def _crear_detector_de_corte():
     return DetectorDeCorte()
 
 
-def ejecutar_casos(casos: dict, modelo, tope_usd: float, ruta_salida: str) -> dict:
+def ejecutar_casos(casos: dict, modelo, tope_usd: float, ruta_salida: str, proveedor: str = "claude") -> dict:
     """Procesa cada caso, mide su uso y corta entre casos al llegar al tope de gasto."""
-    from api_claude_refactor import INPUT_PRICING, OUTPUT_PRICING
     from langchain_core.callbacks import UsageMetadataCallbackHandler
 
-    salida = {"nota_costo": NOTA_COSTO, "resultados": [], "costo_total_estimado": 0.0, "cortado_por_tope": False}
+    if proveedor == "gemini":
+        precio_entrada, precio_salida = PRECIOS_GEMINI
+        nota_costo = NOTA_COSTO_GEMINI
+    else:
+        from api_claude_refactor import INPUT_PRICING, OUTPUT_PRICING
+
+        precio_entrada, precio_salida = INPUT_PRICING, OUTPUT_PRICING
+        nota_costo = NOTA_COSTO
+    salida = {"proveedor": proveedor, "nota_costo": nota_costo, "resultados": [], "costo_total_estimado": 0.0, "cortado_por_tope": False}
     trabajos = [(procesar_aviso, caso) for caso in casos["avisos"]]
     trabajos += [(procesar_mensaje, caso) for caso in casos["mensajes"]]
     for procesar, caso in trabajos:
@@ -153,7 +163,7 @@ def ejecutar_casos(casos: dict, modelo, tope_usd: float, ruta_salida: str) -> di
             logger.warning("Caso sin datos de uso: el costo estimado puede quedar subestimado")
         tokens_entrada = sum(uso["input_tokens"] for uso in medidor.usage_metadata.values())
         tokens_salida = sum(uso["output_tokens"] for uso in medidor.usage_metadata.values())
-        costo = tokens_entrada * INPUT_PRICING + tokens_salida * OUTPUT_PRICING
+        costo = tokens_entrada * precio_entrada + tokens_salida * precio_salida
         salida["resultados"].append(
             {
                 **resultado,
@@ -198,7 +208,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--casos", default="JSON/casos_cadenas.json")
     parser.add_argument("--salida", default="docs/resultados_cadenas.json")
     parser.add_argument("--tope-usd", type=float, default=TOPE_USD_MAXIMO)
-    parser.add_argument("--max-tokens", type=int, default=MAX_TOKENS_MAXIMO)
+    parser.add_argument("--max-tokens", type=int, default=MAX_TOKENS_MAXIMO, help="Tokens máximos de salida; en Gemini es max_output_tokens.")
+    parser.add_argument("--proveedor", choices=("claude", "gemini"), default="claude")
     parser.add_argument("--confirmar-api-real", action="store_true")
     args = parser.parse_args(argv)
     if not args.confirmar_api_real:
@@ -241,14 +252,19 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # import diferido: sin el flag no se carga langchain ni la API key
-    from modelo_langchain import crear_modelo
-
     try:
-        modelo = crear_modelo(max_tokens=args.max_tokens)
+        if args.proveedor == "gemini":
+            from modelo_gemini import crear_modelo_gemini
+
+            modelo = crear_modelo_gemini(max_output_tokens=args.max_tokens)
+        else:
+            from modelo_langchain import crear_modelo
+
+            modelo = crear_modelo(max_tokens=args.max_tokens)
     except ValueError as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
-    salida = ejecutar_casos(casos, modelo, args.tope_usd, args.salida)
+    salida = ejecutar_casos(casos, modelo, args.tope_usd, args.salida, proveedor=args.proveedor)
     informar(salida)
     if not any("error" not in r and not r.get("hubo_fallo") for r in salida["resultados"]):
         print("Error: ningún caso dio un resultado útil.", file=sys.stderr)

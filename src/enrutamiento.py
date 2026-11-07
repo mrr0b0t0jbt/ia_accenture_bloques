@@ -24,7 +24,8 @@ PLANTILLAS_RUTAS = {
         "\n\nMensaje:\n{mensaje}"
     ),
     "vulnerabilidad": PromptTemplate.from_template(
-        "Eres analista de vulnerabilidades. Evalúa la severidad de este hallazgo y propón su remediación."
+        "Eres analista de vulnerabilidades. Evalúa la severidad de este hallazgo y propón su remediación. "
+        "Responde en un máximo de 8 pasos o secciones y menos de 400 palabras."
         "\n\nMensaje:\n{mensaje}"
     ),
     "consulta": PromptTemplate.from_template(

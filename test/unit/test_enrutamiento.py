@@ -107,6 +107,22 @@ def test_limite_de_longitud_es_solo_del_incidente_y_las_plantillas_siguen_distin
     assert len({plantilla.template for plantilla in plantillas.values()}) == 3
 
 
+def test_plantilla_de_vulnerabilidad_limita_la_longitud_y_conserva_el_mensaje():
+    prompt = enrutamiento.PLANTILLAS_RUTAS["vulnerabilidad"].invoke({"mensaje": "texto de prueba"}).to_string()
+    assert "8 pasos" in prompt
+    assert "400 palabras" in prompt
+    assert "texto de prueba" in prompt
+
+
+def test_cada_limite_de_longitud_queda_solo_en_su_plantilla():
+    plantillas = enrutamiento.PLANTILLAS_RUTAS
+    assert "350 palabras" not in plantillas["consulta"].template
+    assert "400 palabras" not in plantillas["consulta"].template
+    assert "350 palabras" in plantillas["incidente"].template
+    assert "10 pasos" in plantillas["incidente"].template
+    assert "350 palabras" not in plantillas["vulnerabilidad"].template
+
+
 def test_importar_el_modulo_no_crea_modelo_ni_requiere_clave(monkeypatch):
     monkeypatch.delenv("CLAUDE_API_KEY", raising=False)
     monkeypatch.setitem(sys.modules, "langchain_anthropic", None)

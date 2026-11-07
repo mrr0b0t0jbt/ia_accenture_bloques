@@ -9,6 +9,7 @@ import pytest
 from langchain_core.language_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
 
+import modelo_gemini
 import modelo_langchain
 from enrutamiento import RESPUESTA_GENERICA
 
@@ -333,3 +334,76 @@ def test_main_devuelve_0_si_al_menos_un_caso_da_un_resultado_util(monkeypatch, t
     assert ejecutar_cadenas.main(["--confirmar-api-real", "--casos", CASOS, "--salida", str(salida)]) == 0
     resultados = json.loads(salida.read_text(encoding="utf-8"))["resultados"]
     assert [r.get("respuesta") == "respuesta útil" for r in resultados] == [False, True, False, False]
+
+
+def test_main_proveedor_invalido_sale_con_2_sin_crear_modelo(monkeypatch, tmp_path, capsys):
+    falso_claude, falso_gemini = MagicMock(), MagicMock()
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", falso_claude)
+    monkeypatch.setattr(modelo_gemini, "crear_modelo_gemini", falso_gemini)
+    argv = ["--confirmar-api-real", "--casos", CASOS, "--salida", str(tmp_path / "salida.json"), "--proveedor", "otro"]
+    with pytest.raises(SystemExit) as salida:
+        ejecutar_cadenas.main(argv)
+    assert salida.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+    falso_claude.assert_not_called()
+    falso_gemini.assert_not_called()
+
+
+def test_main_proveedor_gemini_crea_su_modelo_con_2048_y_no_el_de_claude(monkeypatch, tmp_path):
+    falso_claude = MagicMock()
+    capturados = {}
+
+    def crear(**kwargs):
+        capturados.update(kwargs)
+        return _modelo_falso([])
+
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", falso_claude)
+    monkeypatch.setattr(modelo_gemini, "crear_modelo_gemini", crear)
+    argv = ["--confirmar-api-real", "--casos", CASOS, "--salida", str(tmp_path / "salida.json"), "--proveedor", "gemini"]
+    assert ejecutar_cadenas.main(argv) == 0
+    assert capturados == {"max_output_tokens": 2048}
+    falso_claude.assert_not_called()
+
+
+def test_main_proveedor_gemini_con_max_tokens_1000_pasa_max_output_tokens(monkeypatch, tmp_path):
+    capturados = {}
+
+    def crear(**kwargs):
+        capturados.update(kwargs)
+        return _modelo_falso([])
+
+    monkeypatch.setattr(modelo_gemini, "crear_modelo_gemini", crear)
+    argv = ["--confirmar-api-real", "--casos", CASOS, "--salida", str(tmp_path / "salida.json")]
+    assert ejecutar_cadenas.main(argv + ["--proveedor", "gemini", "--max-tokens", "1000"]) == 0
+    assert capturados == {"max_output_tokens": 1000}
+
+
+def test_main_sin_proveedor_no_crea_el_modelo_de_gemini(monkeypatch, tmp_path):
+    falso_gemini = MagicMock()
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda **kwargs: _modelo_falso([]))
+    monkeypatch.setattr(modelo_gemini, "crear_modelo_gemini", falso_gemini)
+    assert ejecutar_cadenas.main(["--confirmar-api-real", "--casos", CASOS, "--salida", str(tmp_path / "salida.json")]) == 0
+    falso_gemini.assert_not_called()
+
+
+def test_costo_de_gemini_usa_sus_precios_y_el_de_claude_no_cambia(monkeypatch, tmp_path):
+    casos = ejecutar_cadenas.cargar_casos(CASOS)
+    ruta = str(tmp_path / "salida.json")
+    with monkeypatch.context() as contexto:
+        # con None en sys.modules, cualquier import de api_claude_refactor lanzaría ImportError
+        contexto.setitem(sys.modules, "api_claude_refactor", None)
+        gemini = ejecutar_cadenas.ejecutar_casos(casos, _modelo_falso([]), 0.05, ruta, proveedor="gemini")
+    # cada llamada cuesta 10 * 0.30e-6 + 5 * 2.5e-6 = 1.55e-5
+    assert gemini["costo_total_estimado"] == pytest.approx(1.395e-4)
+    assert gemini["proveedor"] == "gemini"
+    assert "Gemini" in gemini["nota_costo"]
+    claude = ejecutar_cadenas.ejecutar_casos(casos, _modelo_falso([]), 0.05, ruta)
+    assert claude["costo_total_estimado"] == pytest.approx(6.3e-4)
+    assert claude["proveedor"] == "claude"
+
+
+def test_main_proveedor_gemini_sin_confirmar_devuelve_2_sin_crear_modelo(monkeypatch):
+    falso_gemini = MagicMock()
+    monkeypatch.setattr(modelo_gemini, "crear_modelo_gemini", falso_gemini)
+    assert ejecutar_cadenas.main(["--proveedor", "gemini"]) == 2
+    falso_gemini.assert_not_called()
