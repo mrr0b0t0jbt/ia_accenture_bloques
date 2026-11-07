@@ -250,7 +250,7 @@ python scripts/ejecutar_cadenas.py --confirmar-api-real --proveedor gemini
 - Requiere `GEMINI_API_KEY` en `.env`. `--proveedor` acepta `claude` (por defecto) o `gemini`; las demás opciones y topes son los mismos, y `--max-tokens` es aquí `max_output_tokens`.
 - No se configura `temperature` porque este modelo usa muestreo fijo.
 - El costo se calcula con los precios que informó el usuario (entrada USD 0.30, salida USD 2.50 por millón de tokens) y se rotula como **estimación** en el campo `nota_costo` del JSON, junto con `proveedor`. La consola y los textos de ayuda siguen con los mensajes generales (la nota de "los precios del proyecto" y la mención a Claude).
-- Todavía no hay una corrida real de Gemini.
+- **Corrida real de Gemini** (2026-11-06, `gemini-3.5-flash-lite`, `--max-tokens 2048`, tope USD 0.05; registro en [docs/resultados_cadenas_gemini.json](docs/resultados_cadenas_gemini.json)): 9 llamadas, costo estimado USD 0.00504 (1151 tokens de entrada y 1876 de salida) con los precios que informó el usuario. Las 3 categorías coincidieron, ningún caso cayó en un texto de respaldo y ninguna respuesta salió cortada. Las respuestas son más breves que las de Claude (incidente 282 palabras, vulnerabilidad 294, consulta 258). Dos reservas: el costo no se contrastó con la consola de Google, y no se verificó si `candidatesTokenCount` incluye los tokens de razonamiento del modelo, que se cobran como salida; si no los incluye, el costo real sería mayor que el estimado. Con Gemini la consola del script todavía imprime la nota de costo "precios del proyecto" (la del JSON sí es la correcta).
 
 **Límites conocidos** (documentados, no corregidos):
 
@@ -260,19 +260,21 @@ python scripts/ejecutar_cadenas.py --confirmar-api-real --proveedor gemini
 - **Clave de solo espacios**: `crear_modelo` solo rechaza la cadena vacía. Una clave de espacios o tabs pasa y el problema aparece como error de conexión en la primera llamada.
 - **Medidor de uso contrastado con la consola**: el medidor se contrastó con la consola de Anthropic en la primera corrida real: la consola marcó 1.492 tokens de entrada y 3.795 de salida, igual a lo medido por el script. El costo sigue siendo una estimación con los precios del proyecto.
 
-**Corridas reales** (9 llamadas cada una, Claude Sonnet 5.5; el costo es una estimación del medidor con los precios del proyecto):
+**Corridas reales con Claude** (9 llamadas cada una, Claude Sonnet 5.5; el costo es una estimación del medidor con los precios del proyecto):
 
 | Corrida | `max_tokens` | Tope USD | Costo estimado | Registro |
 |---|---|---|---|---|
 | 1 (2026-11-04) | 1024 | 0.05 | 0.04093 | [docs/resultados_cadenas.json](docs/resultados_cadenas.json) |
 | 2 (2026-11-06) | 2048 | 0.10 | 0.05561 | [docs/resultados_cadenas_2048.json](docs/resultados_cadenas_2048.json) |
 | 3 (2026-11-06) | 2048 | 0.10 | 0.05489 | [docs/resultados_cadenas_v3.json](docs/resultados_cadenas_v3.json) |
+| 4 (2026-11-06) | 2048 | 0.10 | 0.04557 | [docs/resultados_cadenas_v4.json](docs/resultados_cadenas_v4.json) |
 
 - **Corrida 1**: las 3 respuestas de las rutas gastaron entre 1030 y 1123 tokens de salida y llegaron cortadas a mitad de frase. El caso de vulnerabilidad no se evaluó: el modelo respondió que `CVE-0000-00002` no es un identificador válido.
 - **Corrida 2**: con 2048 tokens, el incidente siguió cortado (la ruta llegó al tope de 2048 y el caso sumó 2054 tokens de salida con la clasificación); vulnerabilidad y consulta salieron completas, pero la vulnerabilidad volvió a negarse a dar una severidad por el ID ficticio.
 - **Corrida 3** (prompt de incidente con límite de longitud y caso de vulnerabilidad con ID de laboratorio, descripción y CVSS inventados): las 3 categorías coincidieron con las esperadas y ningún caso cayó en un texto de respaldo. El incidente salió completo (1090 tokens de salida, unas 369 palabras: el límite de 350 es una instrucción al modelo, no un tope exacto). El modelo evaluó el caso de vulnerabilidad (severidad crítica según el CVSS dado), pero esa respuesta llegó cortada por `max_tokens` (el caso sumó 2200 tokens de salida) y el script la marcó con `truncado` y el AVISO. Es el único caso cortado de la corrida.
+- **Corrida 4** (con el límite de longitud también en la ruta de vulnerabilidad): ningún caso salió cortado (`truncado` falso en los cuatro), las 3 categorías coincidieron y ninguno cayó en un texto de respaldo. Incidente: 1030 tokens de salida (363 palabras); vulnerabilidad: 1267 (374 palabras, cerró con un plazo de 7 días y revisión semanal); consulta: 1138. El límite de 400 palabras es una instrucción al modelo y no se mide en el script.
 - En ninguna corrida se agotó el `timeout` de 30 s (`hubo_fallo` fue falso en todos los casos).
-- Los resultados dependen del modelo y varían entre corridas; son tres muestras, no una medición estadística.
+- Los resultados dependen del modelo y varían entre corridas; son cuatro muestras, no una medición estadística.
 
 ## Ensayo real de rate limit
 
