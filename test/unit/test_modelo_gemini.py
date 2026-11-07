@@ -43,6 +43,17 @@ def test_max_output_tokens_se_conserva(clave_falsa):
     assert modelo_gemini.crear_modelo_gemini(max_output_tokens=512).max_output_tokens == 512
 
 
+def test_timeout_se_conserva(clave_falsa):
+    assert modelo_gemini.crear_modelo_gemini().timeout == 30
+    assert modelo_gemini.crear_modelo_gemini(timeout=5).timeout == 5
+
+
+def test_la_clave_del_entorno_llega_al_modelo(clave_falsa):
+    # se compara antes del assert: si falla, pytest no muestra el valor secreto
+    coincide = modelo_gemini.crear_modelo_gemini().google_api_key.get_secret_value() == "clave-falsa-de-prueba"
+    assert coincide
+
+
 def test_la_peticion_se_arma_sin_red_y_sin_aviso_de_muestreo(clave_falsa):
     modelo = modelo_gemini.crear_modelo_gemini()
     with warnings.catch_warnings():

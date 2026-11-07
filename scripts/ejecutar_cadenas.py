@@ -1,4 +1,4 @@
-"""Chain de tres pasos y enrutamiento sobre respuestas REALES de Claude (Bloques 18 a 20).
+"""Chain de tres pasos y enrutamiento sobre respuestas REALES de Claude o Gemini (Bloques 18 a 20).
 
 Procesa los casos de JSON/casos_cadenas.json con LangChain (llamadas REALES a la
 API, con costo) y escribe los resultados en docs/resultados_cadenas.json después
@@ -7,6 +7,7 @@ de cada caso.
 Cómo correrlo (desde la raíz del proyecto):
 
     python scripts/ejecutar_cadenas.py --confirmar-api-real
+    python scripts/ejecutar_cadenas.py --confirmar-api-real --proveedor gemini
 """
 import argparse
 import json
@@ -199,12 +200,12 @@ def informar(salida: dict) -> None:
     if salida["cortado_por_tope"]:
         print("La ejecución se detuvo al alcanzar el tope de gasto.")
     print(f"Costo total estimado: ${salida['costo_total_estimado']:.5f}")
-    print(NOTA_COSTO)
+    print(salida.get("nota_costo", NOTA_COSTO))
 
 
 def main(argv: list[str] | None = None) -> int:
     """Ejecuta las cadenas contra la API real solo con --confirmar-api-real."""
-    parser = argparse.ArgumentParser(description="Cadenas de LangChain sobre respuestas REALES de Claude (con costo).")
+    parser = argparse.ArgumentParser(description="Cadenas de LangChain sobre respuestas REALES de Claude o Gemini (con costo).")
     parser.add_argument("--casos", default="JSON/casos_cadenas.json")
     parser.add_argument("--salida", default="docs/resultados_cadenas.json")
     parser.add_argument("--tope-usd", type=float, default=TOPE_USD_MAXIMO)
@@ -214,7 +215,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not args.confirmar_api_real:
         print(
-            "Este script hace llamadas REALES a la API de Claude, con costo. "
+            "Este script hace llamadas REALES a la API del proveedor elegido (Claude o Gemini), con costo. "
             "Para ejecutarlo pasa --confirmar-api-real.",
             file=sys.stderr,
         )

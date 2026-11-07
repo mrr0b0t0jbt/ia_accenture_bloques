@@ -407,3 +407,44 @@ def test_main_proveedor_gemini_sin_confirmar_devuelve_2_sin_crear_modelo(monkeyp
     monkeypatch.setattr(modelo_gemini, "crear_modelo_gemini", falso_gemini)
     assert ejecutar_cadenas.main(["--proveedor", "gemini"]) == 2
     falso_gemini.assert_not_called()
+
+
+def test_main_proveedor_gemini_sin_clave_devuelve_1_sin_crear_la_salida(monkeypatch, tmp_path, capsys):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr(modelo_gemini, "load_dotenv", lambda: None)
+    casos = _escribir_casos(tmp_path, {"avisos": [AVISO_FICTICIO], "mensajes": [MENSAJE_FICTICIO]})
+    salida = tmp_path / "salida.json"
+    argv = ["--confirmar-api-real", "--proveedor", "gemini", "--casos", casos, "--salida", str(salida)]
+    assert ejecutar_cadenas.main(argv) == 1
+    assert capsys.readouterr().err.startswith("Error: Falta GEMINI_API_KEY")
+    assert not salida.exists()
+
+
+def test_main_proveedor_gemini_escribe_su_proveedor_y_su_nota_en_el_json(monkeypatch, tmp_path):
+    monkeypatch.setattr(modelo_gemini, "crear_modelo_gemini", lambda **kwargs: _modelo_falso([]))
+    salida = tmp_path / "salida.json"
+    argv = ["--confirmar-api-real", "--casos", CASOS, "--salida", str(salida), "--proveedor", "gemini"]
+    assert ejecutar_cadenas.main(argv) == 0
+    escrito = json.loads(salida.read_text(encoding="utf-8"))
+    assert escrito["proveedor"] == "gemini"
+    assert "Gemini" in escrito["nota_costo"]
+
+
+def test_informar_imprime_la_nota_de_costo_de_gemini(capsys):
+    salida = {"resultados": [], "cortado_por_tope": False, "costo_total_estimado": 0.0, "nota_costo": ejecutar_cadenas.NOTA_COSTO_GEMINI}
+    ejecutar_cadenas.informar(salida)
+    impreso = capsys.readouterr().out
+    assert ejecutar_cadenas.NOTA_COSTO_GEMINI in impreso
+    assert "precios del proyecto" not in impreso
+
+
+def test_informar_sin_nota_de_costo_imprime_la_de_claude(capsys):
+    ejecutar_cadenas.informar({"resultados": [], "cortado_por_tope": False, "costo_total_estimado": 0.0})
+    assert ejecutar_cadenas.NOTA_COSTO in capsys.readouterr().out
+
+
+def test_main_sin_confirmar_menciona_gemini_y_el_flag(capsys):
+    assert ejecutar_cadenas.main([]) == 2
+    error = capsys.readouterr().err
+    assert "Gemini" in error
+    assert "--confirmar-api-real" in error
