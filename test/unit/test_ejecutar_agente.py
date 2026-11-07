@@ -260,3 +260,34 @@ def test_main_de_punta_a_punta_escribe_el_json_completo(monkeypatch, tmp_path):
     assert escrito["costo_total_estimado"] == pytest.approx(3 * COSTO_POR_LLAMADA)
     assert len(escrito["resultados"]) == 2
     assert all(CAMPOS_DEL_TURNO <= set(turno) for turno in escrito["resultados"])
+
+
+def test_truncado_se_calcula_por_turno_y_no_se_arrastra_al_siguiente(tmp_path):
+    cortada = AIMessage(content="a medias", **{**USO, "response_metadata": {"model_name": "falso", "stop_reason": "max_tokens"}})
+    modelo = ModeloDeGuion(guion=[cortada, _respuesta("completa")])
+    casos = {"turnos": [_turno("t1"), _turno("t2")]}
+    salida = ejecutar_agente.ejecutar_turnos(casos, modelo, 0.05, str(tmp_path / "s.json"))
+    assert [turno["truncado"] for turno in salida["resultados"]] == [True, False]
+
+
+def test_guarda_la_salida_despues_de_cada_turno_y_al_final(monkeypatch, tmp_path):
+    # se anota cuántos resultados traía la salida en cada llamada, porque el dict se sigue modificando
+    resultados_por_llamada = []
+    monkeypatch.setattr(
+        ejecutar_agente.ejecutar_cadenas, "guardar_resultados", lambda salida, ruta: resultados_por_llamada.append(len(salida["resultados"]))
+    )
+    modelo = ModeloDeGuion(guion=[_respuesta("uno"), _respuesta("dos")])
+    casos = {"turnos": [_turno("t1"), _turno("t2")]}
+    ejecutar_agente.ejecutar_turnos(casos, modelo, 0.05, str(tmp_path / "s.json"))
+    assert resultados_por_llamada == [1, 2, 2]
+
+
+def test_tope_igual_al_costo_exacto_de_un_turno_no_ejecuta_el_siguiente(tmp_path):
+    # mismos precios y misma expresión que costo_de en el script
+    costo_unitario = 10 * INPUT_PRICING + 5 * OUTPUT_PRICING
+    modelo = ModeloDeGuion(guion=[_respuesta("uno"), _respuesta("dos")])
+    casos = {"turnos": [_turno("t1"), _turno("t2")]}
+    salida = ejecutar_agente.ejecutar_turnos(casos, modelo, costo_unitario, str(tmp_path / "s.json"))
+    assert [turno["id"] for turno in salida["resultados"]] == ["t1"]
+    assert salida["cortado_por_tope"] is True
+    assert len(modelo.entradas) == 1
