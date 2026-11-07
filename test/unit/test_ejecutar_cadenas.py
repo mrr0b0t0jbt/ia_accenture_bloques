@@ -407,3 +407,24 @@ def test_main_proveedor_gemini_sin_confirmar_devuelve_2_sin_crear_modelo(monkeyp
     monkeypatch.setattr(modelo_gemini, "crear_modelo_gemini", falso_gemini)
     assert ejecutar_cadenas.main(["--proveedor", "gemini"]) == 2
     falso_gemini.assert_not_called()
+
+
+def test_main_proveedor_gemini_sin_clave_devuelve_1_sin_crear_la_salida(monkeypatch, tmp_path, capsys):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr(modelo_gemini, "load_dotenv", lambda: None)
+    casos = _escribir_casos(tmp_path, {"avisos": [AVISO_FICTICIO], "mensajes": [MENSAJE_FICTICIO]})
+    salida = tmp_path / "salida.json"
+    argv = ["--confirmar-api-real", "--proveedor", "gemini", "--casos", casos, "--salida", str(salida)]
+    assert ejecutar_cadenas.main(argv) == 1
+    assert capsys.readouterr().err.startswith("Error: Falta GEMINI_API_KEY")
+    assert not salida.exists()
+
+
+def test_main_proveedor_gemini_escribe_su_proveedor_y_su_nota_en_el_json(monkeypatch, tmp_path):
+    monkeypatch.setattr(modelo_gemini, "crear_modelo_gemini", lambda **kwargs: _modelo_falso([]))
+    salida = tmp_path / "salida.json"
+    argv = ["--confirmar-api-real", "--casos", CASOS, "--salida", str(salida), "--proveedor", "gemini"]
+    assert ejecutar_cadenas.main(argv) == 0
+    escrito = json.loads(salida.read_text(encoding="utf-8"))
+    assert escrito["proveedor"] == "gemini"
+    assert "Gemini" in escrito["nota_costo"]
