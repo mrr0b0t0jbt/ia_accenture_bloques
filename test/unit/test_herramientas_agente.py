@@ -260,8 +260,8 @@ def test_aislar_no_deja_secuencias_ansi_en_el_mensaje():
 
 
 def test_aislar_no_deja_marcas_bidireccionales_en_el_mensaje():
-    mensaje = _mensaje_con_motivo("a‮b⁦c")
-    assert "‮" not in mensaje and "⁦" not in mensaje
+    mensaje = _mensaje_con_motivo("a\u202eb\u2066c")
+    assert "\u202e" not in mensaje and "\u2066" not in mensaje
 
 
 def test_aislar_muestra_el_motivo_entre_comillas_tras_la_etiqueta_de_no_verificado():
@@ -287,6 +287,23 @@ def test_aislar_registra_un_motivo_largo_con_saltos_de_linea_sin_saltos_y_de_a_l
 
 def test_limpiar_motivo_colapsa_los_espacios_y_tabuladores():
     assert limpiar_motivo("a   b\t\tc") == "a b c"
+
+
+def test_limpiar_motivo_reemplaza_el_escape_por_un_espacio():
+    assert limpiar_motivo("x\x1b[2Ky") == "x [2Ky"
+
+
+def test_limpiar_motivo_conserva_acentos_y_enes():
+    assert limpiar_motivo("tráfico de señalización") == "tráfico de señalización"
+
+
+@pytest.mark.parametrize(
+    "motivo, esperado",
+    [("a" + " " * 300 + "b", "a b"), ("x" * 199 + " y", "x" * 199)],
+    ids=["colapsa_antes_de_recortar", "strip_despues_de_recortar"],
+)
+def test_limpiar_motivo_sanea_colapsa_recorta_y_hace_strip_en_ese_orden(motivo, esperado):
+    assert limpiar_motivo(motivo) == esperado
 
 
 def test_aislar_recorta_el_motivo_a_200_caracteres_en_el_mensaje_y_en_el_registro():
