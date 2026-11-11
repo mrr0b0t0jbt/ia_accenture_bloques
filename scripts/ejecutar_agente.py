@@ -8,6 +8,8 @@ Cómo correrlo (desde la raíz del proyecto):
     python scripts/ejecutar_agente.py --confirmar-api-real
 
 Hace llamadas REALES a la API, con costo; los reintentos internos del SDK no se cuentan como llamadas.
+Con la aprobación por defecto "denegar", las acciones de riesgo alto nunca se ejecutan en una corrida desatendida.
+Las trazas van a un directorio fuera de git (trazas/), porque guardan las entradas de las consultas.
 """
 import argparse
 import importlib.util
@@ -34,6 +36,11 @@ MAX_CARACTERES_MENSAJE = 2000
 MOTIVO_LLAMADAS = "limite de llamadas"
 MOTIVO_TOPE = "tope de gasto"
 SALIDA_MAX_ITERACIONES = "Agent stopped due to max iterations."
+# igual a trazas.RUTA_TRAZAS (una prueba lo comprueba); no se importa aquí para no cargar langchain sin el flag
+RUTA_TRAZAS_POR_DEFECTO = "trazas/trazas_agente.jsonl"
+MODOS_APROBACION = ("denegar", "interactiva")
+TIEMPO_APROBACION_POR_DEFECTO = 60
+TIEMPO_APROBACION_MAXIMO = 300
 
 
 class LimiteExcedido(Exception):
@@ -91,13 +98,23 @@ def _crear_limitador(max_llamadas: int, tope_usd: float, costo_actual):
 
 
 def ejecutar_turnos(
-    casos: dict, modelo, tope_usd: float, ruta_salida: str, max_llamadas: int = MAX_LLAMADAS, max_iteraciones: int = MAX_ITERACIONES
+    casos: dict,
+    modelo,
+    tope_usd: float,
+    ruta_salida: str,
+    max_llamadas: int = MAX_LLAMADAS,
+    max_iteraciones: int = MAX_ITERACIONES,
+    aprobador=None,
+    ruta_trazas: str | None = None,
 ) -> dict:
     """Procesa los turnos en orden, mide su uso y corta la corrida al llegar a un límite."""
     from langchain_core.callbacks import UsageMetadataCallbackHandler
 
     from agente import AlmacenHistoriales, construir_agente_con_memoria, construir_ejecutor
     from api_claude_refactor import INPUT_PRICING, OUTPUT_PRICING
+    from herramientas_agente import construir_herramientas
+    from supervision import RegistroAprobaciones
+    from trazas import registrar_traza
 
     # el medidor solo suma los mensajes cuyo response_metadata trae model_name; ChatAnthropic lo informa
     medidor = UsageMetadataCallbackHandler()
@@ -115,7 +132,10 @@ def ejecutar_turnos(
     limitador = _crear_limitador(max_llamadas, tope_usd, costo_actual)
     almacen = AlmacenHistoriales()
     # sin streaming: con herramientas, ChatAnthropic haría streaming con output como lista de bloques, y esa lista rompe el historial
-    ejecutor = construir_ejecutor(modelo, max_iterations=max_iteraciones, stream_runnable=False)
+    # aprobador None = denegar_siempre: sin un humano que apruebe, la acción de riesgo alto no se ejecuta
+    registro_aprobaciones = RegistroAprobaciones()
+    herramientas = construir_herramientas(aprobador, registro_aprobaciones)
+    ejecutor = construir_ejecutor(modelo, herramientas=herramientas, max_iterations=max_iteraciones, stream_runnable=False)
     agente = construir_agente_con_memoria(ejecutor, almacen)
     salida = {
         "proveedor": "claude",
@@ -126,12 +146,14 @@ def ejecutar_turnos(
         "cortado_por_tope": False,
         "cortado_por_llamadas": False,
         "cortado_por_falta_de_uso": False,
+        "aprobaciones": [],
     }
     for turno in casos["turnos"]:
         if costo_actual() >= tope_usd:
             salida["cortado_por_tope"] = True
             break
         llamadas_antes = limitador.llamadas
+        aprobaciones_antes = len(registro_aprobaciones.registros)
         entrada_antes, salida_antes = tokens_acumulados()
         detector = ejecutar_cadenas._crear_detector_de_corte()
         sesion = turno["sesion"]
@@ -142,6 +164,7 @@ def ejecutar_turnos(
             "herramientas_esperadas": turno["herramientas_esperadas"],
         }
         config = {"callbacks": [medidor, limitador, detector], "configurable": {"session_id": sesion}}
+        resultado = None
         try:
             resultado = agente.invoke({"entrada": turno["mensaje"]}, config=config)
             pasos = [
@@ -163,6 +186,15 @@ def ejecutar_turnos(
             # un turno fallido no corta los siguientes
             logger.exception("Error procesando turno")
             registro.update(error=str(error), hubo_fallo=True)
+        todas = registro_aprobaciones.registros
+        registro["aprobaciones"] = todas[aprobaciones_antes:]
+        salida["aprobaciones"] = todas
+        if ruta_trazas is not None and resultado is not None:
+            try:
+                registrar_traza(sesion, turno["mensaje"], resultado, ruta=ruta_trazas, aprobaciones=registro["aprobaciones"])
+            except Exception:
+                # un fallo al escribir la traza no marca el turno como error ni corta la corrida
+                logger.exception("No se pudo escribir la traza del turno")
         entrada_ahora, salida_ahora = tokens_acumulados()
         tokens_entrada, tokens_salida = entrada_ahora - entrada_antes, salida_ahora - salida_antes
         llamadas = limitador.llamadas - llamadas_antes
@@ -212,6 +244,10 @@ def informar(salida: dict) -> None:
         print("La ejecución se detuvo al alcanzar el límite de llamadas.")
     if salida.get("cortado_por_falta_de_uso"):
         print("La ejecución se detuvo: un turno no devolvió datos de uso y el tope de gasto no se puede controlar sin ellos.")
+    aprobaciones = salida.get("aprobaciones")
+    if aprobaciones:
+        denegadas = sum(1 for decision in aprobaciones if not decision["aprobado"])
+        print(f"Aprobaciones de riesgo alto: {len(aprobaciones)} ({denegadas} denegadas)")
     print(f"Llamadas totales: {salida['llamadas_totales']}")
     print(f"Costo total estimado: ${salida['costo_total_estimado']:.5f}")
     print(salida["nota_costo"])
@@ -224,6 +260,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--salida", default="docs/resultados_agente.json")
     parser.add_argument("--tope-usd", type=float, default=TOPE_USD_MAXIMO)
     parser.add_argument("--max-tokens", type=int, default=MAX_TOKENS_POR_DEFECTO)
+    parser.add_argument("--aprobacion", choices=MODOS_APROBACION, default="denegar")
+    parser.add_argument("--tiempo-aprobacion", type=float, default=TIEMPO_APROBACION_POR_DEFECTO)
+    parser.add_argument("--trazas", default=RUTA_TRAZAS_POR_DEFECTO)
+    parser.add_argument("--sin-trazas", action="store_true")
     parser.add_argument("--confirmar-api-real", action="store_true")
     args = parser.parse_args(argv)
     if not args.confirmar_api_real:
@@ -251,6 +291,9 @@ def main(argv: list[str] | None = None) -> int:
     if not 0 < args.max_tokens <= MAX_TOKENS_MAXIMO:
         print(f"Error: --max-tokens debe ser mayor que 0 y como máximo {MAX_TOKENS_MAXIMO}.", file=sys.stderr)
         return 1
+    if not 0 < args.tiempo_aprobacion <= TIEMPO_APROBACION_MAXIMO:
+        print(f"Error: --tiempo-aprobacion debe ser mayor que 0 y como máximo {TIEMPO_APROBACION_MAXIMO}.", file=sys.stderr)
+        return 1
     casos = ejecutar_cadenas.cargar_casos(args.casos)
     problema = validar_casos_agente(casos)
     if problema:
@@ -268,7 +311,13 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
-    salida = ejecutar_turnos(casos, modelo, args.tope_usd, args.salida)
+    aprobador = None
+    if args.aprobacion == "interactiva":
+        from supervision import crear_aprobador_interactivo
+
+        aprobador = crear_aprobador_interactivo(args.tiempo_aprobacion)
+    ruta_trazas = None if args.sin_trazas else args.trazas
+    salida = ejecutar_turnos(casos, modelo, args.tope_usd, args.salida, aprobador=aprobador, ruta_trazas=ruta_trazas)
     informar(salida)
     if not any("error" not in r and not r.get("hubo_fallo") for r in salida["resultados"]):
         print("Error: ningún turno dio un resultado útil.", file=sys.stderr)

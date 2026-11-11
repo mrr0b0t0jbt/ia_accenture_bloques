@@ -10,6 +10,8 @@ import pytest
 from langchain_core.messages import AIMessage
 
 import modelo_langchain
+import supervision
+import trazas
 from api_claude_refactor import INPUT_PRICING, OUTPUT_PRICING
 from modelo_falso_herramientas import ModeloFalsoHerramientas, pedir_herramienta
 
@@ -133,8 +135,20 @@ def test_archivo_real_de_casos_es_valido_y_separa_las_sesiones():
     casos = json.loads(Path(CASOS).read_text(encoding="utf-8"))
     assert ejecutar_agente.validar_casos_agente(casos) is None
     turnos = casos["turnos"]
-    assert len(turnos) == 8
+    assert len(turnos) == 10
     assert turnos[5]["sesion"] == turnos[6]["sesion"] != turnos[7]["sesion"]
+
+
+def test_los_dos_turnos_de_aislamiento_esperan_la_herramienta_de_riesgo_alto_y_tienen_sesiones_propias():
+    casos = json.loads(Path(CASOS).read_text(encoding="utf-8"))
+    assert ejecutar_agente.validar_casos_agente(casos) is None
+    turnos = casos["turnos"]
+    assert len(turnos) == 10
+    assert [turno["herramientas_esperadas"] for turno in turnos[8:]] == [["aislar_host_de_laboratorio"]] * 2
+    sesiones_nuevas = [turno["sesion"] for turno in turnos[8:]]
+    sesiones_previas = {turno["sesion"] for turno in turnos[:8]}
+    assert sesiones_nuevas[0] != sesiones_nuevas[1]
+    assert not set(sesiones_nuevas) & sesiones_previas
 
 
 def test_turno_con_herramienta_registra_su_traza_su_uso_y_su_costo(tmp_path):
@@ -345,3 +359,148 @@ def test_main_rechaza_una_salida_que_es_un_enlace_duro_a_los_casos(monkeypatch, 
     assert ejecutar_agente.main(["--confirmar-api-real", "--casos", str(casos), "--salida", str(enlace)]) == 1
     assert "--salida" in capsys.readouterr().err
     assert casos.read_text(encoding="utf-8") == original
+
+
+HOST_LAB = "host-lab-01.ejemplo.test"
+AISLAR = "aislar_host_de_laboratorio"
+
+
+def _pedir_aislar(host: str = HOST_LAB) -> AIMessage:
+    return pedir_herramienta(AISLAR, {"host": host, "motivo": "trafico saliente desconocido"}).model_copy(update=USO)
+
+
+def _un_turno_de_aislamiento(tmp_path, modelo, **kwargs) -> dict:
+    return ejecutar_agente.ejecutar_turnos(
+        {"turnos": [_turno(esperadas=[AISLAR])]}, modelo, 0.05, str(tmp_path / "s.json"), **kwargs
+    )
+
+
+def _espia_de_ejecutar_turnos(monkeypatch, tmp_path):
+    """Parchea crear_modelo y ejecutar_turnos; devuelve el dict donde el espía guarda sus argumentos."""
+    recibido = {}
+
+    def espia(casos, modelo, tope_usd, ruta_salida, **kwargs):
+        recibido.update(kwargs)
+        return {
+            "nota_costo": "Nota de costo ficticia.",
+            "resultados": [{"id": "t1", "respuesta": "ok", "herramientas_usadas": [], "herramientas_esperadas": [], "hubo_fallo": False}],
+            "llamadas_totales": 1,
+            "costo_total_estimado": 0.0,
+            "cortado_por_tope": False,
+            "cortado_por_llamadas": False,
+        }
+
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda **kwargs: object())
+    monkeypatch.setattr(ejecutar_agente, "ejecutar_turnos", espia)
+    return recibido
+
+
+def test_main_con_aprobacion_invalida_termina_con_codigo_2(tmp_path):
+    with pytest.raises(SystemExit) as salida:
+        ejecutar_agente.main(_argv(tmp_path, "--aprobacion", "siempre"))
+    assert salida.value.code == 2
+
+
+@pytest.mark.parametrize("tiempo", ["0", "301"], ids=["cero", "sobre_el_maximo"])
+def test_main_rechaza_un_tiempo_de_aprobacion_fuera_de_rango_sin_crear_modelo(monkeypatch, tmp_path, capsys, tiempo):
+    falso = MagicMock(side_effect=AssertionError("no debe crearse el modelo"))
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", falso)
+    assert ejecutar_agente.main(_argv(tmp_path, "--tiempo-aprobacion", tiempo)) == 1
+    assert "--tiempo-aprobacion" in capsys.readouterr().err
+    falso.assert_not_called()
+
+
+def test_por_defecto_la_herramienta_de_riesgo_alto_no_se_aprueba_y_queda_registrada(tmp_path):
+    modelo = ModeloDeGuion(guion=[_pedir_aislar(), _respuesta("No se aisló.")])
+    salida = _un_turno_de_aislamiento(tmp_path, modelo)
+    [turno] = salida["resultados"]
+    [decision] = turno["aprobaciones"]
+    assert (decision["herramienta"], decision["aprobado"]) == (AISLAR, False)
+    assert salida["aprobaciones"] == turno["aprobaciones"]
+    assert "no aprobado" in turno["pasos"][0]["observacion"]
+
+
+def test_con_un_aprobador_que_aprueba_el_aislamiento_se_simula_y_queda_registrado(tmp_path):
+    modelo = ModeloDeGuion(guion=[_pedir_aislar(), _respuesta("Aislado.")])
+    salida = _un_turno_de_aislamiento(tmp_path, modelo, aprobador=lambda mensaje: True)
+    [turno] = salida["resultados"]
+    assert turno["aprobaciones"][0]["aprobado"] is True
+    assert "aislado (simulado" in turno["pasos"][0]["observacion"]
+
+
+def test_un_host_no_permitido_se_rechaza_sin_registrar_aprobaciones(tmp_path):
+    modelo = ModeloDeGuion(guion=[_pedir_aislar("servidor-prod.example.com"), _respuesta("No se puede.")])
+    salida = _un_turno_de_aislamiento(tmp_path, modelo, aprobador=lambda mensaje: True)
+    [turno] = salida["resultados"]
+    assert turno["aprobaciones"] == []
+    assert turno["pasos"][0]["observacion"].startswith("Host no permitido")
+
+
+def test_con_ruta_de_trazas_cada_turno_deja_una_linea_con_sus_aprobaciones(tmp_path):
+    modelo = ModeloDeGuion(guion=[_pedir_aislar(), _respuesta("No se aisló."), _respuesta("Directo.")])
+    casos = {"turnos": [_turno("t1", "a", "Aísla el host.", [AISLAR]), _turno("t2", "b", "Pregunta directa.")]}
+    ruta = tmp_path / "trazas.jsonl"
+    ejecutar_agente.ejecutar_turnos(casos, modelo, 0.05, str(tmp_path / "s.json"), ruta_trazas=str(ruta))
+    primera, segunda = [json.loads(linea) for linea in ruta.read_text(encoding="utf-8").splitlines()]
+    assert (primera["session_id"], segunda["session_id"]) == ("a", "b")
+    assert primera["entrada"] == "Aísla el host."
+    assert [accion["herramienta"] for accion in primera["acciones"]] == [AISLAR]
+    assert [(a["herramienta"], a["aprobado"]) for a in primera["aprobaciones"]] == [(AISLAR, False)]
+    assert segunda["acciones"] == [] and segunda["aprobaciones"] == []
+
+
+def test_un_fallo_al_escribir_la_traza_no_corta_la_corrida(tmp_path):
+    modelo = ModeloDeGuion(guion=[_respuesta("uno"), _respuesta("dos")])
+    casos = {"turnos": [_turno("t1"), _turno("t2")]}
+    ruta_salida = tmp_path / "s.json"
+    # un directorio como ruta de trazas hace fallar open()
+    salida = ejecutar_agente.ejecutar_turnos(casos, modelo, 0.05, str(ruta_salida), ruta_trazas=str(tmp_path))
+    assert ["error" in turno for turno in salida["resultados"]] == [False, False]
+    assert len(json.loads(ruta_salida.read_text(encoding="utf-8"))["resultados"]) == 2
+
+
+def test_sin_ruta_de_trazas_no_se_crea_ningun_archivo_de_trazas(tmp_path):
+    ejecutar_agente.ejecutar_turnos({"turnos": [_turno()]}, ModeloDeGuion(guion=[_respuesta("uno")]), 0.05, str(tmp_path / "s.json"))
+    assert [ruta.name for ruta in tmp_path.iterdir()] == ["s.json"]
+
+
+def test_main_pasa_a_ejecutar_turnos_el_aprobador_segun_el_modo(monkeypatch, tmp_path):
+    recibido = _espia_de_ejecutar_turnos(monkeypatch, tmp_path)
+    tiempos = []
+    monkeypatch.setattr(supervision, "crear_aprobador_interactivo", lambda tiempo: tiempos.append(tiempo) or "aprobador-falso")
+    assert ejecutar_agente.main(_argv(tmp_path, "--aprobacion", "interactiva", "--tiempo-aprobacion", "7")) == 0
+    assert tiempos == [7.0] and recibido["aprobador"] == "aprobador-falso"
+    assert ejecutar_agente.main(_argv(tmp_path)) == 0
+    assert tiempos == [7.0] and recibido["aprobador"] is None
+
+
+@pytest.mark.parametrize("argumentos, con_trazas", [([], True), (["--sin-trazas"], False)], ids=["con_trazas", "sin_trazas"])
+def test_main_pasa_la_ruta_de_trazas_o_none_con_sin_trazas(monkeypatch, tmp_path, argumentos, con_trazas):
+    recibido = _espia_de_ejecutar_turnos(monkeypatch, tmp_path)
+    assert ejecutar_agente.main(_argv(tmp_path, *argumentos)) == 0
+    assert recibido["ruta_trazas"] == (ejecutar_agente.RUTA_TRAZAS_POR_DEFECTO if con_trazas else None)
+
+
+def test_informar_muestra_las_aprobaciones_solo_si_las_hay(capsys):
+    base = {"nota_costo": "n", "resultados": [], "llamadas_totales": 0, "costo_total_estimado": 0.0, "cortado_por_tope": False, "cortado_por_llamadas": False}
+    ejecutar_agente.informar({**base, "aprobaciones": [{"aprobado": True}, {"aprobado": False}]})
+    assert "Aprobaciones de riesgo alto: 2 (1 denegadas)" in capsys.readouterr().out
+    for salida in ({**base, "aprobaciones": []}, base):
+        ejecutar_agente.informar(salida)
+        assert "Aprobaciones" not in capsys.readouterr().out
+
+
+def test_la_ruta_de_trazas_por_defecto_es_la_de_trazas():
+    assert ejecutar_agente.RUTA_TRAZAS_POR_DEFECTO == trazas.RUTA_TRAZAS
+
+
+def test_main_de_punta_a_punta_con_aislamiento_escribe_aprobaciones_y_trazas(monkeypatch, tmp_path):
+    modelo = ModeloDeGuion(guion=[_pedir_aislar(), _respuesta("No se aisló."), _respuesta("Directo.")])
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda **kwargs: modelo)
+    casos = _escribir_casos(tmp_path, [_turno("t1", "a", esperadas=[AISLAR]), _turno("t2", "b")])
+    salida, ruta_trazas = tmp_path / "salida.json", tmp_path / "trazas.jsonl"
+    argv = ["--confirmar-api-real", "--casos", casos, "--salida", str(salida), "--trazas", str(ruta_trazas)]
+    assert ejecutar_agente.main(argv) == 0
+    escrito = json.loads(salida.read_text(encoding="utf-8"))
+    assert [decision["aprobado"] for decision in escrito["aprobaciones"]] == [False]
+    assert len(ruta_trazas.read_text(encoding="utf-8").splitlines()) == 2
