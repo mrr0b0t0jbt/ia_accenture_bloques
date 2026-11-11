@@ -8,10 +8,13 @@ from herramientas_agente import (
     CVES_LABORATORIO,
     DOCUMENTACION,
     HERRAMIENTAS,
+    RIESGO,
     buscar_en_documentacion,
     calcular,
+    construir_herramientas,
     consultar_cve,
 )
+from supervision import RegistroAprobaciones
 
 CVE_CONOCIDO = "CVE-2099-10002"
 
@@ -160,6 +163,93 @@ def test_cve_tiene_nombre_propio_y_campos_descritos():
 
 def test_las_tres_herramientas_tienen_descripcion_y_devuelven_texto():
     argumentos = [{"consulta": "costo"}, {"expresion": "1 + 1"}, {"cve_id": CVE_CONOCIDO}]
-    for herramienta, entrada in zip(HERRAMIENTAS, argumentos, strict=True):
+    # solo las tres de riesgo bajo: la cuarta pide aprobación y tiene sus propias pruebas
+    for herramienta, entrada in zip(HERRAMIENTAS[:3], argumentos, strict=True):
         assert herramienta.description
         assert isinstance(herramienta.invoke(entrada), str)
+
+
+HOST_VALIDO = "host-lab-01.ejemplo.test"
+
+
+class _AprobadorEspia:
+    """Aprobador de prueba que responde lo indicado y guarda los mensajes que recibió."""
+
+    def __init__(self, respuesta: bool) -> None:
+        self.respuesta = respuesta
+        self.mensajes: list[str] = []
+
+    def __call__(self, mensaje: str) -> bool:
+        self.mensajes.append(mensaje)
+        return self.respuesta
+
+
+def _aislar(respuesta: bool = True):
+    """Devuelve (herramienta, aprobador espía, registro) con la herramienta de aislamiento ya construida."""
+    aprobador, registro = _AprobadorEspia(respuesta), RegistroAprobaciones()
+    return construir_herramientas(aprobador, registro)[3], aprobador, registro
+
+
+def test_riesgo_cubre_exactamente_las_herramientas_con_niveles_validos():
+    assert set(RIESGO) == {herramienta.name for herramienta in HERRAMIENTAS}
+    assert set(RIESGO.values()) <= {"bajo", "medio", "alto"}
+    assert [RIESGO[nombre] for nombre in ("buscar_en_documentacion", "calcular", "consultar_cve_de_laboratorio")] == ["bajo"] * 3
+    assert RIESGO["aislar_host_de_laboratorio"] == "alto"
+
+
+def test_aislar_con_aprobacion_simula_el_aislamiento_y_registra_la_decision():
+    herramienta, _, registro = _aislar(True)
+    respuesta = herramienta.invoke({"host": HOST_VALIDO, "motivo": "beaconing"})
+    assert "aislado" in respuesta and "simulado" in respuesta
+    [entrada] = registro.registros
+    assert entrada["aprobado"] is True
+    assert entrada["argumentos"] == {"host": HOST_VALIDO, "motivo": "beaconing"}
+
+
+def test_aislar_sin_aprobacion_no_aisla_y_registra_la_negativa():
+    herramienta, _, registro = _aislar(False)
+    assert "no aprobado" in herramienta.invoke({"host": HOST_VALIDO, "motivo": "beaconing"})
+    [entrada] = registro.registros
+    assert entrada["aprobado"] is False
+
+
+@pytest.mark.parametrize(
+    "host", ["produccion.empresa.com", "host-lab-01.ejemplo.test.evil.com", "ejemplo.test"]
+)
+def test_aislar_rechaza_hosts_que_no_son_de_laboratorio_sin_pedir_aprobacion(host):
+    herramienta, aprobador, registro = _aislar(True)
+    assert herramienta.invoke({"host": host, "motivo": "x"}).startswith("Host no permitido")
+    assert aprobador.mensajes == []
+    assert registro.registros == []
+
+
+def test_aislar_pide_aprobacion_con_un_mensaje_que_trae_host_y_motivo():
+    herramienta, aprobador, _ = _aislar(True)
+    herramienta.invoke({"host": HOST_VALIDO, "motivo": "beaconing"})
+    [mensaje] = aprobador.mensajes
+    assert HOST_VALIDO in mensaje and "beaconing" in mensaje
+    assert mensaje.endswith("(s/n): ")
+
+
+def test_aislar_recorta_el_motivo_a_200_caracteres_en_el_mensaje_y_en_el_registro():
+    herramienta, aprobador, registro = _aislar(True)
+    herramienta.invoke({"host": HOST_VALIDO, "motivo": "m" * 500})
+    assert "m" * 200 in aprobador.mensajes[0] and "m" * 201 not in aprobador.mensajes[0]
+    assert registro.registros[0]["argumentos"]["motivo"] == "m" * 200
+
+
+def test_aislar_normaliza_el_host_antes_de_validarlo_y_registrarlo():
+    herramienta, _, registro = _aislar(True)
+    assert "aislado" in herramienta.invoke({"host": " HOST-LAB-01.EJEMPLO.TEST ", "motivo": "x"})
+    assert registro.registros[0]["argumentos"]["host"] == HOST_VALIDO
+
+
+def test_construir_herramientas_conserva_el_orden_y_la_global_niega_por_defecto():
+    nombres = [herramienta.name for herramienta in construir_herramientas()]
+    assert nombres == [
+        "buscar_en_documentacion",
+        "calcular",
+        "consultar_cve_de_laboratorio",
+        "aislar_host_de_laboratorio",
+    ]
+    assert "no aprobado" in HERRAMIENTAS[3].invoke({"host": HOST_VALIDO, "motivo": "x"})
