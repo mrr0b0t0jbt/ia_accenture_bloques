@@ -83,6 +83,20 @@ def test_calcular_tolera_espacios_en_los_bordes_y_la_expresion_vacia(expresion, 
     assert calcular.invoke({"expresion": expresion}) == esperado
 
 
+@pytest.mark.parametrize(
+    "expresion, esperado",
+    [
+        ("1e23", "1e+23"),
+        ("1e15", "1000000000000000"),
+        ("9007199254740993 * 1.0", "9007199254740992.0"),
+        ("9" * 30, "9" * 30),
+    ],
+    ids=["float_enorme", "float_entero_seguro", "float_en_2_a_la_53", "entero_enorme"],
+)
+def test_calcular_no_inventa_digitos_de_ruido_en_numeros_grandes(expresion, esperado):
+    assert calcular.invoke({"expresion": expresion}) == esperado
+
+
 def test_buscar_devuelve_el_texto_de_reintentos():
     respuesta = buscar_en_documentacion.invoke({"consulta": "reintentos"})
     assert respuesta == DOCUMENTACION["reintentos"]
@@ -120,6 +134,18 @@ def test_cve_se_normaliza_antes_de_buscarlo():
 
 def test_cve_desconocido_avisa_que_no_se_encontro():
     assert "No se encontró el CVE de laboratorio" in consultar_cve.invoke({"cve_id": "CVE-2099-99999"})
+
+
+def test_cve_desconocido_muy_largo_refleja_solo_el_inicio_del_identificador():
+    respuesta = consultar_cve.invoke({"cve_id": "a" * 200})
+    assert respuesta.startswith("No se encontró el CVE de laboratorio")
+    assert len(respuesta) < 140
+    assert "…" in respuesta
+
+
+def test_cve_desconocido_de_64_caracteres_se_refleja_completo():
+    respuesta = consultar_cve.invoke({"cve_id": "a" * 64})
+    assert respuesta == f"No se encontró el CVE de laboratorio {'A' * 64}."
 
 
 def test_cve_con_argumento_invalido_falla_en_la_validacion():

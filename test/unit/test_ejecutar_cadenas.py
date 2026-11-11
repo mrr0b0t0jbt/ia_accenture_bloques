@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -441,6 +442,26 @@ def test_informar_imprime_la_nota_de_costo_de_gemini(capsys):
 def test_informar_sin_nota_de_costo_imprime_la_de_claude(capsys):
     ejecutar_cadenas.informar({"resultados": [], "cortado_por_tope": False, "costo_total_estimado": 0.0})
     assert ejecutar_cadenas.NOTA_COSTO in capsys.readouterr().out
+
+
+def test_guardar_resultados_que_falla_deja_intacto_el_archivo_anterior_y_sin_temporales(tmp_path):
+    ruta = tmp_path / "salida.json"
+    ruta.write_text(json.dumps({"previo": True}), encoding="utf-8")
+    with pytest.raises(UnicodeEncodeError):
+        ejecutar_cadenas.guardar_resultados({"texto": "\ud800"}, str(ruta))
+    assert json.loads(ruta.read_text(encoding="utf-8")) == {"previo": True}
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_main_rechaza_una_salida_que_es_un_enlace_duro_a_los_casos(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", MagicMock(side_effect=AssertionError("no debe crearse el modelo")))
+    casos = Path(_escribir_casos(tmp_path, {"avisos": [AVISO_FICTICIO], "mensajes": []}))
+    original = casos.read_text(encoding="utf-8")
+    enlace = tmp_path / "enlace.json"
+    os.link(casos, enlace)
+    assert ejecutar_cadenas.main(["--confirmar-api-real", "--casos", str(casos), "--salida", str(enlace)]) == 1
+    assert "--salida" in capsys.readouterr().err
+    assert casos.read_text(encoding="utf-8") == original
 
 
 def test_main_sin_confirmar_menciona_gemini_y_el_flag(capsys):

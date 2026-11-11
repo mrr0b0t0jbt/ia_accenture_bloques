@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -260,3 +261,78 @@ def test_main_de_punta_a_punta_escribe_el_json_completo(monkeypatch, tmp_path):
     assert escrito["costo_total_estimado"] == pytest.approx(3 * COSTO_POR_LLAMADA)
     assert len(escrito["resultados"]) == 2
     assert all(CAMPOS_DEL_TURNO <= set(turno) for turno in escrito["resultados"])
+
+
+def test_truncado_se_calcula_por_turno_y_no_se_arrastra_al_siguiente(tmp_path):
+    cortada = AIMessage(content="a medias", **{**USO, "response_metadata": {"model_name": "falso", "stop_reason": "max_tokens"}})
+    modelo = ModeloDeGuion(guion=[cortada, _respuesta("completa")])
+    casos = {"turnos": [_turno("t1"), _turno("t2")]}
+    salida = ejecutar_agente.ejecutar_turnos(casos, modelo, 0.05, str(tmp_path / "s.json"))
+    assert [turno["truncado"] for turno in salida["resultados"]] == [True, False]
+
+
+def test_guarda_la_salida_despues_de_cada_turno_y_al_final(monkeypatch, tmp_path):
+    # se anota cuántos resultados traía la salida en cada llamada, porque el dict se sigue modificando
+    resultados_por_llamada = []
+    monkeypatch.setattr(
+        ejecutar_agente.ejecutar_cadenas, "guardar_resultados", lambda salida, ruta: resultados_por_llamada.append(len(salida["resultados"]))
+    )
+    modelo = ModeloDeGuion(guion=[_respuesta("uno"), _respuesta("dos")])
+    casos = {"turnos": [_turno("t1"), _turno("t2")]}
+    ejecutar_agente.ejecutar_turnos(casos, modelo, 0.05, str(tmp_path / "s.json"))
+    assert resultados_por_llamada == [1, 2, 2]
+
+
+def test_tope_igual_al_costo_exacto_de_un_turno_no_ejecuta_el_siguiente(tmp_path):
+    # mismos precios y misma expresión que costo_de en el script
+    costo_unitario = 10 * INPUT_PRICING + 5 * OUTPUT_PRICING
+    modelo = ModeloDeGuion(guion=[_respuesta("uno"), _respuesta("dos")])
+    casos = {"turnos": [_turno("t1"), _turno("t2")]}
+    salida = ejecutar_agente.ejecutar_turnos(casos, modelo, costo_unitario, str(tmp_path / "s.json"))
+    assert [turno["id"] for turno in salida["resultados"]] == ["t1"]
+    assert salida["cortado_por_tope"] is True
+    assert len(modelo.entradas) == 1
+
+
+def test_turno_sin_datos_de_uso_corta_la_corrida(tmp_path):
+    modelo = ModeloDeGuion(guion=[AIMessage(content="uno"), AIMessage(content="dos")])
+    casos = {"turnos": [_turno("t1"), _turno("t2")]}
+    salida = ejecutar_agente.ejecutar_turnos(casos, modelo, 0.05, str(tmp_path / "s.json"))
+    assert salida["cortado_por_falta_de_uso"] is True
+    assert [turno["id"] for turno in salida["resultados"]] == ["t1"]
+    assert len(modelo.entradas) == 1
+
+
+def test_informar_avisa_cuando_la_corrida_se_corto_por_falta_de_datos_de_uso(capsys):
+    salida = {
+        "nota_costo": "Nota de costo ficticia.",
+        "resultados": [],
+        "llamadas_totales": 1,
+        "costo_total_estimado": 0.0,
+        "cortado_por_tope": False,
+        "cortado_por_llamadas": False,
+        "cortado_por_falta_de_uso": True,
+    }
+    ejecutar_agente.informar(salida)
+    assert "no devolvió datos de uso" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("largo, esperado_texto", [(2001, True), (2000, False)], ids=["2001_caracteres", "2000_caracteres"])
+def test_validar_casos_agente_limita_el_largo_del_mensaje(largo, esperado_texto):
+    casos = {"turnos": [_turno(mensaje="x" * largo)]}
+    problema = ejecutar_agente.validar_casos_agente(casos)
+    if esperado_texto:
+        assert "2000" in problema
+    else:
+        assert problema is None
+
+
+def test_main_rechaza_una_salida_que_es_un_enlace_duro_a_los_casos(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", MagicMock(side_effect=AssertionError("no debe crearse el modelo")))
+    casos = Path(_escribir_casos(tmp_path, [_turno()]))
+    original = casos.read_text(encoding="utf-8")
+    enlace = tmp_path / "enlace.json"
+    os.link(casos, enlace)
+    assert ejecutar_agente.main(["--confirmar-api-real", "--casos", str(casos), "--salida", str(enlace)]) == 1
+    assert "--salida" in capsys.readouterr().err
+    assert casos.read_text(encoding="utf-8") == original
