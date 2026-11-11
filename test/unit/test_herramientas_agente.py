@@ -15,7 +15,7 @@ from herramientas_agente import (
     consultar_cve,
     limpiar_motivo,
 )
-from supervision import RegistroAprobaciones
+from supervision import MAX_APROBACIONES_POR_TURNO, LimiteAprobaciones, RegistroAprobaciones
 
 CVE_CONOCIDO = "CVE-2099-10002"
 
@@ -341,6 +341,60 @@ def test_aislar_normaliza_el_host_antes_de_validarlo_y_registrarlo():
     herramienta, _, registro = _aislar(True)
     assert "aislado" in herramienta.invoke({"host": " HOST-LAB-01.EJEMPLO.TEST ", "motivo": "x"})
     assert registro.registros[0]["argumentos"]["host"] == HOST_VALIDO
+
+
+def test_aislar_solo_aprueba_si_el_aprobador_devuelve_exactamente_true():
+    for respuesta in ("n", "no", 1, [False], object()):
+        herramienta, _, registro = _aislar(respuesta)
+        assert "no aprobado" in herramienta.invoke({"host": HOST_VALIDO, "motivo": "x"}), respuesta
+        assert registro.registros[0]["aprobado"] is False, respuesta
+
+
+def _host(n: int) -> str:
+    return f"host-{n}.ejemplo.test"
+
+
+def _aislar_con_limite(respuesta: bool, **tope):
+    """Como _aislar, pero con topes de aprobaciones propios; devuelve también el límite."""
+    aprobador, registro, limite = _AprobadorEspia(respuesta), RegistroAprobaciones(), LimiteAprobaciones(**tope)
+    return construir_herramientas(aprobador, registro, limite)[3], aprobador, registro, limite
+
+
+def test_aislar_no_pregunta_la_cuarta_solicitud_de_un_turno_y_la_registra_como_tope():
+    herramienta, aprobador, registro, _ = _aislar_con_limite(True)
+    respuestas = [herramienta.invoke({"host": _host(n), "motivo": "x"}) for n in range(4)]
+    assert len(aprobador.mensajes) == 3 == MAX_APROBACIONES_POR_TURNO
+    assert "no aprobado" in respuestas[3]
+    ultima = registro.registros[3]
+    assert ultima["aprobado"] is False and ultima["argumentos"]["rechazo"] == "tope de aprobaciones"
+
+
+def test_aislar_reinicia_el_tope_por_turno_pero_no_el_de_la_corrida():
+    herramienta, aprobador, registro, limite = _aislar_con_limite(True, max_por_turno=1, max_por_corrida=2)
+    for n in range(2):
+        herramienta.invoke({"host": _host(n), "motivo": "x"})
+    assert len(aprobador.mensajes) == 1
+    limite.nuevo_turno()
+    herramienta.invoke({"host": _host(2), "motivo": "x"})
+    assert len(aprobador.mensajes) == 2
+    limite.nuevo_turno()
+    herramienta.invoke({"host": _host(3), "motivo": "x"})
+    assert len(aprobador.mensajes) == 2
+    assert registro.registros[3]["argumentos"]["rechazo"] == "tope de aprobaciones"
+
+
+def test_aislar_no_vuelve_a_preguntar_por_un_host_ya_negado_en_el_turno():
+    herramienta, aprobador, registro, limite = _aislar_con_limite(False)
+    herramienta.invoke({"host": HOST_VALIDO, "motivo": "x"})
+    assert "no aprobado" in herramienta.invoke({"host": HOST_VALIDO, "motivo": "x"})
+    assert len(aprobador.mensajes) == 1
+    assert registro.registros[1]["aprobado"] is False
+    assert registro.registros[1]["argumentos"]["rechazo"] == "ya denegado en este turno"
+    herramienta.invoke({"host": _host(2), "motivo": "x"})
+    assert len(aprobador.mensajes) == 2
+    limite.nuevo_turno()
+    herramienta.invoke({"host": HOST_VALIDO, "motivo": "x"})
+    assert len(aprobador.mensajes) == 3
 
 
 def test_construir_herramientas_conserva_el_orden_y_la_global_niega_por_defecto():

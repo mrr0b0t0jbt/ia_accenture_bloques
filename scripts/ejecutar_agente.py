@@ -113,7 +113,7 @@ def ejecutar_turnos(
     from agente import AlmacenHistoriales, construir_agente_con_memoria, construir_ejecutor
     from api_claude_refactor import INPUT_PRICING, OUTPUT_PRICING
     from herramientas_agente import construir_herramientas
-    from supervision import RegistroAprobaciones
+    from supervision import LimiteAprobaciones, RegistroAprobaciones
     from trazas import registrar_traza
 
     # el medidor solo suma los mensajes cuyo response_metadata trae model_name; ChatAnthropic lo informa
@@ -134,7 +134,8 @@ def ejecutar_turnos(
     # sin streaming: con herramientas, ChatAnthropic haría streaming con output como lista de bloques, y esa lista rompe el historial
     # aprobador None = denegar_siempre: sin un humano que apruebe, la acción de riesgo alto no se ejecuta
     registro_aprobaciones = RegistroAprobaciones()
-    herramientas = construir_herramientas(aprobador, registro_aprobaciones)
+    limite_aprobaciones = LimiteAprobaciones()
+    herramientas = construir_herramientas(aprobador, registro_aprobaciones, limite_aprobaciones)
     ejecutor = construir_ejecutor(modelo, herramientas=herramientas, max_iterations=max_iteraciones, stream_runnable=False)
     agente = construir_agente_con_memoria(ejecutor, almacen)
     salida = {
@@ -152,6 +153,7 @@ def ejecutar_turnos(
         if costo_actual() >= tope_usd:
             salida["cortado_por_tope"] = True
             break
+        limite_aprobaciones.nuevo_turno()
         llamadas_antes = limitador.llamadas
         aprobaciones_antes = len(registro_aprobaciones.registros)
         entrada_antes, salida_antes = tokens_acumulados()

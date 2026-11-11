@@ -8,7 +8,7 @@ import re
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from supervision import RegistroAprobaciones, denegar_siempre
+from supervision import LimiteAprobaciones, RegistroAprobaciones, denegar_siempre
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +133,7 @@ RIESGO = {
 }
 MAX_LONGITUD_MOTIVO = 200
 MAX_LONGITUD_HOST = 100
+_NO_APROBADO = "Aislamiento no aprobado por el supervisor humano."
 _PATRON_HOST_LABORATORIO = re.compile(r"(?=.{1,100}$)[a-z0-9-]+(\.[a-z0-9-]+)*\.ejemplo\.test")
 
 
@@ -147,10 +148,11 @@ def limpiar_motivo(motivo: str) -> str:
     return limpiar_texto(motivo, MAX_LONGITUD_MOTIVO, "(sin motivo)")
 
 
-def construir_herramientas(aprobador=None, registro=None) -> list:
-    """Devuelve las herramientas del agente; la de riesgo alto consulta al aprobador y registra su decisión."""
+def construir_herramientas(aprobador=None, registro=None, limite=None) -> list:
+    """Devuelve las herramientas del agente; la de riesgo alto consulta al aprobador, dentro de los topes, y registra su decisión."""
     aprobador = denegar_siempre if aprobador is None else aprobador
     registro = RegistroAprobaciones() if registro is None else registro
+    limite = LimiteAprobaciones() if limite is None else limite
 
     @tool
     def aislar_host_de_laboratorio(host: str, motivo: str) -> str:
@@ -169,14 +171,23 @@ def construir_herramientas(aprobador=None, registro=None) -> list:
             )
             return "Host no permitido: solo se pueden aislar hosts de laboratorio (*.ejemplo.test)."
         motivo = limpiar_motivo(motivo)
+        # los rechazos automáticos no llaman al aprobador: un modelo insistente no puede agotar la atención de quien aprueba
+        rechazo = "ya denegado en este turno" if host in limite.negados else "tope de aprobaciones" if limite.agotado() else None
+        if rechazo:
+            registro.registrar("aislar_host_de_laboratorio", {"host": host, "motivo": motivo, "rechazo": rechazo}, False)
+            return _NO_APROBADO
+        limite.contar()
         # json.dumps cita el texto del modelo para que no se confunda con el resto del mensaje
-        aprobado = aprobador(
+        respuesta = aprobador(
             f"El agente quiere aislar el host {host}. Motivo (texto del modelo, no verificado): "
             f"{json.dumps(motivo, ensure_ascii=False)}. ¿Aprobar? (s/n): "
         )
+        # solo True exacto aprueba: un valor "truthy" de un aprobador defectuoso no es una aprobación
+        aprobado = respuesta is True
         registro.registrar("aislar_host_de_laboratorio", {"host": host, "motivo": motivo}, aprobado)
         if not aprobado:
-            return "Aislamiento no aprobado por el supervisor humano."
+            limite.negados.add(host)
+            return _NO_APROBADO
         # SIMULACIÓN: no toca ninguna red, proceso ni archivo; la acción real no existe
         return f"Host {host} aislado (simulado: no se modificó ninguna red)."
 
