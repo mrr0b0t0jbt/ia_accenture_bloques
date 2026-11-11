@@ -508,6 +508,86 @@ def test_la_ruta_de_trazas_por_defecto_es_la_de_trazas():
     assert ejecutar_agente.RUTA_TRAZAS_POR_DEFECTO == trazas.RUTA_TRAZAS
 
 
+class ModeloInterrumpible(ModeloDeGuion):
+    """Modelo falso que lanza KeyboardInterrupt (como un Ctrl-C) en la llamada indicada."""
+
+    interrumpir_en: int | None = None
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        if len(self.entradas) == self.interrumpir_en:
+            self.entradas.append(messages)
+            raise KeyboardInterrupt
+        return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+
+def test_un_ctrl_c_en_el_segundo_turno_devuelve_130_y_guarda_lo_decidido_en_el_json_y_en_la_traza(monkeypatch, tmp_path, capsys):
+    guion = [_pedir_aislar(), _respuesta("No se aisló."), _pedir_aislar(), _respuesta("nunca se usa")]
+    modelo = ModeloInterrumpible(guion=guion, interrumpir_en=3)
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda **kwargs: modelo)
+    casos = _escribir_casos(tmp_path, [_turno("t1", "a", esperadas=[AISLAR]), _turno("t2", "b", esperadas=[AISLAR])])
+    salida, ruta_trazas = tmp_path / "salida.json", tmp_path / "trazas.jsonl"
+    argv = ["--confirmar-api-real", "--casos", casos, "--salida", str(salida), "--trazas", str(ruta_trazas)]
+    assert ejecutar_agente.main(argv) == 130
+    assert "Interrumpido por la persona. Resultados parciales guardados." in capsys.readouterr().err
+    escrito = json.loads(salida.read_text(encoding="utf-8"))
+    primero, segundo = escrito["resultados"]
+    assert "interrumpido" not in primero and len(primero["aprobaciones"]) == 1
+    assert segundo["interrumpido"] is True and len(segundo["aprobaciones"]) == 1
+    assert len(escrito["aprobaciones"]) == 2
+    trazas_escritas = [json.loads(linea) for linea in ruta_trazas.read_text(encoding="utf-8").splitlines()]
+    assert [traza.get("interrumpido") for traza in trazas_escritas] == [None, True]
+    assert len(trazas_escritas[1]["aprobaciones"]) == 1
+
+
+def test_un_ctrl_c_conserva_la_aprobacion_concedida_en_el_mismo_turno(tmp_path):
+    modelo = ModeloInterrumpible(guion=[_pedir_aislar(), _respuesta("nunca se usa")], interrumpir_en=1)
+    ruta = tmp_path / "s.json"
+    with pytest.raises(KeyboardInterrupt):
+        ejecutar_agente.ejecutar_turnos({"turnos": [_turno(esperadas=[AISLAR])]}, modelo, 0.05, str(ruta), aprobador=lambda mensaje: True)
+    [turno] = json.loads(ruta.read_text(encoding="utf-8"))["resultados"]
+    assert turno["interrumpido"] is True
+    assert [decision["aprobado"] for decision in turno["aprobaciones"]] == [True]
+
+
+def _main_con_trazas(monkeypatch, tmp_path, trazas_ruta, casos=None, salida=None) -> int:
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", MagicMock(side_effect=AssertionError("no debe crearse el modelo")))
+    casos = casos or _escribir_casos(tmp_path, [_turno()])
+    salida = salida or str(tmp_path / "salida.json")
+    return ejecutar_agente.main(["--confirmar-api-real", "--casos", casos, "--salida", salida, "--trazas", str(trazas_ruta)])
+
+
+def test_main_rechaza_trazas_igual_a_casos_sin_tocar_el_archivo(monkeypatch, tmp_path, capsys):
+    casos = _escribir_casos(tmp_path, [_turno()])
+    antes = Path(casos).read_bytes()
+    assert _main_con_trazas(monkeypatch, tmp_path, casos, casos=casos) == 1
+    assert "--trazas" in capsys.readouterr().err
+    assert Path(casos).read_bytes() == antes
+
+
+def test_main_rechaza_trazas_igual_a_salida(monkeypatch, tmp_path, capsys):
+    salida = tmp_path / "salida.json"
+    assert _main_con_trazas(monkeypatch, tmp_path, salida, salida=str(salida)) == 1
+    assert "--trazas" in capsys.readouterr().err
+    assert not salida.exists()
+
+
+def test_main_rechaza_trazas_que_es_un_json_que_no_es_jsonl_y_lo_deja_intacto(monkeypatch, tmp_path, capsys):
+    ruta = tmp_path / "config.json"
+    ruta.write_text('{\n  "clave": "valor"\n}\n', encoding="utf-8")
+    antes = ruta.read_bytes()
+    assert _main_con_trazas(monkeypatch, tmp_path, ruta) == 1
+    assert "--trazas" in capsys.readouterr().err
+    assert ruta.read_bytes() == antes
+
+
+def test_main_permite_trazas_vacio_o_inexistente(monkeypatch, tmp_path):
+    _espia_de_ejecutar_turnos(monkeypatch, tmp_path)
+    vacio = tmp_path / "vacio.jsonl"
+    vacio.write_text("", encoding="utf-8")
+    for ruta in (vacio, tmp_path / "no_existe.jsonl"):
+        assert ejecutar_agente.main(_argv(tmp_path, "--trazas", str(ruta))) == 0, ruta
+
+
 def test_main_de_punta_a_punta_con_aislamiento_escribe_aprobaciones_y_trazas(monkeypatch, tmp_path):
     modelo = ModeloDeGuion(guion=[_pedir_aislar(), _respuesta("No se aisló."), _respuesta("Directo.")])
     monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda **kwargs: modelo)
