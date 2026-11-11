@@ -132,13 +132,19 @@ RIESGO = {
     "aislar_host_de_laboratorio": "alto",
 }
 MAX_LONGITUD_MOTIVO = 200
+MAX_LONGITUD_HOST = 100
 _PATRON_HOST_LABORATORIO = re.compile(r"(?=.{1,100}$)[a-z0-9-]+(\.[a-z0-9-]+)*\.ejemplo\.test")
+
+
+def limpiar_texto(texto: str, maximo: int, vacio: str) -> str:
+    """Deja el texto del modelo en una sola línea imprimible de a lo más `maximo` caracteres."""
+    saneado = "".join(c if c.isprintable() else " " for c in texto)
+    return " ".join(saneado.split())[:maximo].strip() or vacio
 
 
 def limpiar_motivo(motivo: str) -> str:
     """Deja el motivo del modelo en una sola línea imprimible de a lo más 200 caracteres."""
-    texto = "".join(c if c.isprintable() else " " for c in motivo)
-    return " ".join(texto.split())[:MAX_LONGITUD_MOTIVO].strip() or "(sin motivo)"
+    return limpiar_texto(motivo, MAX_LONGITUD_MOTIVO, "(sin motivo)")
 
 
 def construir_herramientas(aprobador=None, registro=None) -> list:
@@ -151,6 +157,16 @@ def construir_herramientas(aprobador=None, registro=None) -> list:
         """Úsala solo para aislar de la red un host de laboratorio (dominio .ejemplo.test) por un incidente; es una acción de riesgo alto que requiere aprobación humana."""
         host = host.strip().lower()
         if not _PATRON_HOST_LABORATORIO.fullmatch(host):
+            # un intento sobre un host ajeno es una señal de seguridad: se registra como no aprobado, sin pedir aprobación
+            registro.registrar(
+                "aislar_host_de_laboratorio",
+                {
+                    "host": limpiar_texto(host, MAX_LONGITUD_HOST, "(host vacío)"),
+                    "motivo": limpiar_motivo(motivo),
+                    "rechazo": "host no permitido",
+                },
+                False,
+            )
             return "Host no permitido: solo se pueden aislar hosts de laboratorio (*.ejemplo.test)."
         motivo = limpiar_motivo(motivo)
         # json.dumps cita el texto del modelo para que no se confunda con el resto del mensaje

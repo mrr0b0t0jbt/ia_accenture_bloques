@@ -429,11 +429,12 @@ def test_con_un_aprobador_que_aprueba_el_aislamiento_se_simula_y_queda_registrad
     assert "aislado (simulado" in turno["pasos"][0]["observacion"]
 
 
-def test_un_host_no_permitido_se_rechaza_sin_registrar_aprobaciones(tmp_path):
+def test_un_host_no_permitido_se_rechaza_y_queda_registrado_como_no_aprobado(tmp_path):
     modelo = ModeloDeGuion(guion=[_pedir_aislar("servidor-prod.example.com"), _respuesta("No se puede.")])
     salida = _un_turno_de_aislamiento(tmp_path, modelo, aprobador=lambda mensaje: True)
     [turno] = salida["resultados"]
-    assert turno["aprobaciones"] == []
+    [decision] = turno["aprobaciones"]
+    assert decision["aprobado"] is False and decision["argumentos"]["rechazo"] == "host no permitido"
     assert turno["pasos"][0]["observacion"].startswith("Host no permitido")
 
 
