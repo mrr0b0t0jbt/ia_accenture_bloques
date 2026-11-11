@@ -9,6 +9,7 @@ La elección del modelo está justificada en [docs/decision_arquitectura.md](doc
 - Python 3.14 (versión con la que se desarrolló; las dependencias están fijadas para ella)
 - Una API key de Anthropic ([console.anthropic.com](https://console.anthropic.com))
 - Opcional: una API key de Gemini, solo para `src/api_gemini.py` y `scripts/ejecutar_cadenas.py --proveedor gemini`
+- El agente usa `langchain-classic` (`AgentExecutor`), fijado en `requirements.txt`
 
 ## Instalación
 
@@ -195,7 +196,7 @@ Se prueba con `test/unit/test_cadena_tres_pasos.py`, sin red. La corrida real es
 
 **Límite de longitud del incidente**: el prompt de la ruta `incidente` pide un máximo de 10 pasos numerados y menos de 350 palabras, porque con `max_tokens` 2048 la respuesta sin ese límite se cortó (en la segunda corrida real la ruta llegó al tope de 2048 tokens de salida).
 
-**Límite de longitud de la vulnerabilidad**: el prompt de la ruta `vulnerabilidad` pide un máximo de 8 pasos o secciones y menos de 400 palabras, porque la tercera corrida real, anterior a este límite, mostró su respuesta cortada por `max_tokens`. Todavía no hay una corrida real con este límite.
+**Límite de longitud de la vulnerabilidad**: el prompt de la ruta `vulnerabilidad` pide un máximo de 8 pasos o secciones y menos de 400 palabras, porque la tercera corrida real, anterior a este límite, mostró su respuesta cortada por `max_tokens`. La cuarta corrida real, con este límite, salió completa.
 
 **Riesgo de la ruta por defecto**: la clasificación tolera mayúsculas, espacios y puntuación en los extremos, pero no interpreta frases. Una categoría inesperada (por ejemplo, si el modelo responde con una frase en vez de una palabra) cae en `consulta` y solo deja un `logger.warning` (`Categoria inesperada`), así que un incidente mal clasificado se respondería como una pregunta general. Para depurar, mira qué devuelve la clasificación por sí sola:
 
@@ -239,7 +240,7 @@ python scripts/ejecutar_cadenas.py --confirmar-api-real
 - Cada resultado del JSON trae el campo `truncado`: `true` si alguna llamada de ese caso terminó cortada por el límite de tokens. Para esos casos se imprime `AVISO: respuesta cortada por max_tokens.`, sin cambiar el código de salida.
 - `MAX_LLAMADAS` (12) es un límite fijo en el código: si los casos requieren más llamadas, sale con código 1 antes de crear el modelo. Cuenta las llamadas del plan, no los reintentos internos del modelo (`max_retries=2`).
 - El costo se calcula con `UsageMetadataCallbackHandler` y los precios de `src/api_claude_refactor.py`: es una **estimación**, no el cobro real.
-- Escribe los resultados en `docs/resultados_cadenas.json` (`--salida` lo cambia) y reescribe el archivo después de cada caso. Informa si una categoría obtenida difiere de la esperada y si una respuesta es un texto de respaldo.
+- Escribe los resultados en `docs/resultados_cadenas.json` (`--salida` lo cambia) y reescribe el archivo después de cada caso, de forma atómica (escribe un `.tmp` y lo reemplaza, así un fallo al serializar no deja el JSON truncado). Informa si una categoría obtenida difiere de la esperada y si una respuesta es un texto de respaldo.
 
 **Con Gemini** (`src/modelo_gemini.py`, modelo `gemini-3.5-flash-lite`):
 
@@ -249,7 +250,7 @@ python scripts/ejecutar_cadenas.py --confirmar-api-real --proveedor gemini
 
 - Requiere `GEMINI_API_KEY` en `.env`. `--proveedor` acepta `claude` (por defecto) o `gemini`; las demás opciones y topes son los mismos, y `--max-tokens` es aquí `max_output_tokens`.
 - No se configura `temperature` porque este modelo usa muestreo fijo.
-- El costo se calcula con los precios que informó el usuario (entrada USD 0.30, salida USD 2.50 por millón de tokens) y se rotula como **estimación** en el campo `nota_costo` del JSON, junto con `proveedor`. La consola y los textos de ayuda siguen con los mensajes generales (la nota de "los precios del proyecto" y la mención a Claude).
+- El costo se calcula con los precios que informó el usuario (entrada USD 0.30, salida USD 2.50 por millón de tokens) y se rotula como **estimación** en el campo `nota_costo` del JSON, junto con `proveedor`. La consola imprime la nota de costo del proveedor elegido.
 - **Corrida real de Gemini** (2026-11-06, `gemini-3.5-flash-lite`, `--max-tokens 2048`, tope USD 0.05; registro en [docs/resultados_cadenas_gemini.json](docs/resultados_cadenas_gemini.json)): 9 llamadas, costo estimado USD 0.00504 (1151 tokens de entrada y 1876 de salida) con los precios que informó el usuario. Las 3 categorías coincidieron, ningún caso cayó en un texto de respaldo y ninguna respuesta salió cortada. Las respuestas son más breves que las de Claude (incidente 282 palabras, vulnerabilidad 294, consulta 258). Dos reservas: el costo no se contrastó con la consola de Google, y no se verificó si `candidatesTokenCount` incluye los tokens de razonamiento del modelo, que se cobran como salida; si no los incluye, el costo real sería mayor que el estimado. (En esta corrida la consola todavía imprimía la nota de costo de Claude; se corrigió después, y la del JSON siempre fue la correcta.)
 
 **Límites conocidos** (documentados, no corregidos):
@@ -275,6 +276,67 @@ python scripts/ejecutar_cadenas.py --confirmar-api-real --proveedor gemini
 - **Corrida 4** (con el límite de longitud también en la ruta de vulnerabilidad): ningún caso salió cortado (`truncado` falso en los cuatro), las 3 categorías coincidieron y ninguno cayó en un texto de respaldo. Incidente: 1030 tokens de salida (363 palabras); vulnerabilidad: 1267 (374 palabras, cerró con un plazo de 7 días y revisión semanal); consulta: 1138. El límite de 400 palabras es una instrucción al modelo y no se mide en el script.
 - En ninguna corrida se agotó el `timeout` de 30 s (`hubo_fallo` fue falso en todos los casos).
 - Los resultados dependen del modelo y varían entre corridas; son cuatro muestras, no una medición estadística.
+
+## LangChain: agente con herramientas y memoria
+
+`src/herramientas_agente.py` y `src/agente.py` arman un agente que decide cuándo usar una herramienta (Bloques 21 y 22). Usa `AgentExecutor` y `create_tool_calling_agent` de `langchain-classic`, como la clase, con Claude Sonnet 5.5. Ningún módulo crea el modelo ni lee la clave al importarse: el modelo siempre entra como parámetro (`crear_modelo()` de `src/modelo_langchain.py`).
+
+| Herramienta | Qué hace |
+|---|---|
+| `buscar_en_documentacion` | Responde sobre cómo funciona la miniaplicación (reintentos, costo, topes) con textos fijos del proyecto |
+| `calcular` | Aritmética con un evaluador propio sobre `ast` (sin `eval`): `+ - * / // %`, signo y paréntesis; sin `**`, nombres ni llamadas; máximo 100 caracteres. Rechaza lo no permitido con `Expresión no permitida.`, devuelve `No se puede dividir entre cero.` y `Resultado fuera de rango.` si el resultado no es finito. Los floats enteros mayores o iguales a 2^53 se muestran con `str(float)` (por ejemplo `1e+23`), no con su expansión binaria |
+| `consultar_cve_de_laboratorio` | Consulta un CVE ficticio (`CVE-2099-10001` o `CVE-2099-10002`) con `args_schema` (`cve_id` e `incluir_mitigacion`) y nombre explícito. Normaliza el identificador y, si no existe, refleja a lo más 64 caracteres de él |
+
+**Desvío de la clase**: la clase calcula con `eval()` filtrado por caracteres; aquí se reemplaza por el evaluador de `ast` por seguridad.
+
+**Memoria**: `AlmacenHistoriales` guarda un historial por `session_id` y `construir_agente_con_memoria` usa `RunnableWithMessageHistory`. LangChain marca esa clase y `InMemoryChatMessageHistory` como **deprecadas** (esta última se eliminará en la versión 2.0.0) y recomienda la persistencia de LangGraph y `create_agent`; se usan igual porque la clase las usa y son lo más simple sobre `AgentExecutor`. La alternativa moderna queda documentada, no implementada. Cada invocación exige `config={"configurable": {"session_id": ...}}`; sin él lanza `ValueError`.
+
+**Salida normalizada**: Claude a veces responde con una lista de bloques (por ejemplo un bloque `thinking` con firma opaca más el bloque `text`) en vez de texto. `normalizar_salida` deja solo el texto antes de la memoria; sin esa normalización el historial guardaba dicts sueltos y el segundo turno de la sesión fallaba con `ValueError`. Se encontró en la primera corrida real y se corrigió después (ver abajo).
+
+Se prueba sin red con `test/unit/modelo_falso_herramientas.py`, un modelo falso con guion que sí implementa `bind_tools` (el `GenericFakeChatModel` no lo tiene).
+
+### Corrida real del agente
+
+```bash
+python scripts/ejecutar_agente.py --confirmar-api-real
+```
+
+Procesa los 8 turnos de `JSON/casos_agente.json` (una consulta por herramienta, una que encadena dos, una general, una conversación de 2 turnos y una consulta de otra sesión para comprobar el aislamiento) y escribe `docs/resultados_agente.json` (`--salida` lo cambia).
+
+- `--confirmar-api-real` es obligatorio: sin él sale con código 2 sin cargar LangChain ni leer la clave.
+- `--tope-usd` es US$ 0.10 por defecto y como máximo; `--max-tokens` es 1024 por defecto y 2048 como máximo.
+- **Los topes se revisan antes de cada llamada al modelo**, no solo entre turnos: un callback lanza `LimiteExcedido` antes de una llamada que superaría `MAX_LLAMADAS` (30) o el tope de gasto, así que el sobregiro máximo es el costo de una llamada. Además hay `MAX_ITERACIONES` (4 por turno), `MAX_TURNOS` (10) y un máximo de 2000 caracteres por mensaje.
+- **Sin datos de uso no hay tope de gasto**: si un turno termina sin error pero el medidor no registró tokens, la corrida se detiene (`cortado_por_falta_de_uso`) en vez de seguir con costo 0.
+- El JSON trae por turno la respuesta (siempre texto), las herramientas usadas y esperadas, la traza de pasos con su observación, llamadas, tokens, costo estimado, `truncado`, `hubo_fallo` y los mensajes de la sesión; y el total de llamadas y los cortes. Se guarda después de cada turno, de forma atómica. Un enlace duro de `--salida` al archivo de casos se detecta y se rechaza.
+- El script desactiva el streaming del ejecutor (`stream_runnable=False`).
+
+**Primera corrida real** (2026-11-11, `--max-tokens 1024`, tope USD 0.10; registro en [docs/resultados_agente.json](docs/resultados_agente.json)): 15 llamadas, 13570 tokens de entrada y 1388 de salida, costo estimado USD 0.04102. No hubo cortes ni fallos y ningún tope se activó. El costo se calcula con los precios del proyecto y es una estimación; no se contrastó con la consola de Anthropic.
+
+| Turno | Llamadas | Tokens (entrada / salida) | Costo estimado (USD) |
+|---|---|---|---|
+| documentacion | 2 | 1778 / 281 | 0.00637 |
+| calculo | 2 | 1659 / 65 | 0.00397 |
+| cve | 2 | 1819 / 224 | 0.00588 |
+| encadenada | 4 | 3926 / 281 | 0.01066 |
+| general | 1 | 804 / 97 | 0.00258 |
+| conversacion_1 | 2 | 1814 / 206 | 0.00569 |
+| conversacion_2 | 1 | 954 / 108 | 0.00299 |
+| aislamiento | 1 | 816 / 126 | 0.00289 |
+
+- Las herramientas elegidas coincidieron con las esperadas en 7 de 8 turnos. En `encadenada` el modelo hizo una búsqueda extra: su primera consulta ("precio de salida por millón de tokens") no contenía la palabra "costo", que es la clave que busca la herramienta, y el script la marcó como `DIFERENCIA de herramientas`. La respuesta final fue correcta (USD 2,50 por 250000 tokens de salida).
+- La consulta de otra sesión respondió que no tenía registro de ningún CVE previo: el aislamiento entre sesiones funcionó con el modelo real.
+- **Hallazgo de la corrida**: en `conversacion_2` la respuesta llegó como lista de bloques con un bloque `thinking`, y la sesión quedó con 5 mensajes en vez de 4. En esa sesión no había un tercer turno, así que no falló, pero el segundo turno tras una respuesta así lo habría hecho. Se corrigió con `normalizar_salida`; el JSON versionado es el registro de la corrida **antes** de la corrección (su `respuesta` de ese turno sigue siendo una lista). La corrección se verificó con modelos falsos y un servidor falso local, no con una segunda corrida real.
+
+**Límites conocidos del agente** (documentados, no corregidos; vienen de la revisión de QA contra servidores falsos, salvo que se indique otra cosa):
+
+- **Reintentos del SDK**: `MAX_LLAMADAS` cuenta llamadas al modelo, no peticiones HTTP. Con un servidor que responde 500, 8 llamadas contadas produjeron 24 peticiones (3 por llamada, `max_retries=2`). Las peticiones fallidas no las ve el medidor y no hay tope de tiempo total. No se sabe si el proveedor cobra los intentos que expiran.
+- **Un 401 no corta la corrida**: intenta los 8 turnos (8 peticiones sin costo) y termina con código 1.
+- **Argumentos de herramienta inválidos** (por ejemplo `expresion` numérica): el `ValidationError` mata ese turno; el historial queda intacto y el turno siguiente corre. Con el esquema de Claude es improbable.
+- **Corte por `max_iterations`**: la respuesta `Agent stopped due to max iterations.` se guarda como respuesta del asistente y los turnos siguientes de esa sesión la ven.
+- **`session_id`**: no se normalizan; `"a"` y `"a "` son sesiones distintas.
+- **`--casos` inexistente o con JSON roto** termina con traza, sin mensaje `Error:` (patrón heredado de `ejecutar_cadenas.py`).
+- **`normalizar_salida`** falla con `TypeError` si un bloque `text` trae `None`; Claude no lo hace. Ninguna prueba distingue incluir el texto de un bloque `thinking` no vacío (en la corrida real vino vacío).
+- **Sin verificar con la API real**: el streaming (el script lo desactiva), la facturación de intentos fallidos y la corrección de los bloques `thinking`.
 
 ## Ensayo real de rate limit
 
@@ -349,12 +411,15 @@ src/
   modelo_gemini.py         crea el ChatGoogleGenerativeAI de Gemini 3.5 Flash-Lite a pedido
   cadena_tres_pasos.py     chain de tres pasos: aviso, puntos clave, lenguaje simple, checklist
   enrutamiento.py          clasifica mensajes, los envía a la ruta de su categoría y controla los fallos
+  herramientas_agente.py   herramientas del agente: documentación, cálculo seguro con ast y CVE de laboratorio con args_schema
+  agente.py                agente con herramientas, traza de decisión, memoria por sesión y normalización de la salida
 scripts/
   ensayo_rate_limit_simulado.py  ensayo de rate limit simulado con mocks
   ejecutar_pipeline.py           pipeline de texto sobre respuestas reales de Claude (con costo)
   ejecutar_metricas.py           precisión, cobertura y F1 sobre respuestas reales de Claude (con costo)
   ensayo_rate_limit_real.py      ensayo de rate limit real contra Claude (con costo)
   ejecutar_cadenas.py            chain de tres pasos y enrutamiento sobre respuestas reales de Claude o Gemini (con costo)
+  ejecutar_agente.py             agente con herramientas y memoria sobre respuestas reales de Claude, con topes de llamadas y de gasto (con costo)
 test/
   unit/test_api_claude_refactor.py     pruebas unitarias con mocks
   unit/test_api_gemini.py              pruebas minimas del manejo de errores del cliente Gemini, con mocks
@@ -369,6 +434,11 @@ test/
   unit/test_enrutamiento.py            pruebas del enrutamiento condicional, con mocks
   unit/test_orquestacion.py            pruebas de los fallos controlados y del flujo completo, con mocks
   unit/test_ejecutar_cadenas.py        pruebas del script de las cadenas, con un modelo falso
+  unit/modelo_falso_herramientas.py    modelo falso con guion y bind_tools para probar el agente (sin pruebas propias)
+  unit/test_herramientas_agente.py     pruebas de las tres herramientas y del evaluador seguro
+  unit/test_agente.py                  pruebas del agente: elección de herramienta, traza, max_iterations
+  unit/test_memoria_agente.py          pruebas de la memoria: historial, aislamiento de sesiones y normalización
+  unit/test_ejecutar_agente.py         pruebas del script del agente, con un modelo falso
   test_consistencia.py         prueba de consistencia con Claude
   test_consistencia_gemini.py  misma prueba con Gemini (comparativa)
 JSON/
@@ -379,6 +449,7 @@ JSON/
   casos_pipeline.json              consultas y referencias del pipeline de texto
   casos_metricas.json              consultas y referencias de las métricas de texto
   casos_cadenas.json               aviso y mensajes ficticios de las cadenas de LangChain
+  casos_agente.json                8 turnos de la corrida real del agente
 docs/                      decisión de arquitectura, diagrama y evidencias
   registro_rate_limit.md   registro del ensayo de rate limit (simulado)
   registro_pipeline.md     registro del pipeline de texto (se genera al correr el script)
@@ -386,6 +457,7 @@ docs/                      decisión de arquitectura, diagrama y evidencias
   registro_rate_limit_real_concurrente.md  registro del ensayo concurrente (se genera al correr el ensayo con --concurrencia mayor que 1)
   resultados_metricas.json  resultados de la corrida real de métricas (se genera al correr ejecutar_metricas.py)
   resultados_cadenas.json  resultados de la corrida real de las cadenas (se genera al correr ejecutar_cadenas.py)
+  resultados_agente.json   resultados de la primera corrida real del agente (se genera al correr ejecutar_agente.py)
   revision_manual.json     revisión manual de 10 casos con la rúbrica de tres preguntas
   limites_metrica.md       límites conocidos de la métrica y recomendación de uso
 ```
