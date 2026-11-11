@@ -82,6 +82,13 @@ def test_registros_devuelve_una_copia():
     assert len(registro.registros) == 1
 
 
+def test_registros_devuelve_una_copia_profunda():
+    registro = RegistroAprobaciones()
+    registro.registrar("herramienta", {"host": "a.ejemplo.test"}, True)
+    registro.registros[0]["argumentos"]["host"] = "otro.ejemplo.test"
+    assert registro.registros[0]["argumentos"]["host"] == "a.ejemplo.test"
+
+
 def test_denegar_siempre_devuelve_false():
     assert denegar_siempre("cualquier mensaje") is False
 

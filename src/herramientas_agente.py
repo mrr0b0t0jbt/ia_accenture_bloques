@@ -1,6 +1,7 @@
 import ast
 import logging
 import math
+import json
 import operator
 import re
 
@@ -134,6 +135,12 @@ MAX_LONGITUD_MOTIVO = 200
 _PATRON_HOST_LABORATORIO = re.compile(r"(?=.{1,100}$)[a-z0-9-]+(\.[a-z0-9-]+)*\.ejemplo\.test")
 
 
+def limpiar_motivo(motivo: str) -> str:
+    """Deja el motivo del modelo en una sola línea imprimible de a lo más 200 caracteres."""
+    texto = "".join(c if c.isprintable() else " " for c in motivo)
+    return " ".join(texto.split())[:MAX_LONGITUD_MOTIVO].strip() or "(sin motivo)"
+
+
 def construir_herramientas(aprobador=None, registro=None) -> list:
     """Devuelve las herramientas del agente; la de riesgo alto consulta al aprobador y registra su decisión."""
     aprobador = denegar_siempre if aprobador is None else aprobador
@@ -145,8 +152,12 @@ def construir_herramientas(aprobador=None, registro=None) -> list:
         host = host.strip().lower()
         if not _PATRON_HOST_LABORATORIO.fullmatch(host):
             return "Host no permitido: solo se pueden aislar hosts de laboratorio (*.ejemplo.test)."
-        motivo = motivo[:MAX_LONGITUD_MOTIVO]
-        aprobado = aprobador(f"El agente quiere aislar el host {host}. Motivo: {motivo}. ¿Aprobar? (s/n): ")
+        motivo = limpiar_motivo(motivo)
+        # json.dumps cita el texto del modelo para que no se confunda con el resto del mensaje
+        aprobado = aprobador(
+            f"El agente quiere aislar el host {host}. Motivo (texto del modelo, no verificado): "
+            f"{json.dumps(motivo, ensure_ascii=False)}. ¿Aprobar? (s/n): "
+        )
         registro.registrar("aislar_host_de_laboratorio", {"host": host, "motivo": motivo}, aprobado)
         if not aprobado:
             return "Aislamiento no aprobado por el supervisor humano."

@@ -13,6 +13,7 @@ from herramientas_agente import (
     calcular,
     construir_herramientas,
     consultar_cve,
+    limpiar_motivo,
 )
 from supervision import RegistroAprobaciones
 
@@ -241,6 +242,51 @@ def test_aislar_pide_aprobacion_con_un_mensaje_que_trae_host_y_motivo():
     [mensaje] = aprobador.mensajes
     assert HOST_VALIDO in mensaje and "beaconing" in mensaje
     assert mensaje.endswith("(s/n): ")
+
+
+def _mensaje_con_motivo(motivo: str) -> str:
+    herramienta, aprobador, _ = _aislar(True)
+    herramienta.invoke({"host": HOST_VALIDO, "motivo": motivo})
+    return aprobador.mensajes[0]
+
+
+def test_aislar_no_deja_saltos_de_linea_ni_retorno_de_carro_en_el_mensaje():
+    mensaje = _mensaje_con_motivo("a\nb\rc")
+    assert "\n" not in mensaje and "\r" not in mensaje
+
+
+def test_aislar_no_deja_secuencias_ansi_en_el_mensaje():
+    assert "\x1b" not in _mensaje_con_motivo("fuga\x1b[2KAPROBACION PREVIA")
+
+
+def test_aislar_no_deja_marcas_bidireccionales_en_el_mensaje():
+    mensaje = _mensaje_con_motivo("a‮b⁦c")
+    assert "‮" not in mensaje and "⁦" not in mensaje
+
+
+def test_aislar_muestra_el_motivo_entre_comillas_tras_la_etiqueta_de_no_verificado():
+    mensaje = _mensaje_con_motivo("beaconing")
+    assert 'Motivo (texto del modelo, no verificado): "beaconing"' in mensaje
+    assert mensaje.endswith("(s/n): ")
+
+
+@pytest.mark.parametrize("motivo", ["", "  \n\t  "], ids=["vacio", "solo_blancos"])
+def test_aislar_con_motivo_vacio_usa_sin_motivo_en_el_mensaje_y_el_registro(motivo):
+    herramienta, aprobador, registro = _aislar(True)
+    herramienta.invoke({"host": HOST_VALIDO, "motivo": motivo})
+    assert '"(sin motivo)"' in aprobador.mensajes[0]
+    assert registro.registros[0]["argumentos"]["motivo"] == "(sin motivo)"
+
+
+def test_aislar_registra_un_motivo_largo_con_saltos_de_linea_sin_saltos_y_de_a_lo_mas_200():
+    herramienta, _, registro = _aislar(True)
+    herramienta.invoke({"host": HOST_VALIDO, "motivo": "ab\n" * 170})
+    motivo = registro.registros[0]["argumentos"]["motivo"]
+    assert 0 < len(motivo) <= 200 and "\n" not in motivo
+
+
+def test_limpiar_motivo_colapsa_los_espacios_y_tabuladores():
+    assert limpiar_motivo("a   b\t\tc") == "a b c"
 
 
 def test_aislar_recorta_el_motivo_a_200_caracteres_en_el_mensaje_y_en_el_registro():

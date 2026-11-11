@@ -1,3 +1,4 @@
+import copy
 import select
 import sys
 from datetime import datetime, timezone
@@ -52,5 +53,5 @@ class RegistroAprobaciones:
 
     @property
     def registros(self) -> list[dict]:
-        """Devuelve una copia de la lista de decisiones."""
-        return list(self._registros)
+        """Devuelve una copia profunda de la lista de decisiones."""
+        return copy.deepcopy(self._registros)
