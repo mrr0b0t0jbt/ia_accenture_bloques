@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 from langchain_core.agents import AgentAction
 
+from herramientas_agente import construir_herramientas
+from supervision import RegistroAprobaciones
 from trazas import leer_trazas, marcar_repeticiones_sospechosas, marcar_riesgo_alto_sin_aprobacion, registrar_traza
 
 RAIZ = Path(__file__).parents[2]
@@ -145,6 +147,15 @@ def test_marcar_riesgo_alto_exige_una_aprobacion_registrada_solo_en_riesgo_alto(
     assert len(marcas) == cantidad
     if cantidad:
         assert marcas == [f"Revisar: s1 usó la herramienta de riesgo alto '{herramienta}' sin registro de aprobación"]
+
+
+def test_un_intento_rechazado_por_host_no_permitido_no_se_marca_como_riesgo_alto_sin_aprobacion():
+    registro = RegistroAprobaciones()
+    herramienta = construir_herramientas(None, registro)[3]
+    entrada = {"host": "servidor-prod.example.com", "motivo": "x"}
+    assert herramienta.invoke(entrada).startswith("Host no permitido")
+    traza = _registro("s1", ["aislar_host_de_laboratorio"], registro.registros)
+    assert marcar_riesgo_alto_sin_aprobacion([traza]) == []
 
 
 def test_revisar_trazas_imprime_las_marcas_y_devuelve_0(tmp_path, capsys):

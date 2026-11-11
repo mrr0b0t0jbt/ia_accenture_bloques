@@ -217,10 +217,34 @@ def test_aislar_sin_aprobacion_no_aisla_y_registra_la_negativa():
 @pytest.mark.parametrize(
     "host", ["produccion.empresa.com", "host-lab-01.ejemplo.test.evil.com", "ejemplo.test"]
 )
-def test_aislar_rechaza_hosts_que_no_son_de_laboratorio_sin_pedir_aprobacion(host):
+def test_aislar_rechaza_hosts_que_no_son_de_laboratorio_sin_pedir_aprobacion_y_registra_el_intento(host):
     herramienta, aprobador, registro = _aislar(True)
     assert herramienta.invoke({"host": host, "motivo": "x"}).startswith("Host no permitido")
     assert aprobador.mensajes == []
+    [entrada] = registro.registros
+    assert entrada["aprobado"] is False
+    assert entrada["argumentos"] == {"host": host, "motivo": "x", "rechazo": "host no permitido"}
+
+
+def test_aislar_registra_un_host_rechazado_largo_y_con_controles_limpio_y_sin_llamar_al_aprobador():
+    herramienta, aprobador, registro = _aislar(True)
+    herramienta.invoke({"host": "a\n\x1b[2K" * 60, "motivo": "x"})
+    [entrada] = registro.registros
+    host = entrada["argumentos"]["host"]
+    assert entrada["aprobado"] is False and entrada["argumentos"]["rechazo"] == "host no permitido"
+    assert 0 < len(host) <= 100 and "\n" not in host and "\x1b" not in host
+    assert aprobador.mensajes == []
+
+
+def test_aislar_con_un_aprobador_que_falla_propaga_la_excepcion_sin_aislar_ni_registrar():
+    registro = RegistroAprobaciones()
+
+    def aprobador_roto(mensaje: str) -> bool:
+        raise RuntimeError("fallo del aprobador")
+
+    herramienta = construir_herramientas(aprobador_roto, registro)[3]
+    with pytest.raises(RuntimeError):
+        herramienta.invoke({"host": HOST_VALIDO, "motivo": "x"})
     assert registro.registros == []
 
 
@@ -232,7 +256,7 @@ def test_aislar_rechaza_hosts_que_no_son_de_laboratorio_sin_pedir_aprobacion(hos
 def test_aislar_aplica_el_limite_de_100_caracteres_del_host(host, aceptado):
     herramienta, aprobador, registro = _aislar(True)
     respuesta = herramienta.invoke({"host": host, "motivo": "x"})
-    assert (len(aprobador.mensajes), len(registro.registros)) == ((1, 1) if aceptado else (0, 0))
+    assert (len(aprobador.mensajes), len(registro.registros)) == ((1, 1) if aceptado else (0, 1))
     assert respuesta.startswith("Host no permitido") is not aceptado
 
 

@@ -36,7 +36,8 @@ spec = importlib.util.spec_from_file_location("ejecutar_agente", sys.argv[1])
 modulo = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(modulo)
 codigo = modulo.main([])
-cargados = [n for n in sys.modules if n.startswith("langchain") or n == "api_claude_refactor"]
+vigilados = {"api_claude_refactor", "supervision", "trazas", "herramientas_agente", "agente", "modelo_langchain"}
+cargados = [n for n in sys.modules if n.startswith("langchain") or n in vigilados]
 print(json.dumps({"codigo": codigo, "cargados": cargados}))
 """
 
@@ -267,7 +268,7 @@ def test_main_de_punta_a_punta_escribe_el_json_completo(monkeypatch, tmp_path):
     monkeypatch.setattr(modelo_langchain, "crear_modelo", lambda **kwargs: modelo)
     casos = _escribir_casos(tmp_path, [_turno("t1", "a", esperadas=["calcular"]), _turno("t2", "b")])
     salida = tmp_path / "salida.json"
-    assert ejecutar_agente.main(["--confirmar-api-real", "--casos", casos, "--salida", str(salida)]) == 0
+    assert ejecutar_agente.main(["--confirmar-api-real", "--casos", casos, "--salida", str(salida), "--sin-trazas"]) == 0
     escrito = json.loads(salida.read_text(encoding="utf-8"))
     assert escrito["proveedor"] == "claude"
     assert "estimación" in escrito["nota_costo"]
@@ -428,11 +429,12 @@ def test_con_un_aprobador_que_aprueba_el_aislamiento_se_simula_y_queda_registrad
     assert "aislado (simulado" in turno["pasos"][0]["observacion"]
 
 
-def test_un_host_no_permitido_se_rechaza_sin_registrar_aprobaciones(tmp_path):
+def test_un_host_no_permitido_se_rechaza_y_queda_registrado_como_no_aprobado(tmp_path):
     modelo = ModeloDeGuion(guion=[_pedir_aislar("servidor-prod.example.com"), _respuesta("No se puede.")])
     salida = _un_turno_de_aislamiento(tmp_path, modelo, aprobador=lambda mensaje: True)
     [turno] = salida["resultados"]
-    assert turno["aprobaciones"] == []
+    [decision] = turno["aprobaciones"]
+    assert decision["aprobado"] is False and decision["argumentos"]["rechazo"] == "host no permitido"
     assert turno["pasos"][0]["observacion"].startswith("Host no permitido")
 
 
@@ -479,6 +481,18 @@ def test_main_pasa_la_ruta_de_trazas_o_none_con_sin_trazas(monkeypatch, tmp_path
     recibido = _espia_de_ejecutar_turnos(monkeypatch, tmp_path)
     assert ejecutar_agente.main(_argv(tmp_path, *argumentos)) == 0
     assert recibido["ruta_trazas"] == (ejecutar_agente.RUTA_TRAZAS_POR_DEFECTO if con_trazas else None)
+
+
+def test_un_tiempo_de_aprobacion_de_300_es_valido_y_el_flujo_llega_a_crear_el_modelo(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", MagicMock(side_effect=ValueError("Falta CLAUDE_API_KEY en .env.")))
+    assert ejecutar_agente.main(_argv(tmp_path, "--tiempo-aprobacion", "300")) == 1
+    error = capsys.readouterr().err
+    assert "CLAUDE_API_KEY" in error and "--tiempo-aprobacion" not in error
+
+
+def test_el_tiempo_de_aprobacion_por_defecto_es_60_y_coincide_con_supervision():
+    assert ejecutar_agente.TIEMPO_APROBACION_POR_DEFECTO == 60
+    assert ejecutar_agente.TIEMPO_APROBACION_POR_DEFECTO == supervision.TIEMPO_LIMITE_POR_DEFECTO
 
 
 def test_informar_muestra_las_aprobaciones_solo_si_las_hay(capsys):
