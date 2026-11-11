@@ -223,6 +223,18 @@ def test_aislar_rechaza_hosts_que_no_son_de_laboratorio_sin_pedir_aprobacion(hos
     assert registro.registros == []
 
 
+@pytest.mark.parametrize(
+    "host, aceptado",
+    [("a" * 87 + ".ejemplo.test", True), ("a" * 88 + ".ejemplo.test", False)],
+    ids=["100_caracteres", "101_caracteres"],
+)
+def test_aislar_aplica_el_limite_de_100_caracteres_del_host(host, aceptado):
+    herramienta, aprobador, registro = _aislar(True)
+    respuesta = herramienta.invoke({"host": host, "motivo": "x"})
+    assert (len(aprobador.mensajes), len(registro.registros)) == ((1, 1) if aceptado else (0, 0))
+    assert respuesta.startswith("Host no permitido") is not aceptado
+
+
 def test_aislar_pide_aprobacion_con_un_mensaje_que_trae_host_y_motivo():
     herramienta, aprobador, _ = _aislar(True)
     herramienta.invoke({"host": HOST_VALIDO, "motivo": "beaconing"})

@@ -55,6 +55,20 @@ def test_registrar_traza_guarda_acciones_y_convierte_la_observacion_a_texto(tmp_
     ]
 
 
+def test_registrar_traza_escribe_las_aprobaciones_tal_cual(tmp_path):
+    ruta = tmp_path / "trazas.jsonl"
+    aprobaciones = [
+        {
+            "herramienta": "aislar_host_de_laboratorio",
+            "argumentos": {"host": "host-lab-01.ejemplo.test"},
+            "aprobado": False,
+            "momento": "2026-11-11T00:00:00+00:00",
+        }
+    ]
+    registrar_traza("s1", "x", _resultado(), str(ruta), aprobaciones=aprobaciones)
+    assert json.loads(_lineas(ruta)[0])["aprobaciones"] == aprobaciones
+
+
 def test_registrar_traza_sin_intermediate_steps_deja_acciones_vacias(tmp_path):
     ruta = tmp_path / "trazas.jsonl"
     registrar_traza("s1", "x", {"output": "listo"}, str(ruta))
@@ -94,8 +108,10 @@ def test_leer_trazas_devuelve_los_registros_y_salta_lineas_en_blanco(tmp_path):
 def test_leer_trazas_con_linea_corrupta_lanza_valueerror_con_su_numero(tmp_path):
     ruta = tmp_path / "trazas.jsonl"
     ruta.write_text('{"session_id": "a"}\nno es json\n', encoding="utf-8")
-    with pytest.raises(ValueError, match="2"):
+    with pytest.raises(ValueError) as error:
         leer_trazas(str(ruta))
+    # sin match="2": la ruta temporal puede contener un 2
+    assert "La línea 2 de" in str(error.value)
 
 
 def test_leer_trazas_de_un_archivo_inexistente_deja_pasar_filenotfounderror(tmp_path):
@@ -137,6 +153,14 @@ def test_revisar_trazas_imprime_las_marcas_y_devuelve_0(tmp_path, capsys):
     registrar_traza("s1", "x", resultado, str(ruta))
     assert revisar_trazas.main(["--trazas", str(ruta)]) == 0
     assert "Revisar: s1 usó 'calcular' dos veces seguidas" in capsys.readouterr().out
+
+
+def test_revisar_trazas_con_linea_corrupta_devuelve_1_y_menciona_la_linea(tmp_path, capsys):
+    ruta = tmp_path / "trazas.jsonl"
+    ruta.write_text('{"session_id": "a"}\nno es json\n', encoding="utf-8")
+    assert revisar_trazas.main(["--trazas", str(ruta)]) == 1
+    error = capsys.readouterr().err
+    assert error.startswith("Error:") and "línea" in error
 
 
 def test_revisar_trazas_con_archivo_inexistente_devuelve_1_y_avisa_por_stderr(tmp_path, capsys):
