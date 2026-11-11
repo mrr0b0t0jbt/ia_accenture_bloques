@@ -327,6 +327,15 @@ def test_validar_casos_agente_limita_el_largo_del_mensaje(largo, esperado_texto)
         assert problema is None
 
 
+def test_respuesta_en_bloques_se_guarda_como_texto(tmp_path):
+    bloques = [{"type": "thinking", "thinking": "", "signature": "firma-opaca"}, {"type": "text", "text": "Su severidad era media."}]
+    modelo = ModeloDeGuion(guion=[AIMessage(content=bloques, **USO)])
+    salida = ejecutar_agente.ejecutar_turnos({"turnos": [_turno()]}, modelo, 0.05, str(tmp_path / "s.json"))
+    [turno] = salida["resultados"]
+    assert turno["respuesta"] == "Su severidad era media."
+    assert turno["mensajes_en_sesion"] == 2
+
+
 def test_main_rechaza_una_salida_que_es_un_enlace_duro_a_los_casos(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(modelo_langchain, "crear_modelo", MagicMock(side_effect=AssertionError("no debe crearse el modelo")))
     casos = Path(_escribir_casos(tmp_path, [_turno()]))

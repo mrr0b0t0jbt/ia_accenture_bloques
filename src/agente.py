@@ -1,6 +1,7 @@
 from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables import RunnableLambda
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
 from herramientas_agente import HERRAMIENTAS
@@ -56,9 +57,26 @@ class AlmacenHistoriales:
         return len(historial.messages) if historial else 0
 
 
+def normalizar_salida(resultado: dict) -> dict:
+    """Devuelve el resultado con el output como texto cuando el modelo lo entregó como lista de bloques."""
+    salida = resultado["output"]
+    if not isinstance(salida, list):
+        return resultado
+    texto = "".join(
+        bloque if isinstance(bloque, str) else bloque.get("text", "")
+        for bloque in salida
+        if isinstance(bloque, str) or (isinstance(bloque, dict) and bloque.get("type") == "text")
+    )
+    return {**resultado, "output": texto}
+
+
 def construir_agente_con_memoria(ejecutor, almacen: AlmacenHistoriales) -> RunnableWithMessageHistory:
     """Envuelve el ejecutor para que cada session_id conserve su historial."""
     # RunnableWithMessageHistory está deprecado; se usa porque la clase lo usa y es lo más simple sobre AgentExecutor
     return RunnableWithMessageHistory(
-        ejecutor, almacen.obtener, input_messages_key="entrada", history_messages_key="chat_history"
+        ejecutor | RunnableLambda(normalizar_salida),
+        almacen.obtener,
+        input_messages_key="entrada",
+        output_messages_key="output",
+        history_messages_key="chat_history",
     )
