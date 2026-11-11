@@ -2,9 +2,12 @@ import ast
 import logging
 import math
 import operator
+import re
 
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
+
+from supervision import RegistroAprobaciones, denegar_siempre
 
 logger = logging.getLogger(__name__)
 
@@ -120,4 +123,37 @@ def consultar_cve(cve_id: str, incluir_mitigacion: bool = False) -> str:
         return "Error al consultar el CVE de laboratorio."
 
 
-HERRAMIENTAS = [buscar_en_documentacion, calcular, consultar_cve]
+# bajo: solo lectura; medio: escritura reversible; alto: escritura irreversible o con impacto ("medio" no se usa todavía)
+RIESGO = {
+    "buscar_en_documentacion": "bajo",
+    "calcular": "bajo",
+    "consultar_cve_de_laboratorio": "bajo",
+    "aislar_host_de_laboratorio": "alto",
+}
+MAX_LONGITUD_MOTIVO = 200
+_PATRON_HOST_LABORATORIO = re.compile(r"(?=.{1,100}$)[a-z0-9-]+(\.[a-z0-9-]+)*\.ejemplo\.test")
+
+
+def construir_herramientas(aprobador=None, registro=None) -> list:
+    """Devuelve las herramientas del agente; la de riesgo alto consulta al aprobador y registra su decisión."""
+    aprobador = denegar_siempre if aprobador is None else aprobador
+    registro = RegistroAprobaciones() if registro is None else registro
+
+    @tool
+    def aislar_host_de_laboratorio(host: str, motivo: str) -> str:
+        """Úsala solo para aislar de la red un host de laboratorio (dominio .ejemplo.test) por un incidente; es una acción de riesgo alto que requiere aprobación humana."""
+        host = host.strip().lower()
+        if not _PATRON_HOST_LABORATORIO.fullmatch(host):
+            return "Host no permitido: solo se pueden aislar hosts de laboratorio (*.ejemplo.test)."
+        motivo = motivo[:MAX_LONGITUD_MOTIVO]
+        aprobado = aprobador(f"El agente quiere aislar el host {host}. Motivo: {motivo}. ¿Aprobar? (s/n): ")
+        registro.registrar("aislar_host_de_laboratorio", {"host": host, "motivo": motivo}, aprobado)
+        if not aprobado:
+            return "Aislamiento no aprobado por el supervisor humano."
+        # SIMULACIÓN: no toca ninguna red, proceso ni archivo; la acción real no existe
+        return f"Host {host} aislado (simulado: no se modificó ninguna red)."
+
+    return [buscar_en_documentacion, calcular, consultar_cve, aislar_host_de_laboratorio]
+
+
+HERRAMIENTAS = construir_herramientas()
