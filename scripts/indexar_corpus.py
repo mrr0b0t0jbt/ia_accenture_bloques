@@ -18,11 +18,11 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, os.path.join(RAIZ, "src"))
 
+import embeddings_gemini  # noqa: E402  (no carga langchain_google_genai hasta crear_embeddings)
 import indexacion  # noqa: E402
 from chromadb.errors import InvalidArgumentError  # noqa: E402
 
 NOTA_COSTO = "Los embeddings usan gemini-embedding-001; el proyecto no tiene su precio, por eso no se estima un costo en dólares."
-AVISO_LIMITE = "Se agotó el límite de peticiones de la API: espera un minuto y vuelve a ejecutar."
 AVISO_DIMENSION = "El índice se creó con otro modelo de embeddings: borra la carpeta del índice y reindexa."
 
 
@@ -56,9 +56,6 @@ def _revisar(documentos: list[dict], args) -> int:
 
 def _indexar(documentos: list[dict], args) -> int:
     """Indexa con embeddings REALES de Gemini."""
-    # import diferido: sin el flag no se carga langchain_google_genai ni se lee la clave
-    import embeddings_gemini
-
     informe = indexacion.indexar(
         documentos,
         embeddings_gemini.crear_embeddings(),
@@ -93,9 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, OSError) as error:
         print(f"Error: {error}", file=sys.stderr)
     except Exception as error:
-        if "429" not in str(error) and "RESOURCE_EXHAUSTED" not in str(error):
-            raise
-        print(f"Error: {error}\n{AVISO_LIMITE}", file=sys.stderr)
+        print(f"Error: {str(error)[:300]}\n{embeddings_gemini.describir_error_api(error)[1]}", file=sys.stderr)
     return 1
 
 
