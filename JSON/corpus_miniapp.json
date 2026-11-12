@@ -1,0 +1,62 @@
+[
+  {
+    "id": "politica_parcheo",
+    "fuente": "politica_parcheo.md",
+    "titulo": "Política de parcheo de Taller Aurora",
+    "texto": "Taller Aurora clasifica cada vulnerabilidad por su puntaje CVSS y fija un plazo máximo para mitigarla. Críticas (CVSS 9.0 o más): 4 días hábiles. Altas (7.0 a 8.9): 12 días corridos. Medias (4.0 a 6.9): 35 días corridos. Bajas (menos de 4.0): se corrigen en la ventana trimestral de mantenimiento. El plazo se cuenta desde que el equipo de seguridad confirma que el activo está afectado. Una excepción solo la aprueba la jefatura de TI, queda anotada en el libro de excepciones y dura como máximo 14 días."
+  },
+  {
+    "id": "aviso_cve_2099_10001",
+    "fuente": "aviso_cve_2099_10001.md",
+    "titulo": "Aviso del CVE-2099-10001 (ficticio)",
+    "texto": "CVE-2099-10001 es una fuga de datos ficticia en el Panel Faro, el panel de pruebas de la aplicación de laboratorio de Taller Aurora. Severidad media (CVSS 5.3). Quien accede al panel sin iniciar sesión puede ver registros de prueba con datos de clientes ficticios. Mitigación: desactivar el Panel Faro en el laboratorio y revisar los accesos de la última semana. Por ser severidad media, el plazo de la política de parcheo es de 35 días corridos."
+  },
+  {
+    "id": "aviso_cve_2099_10002",
+    "fuente": "aviso_cve_2099_10002.md",
+    "titulo": "Aviso del CVE-2099-10002 (ficticio)",
+    "texto": "CVE-2099-10002 es una deserialización insegura ficticia en Cola Brisa, la cola de mensajes de la aplicación de laboratorio de Taller Aurora. Severidad crítica (CVSS 9.8): un mensaje manipulado puede ejecutar código en el servidor que procesa la cola. Mitigación: aceptar solo mensajes firmados. Mientras se aplica, el responsable de turno puede aislar el host de la cola. Por ser crítica, el plazo de la política de parcheo es de 4 días hábiles."
+  },
+  {
+    "id": "playbook_trafico_saliente",
+    "fuente": "playbook_trafico_saliente.md",
+    "titulo": "Playbook: tráfico saliente anómalo",
+    "texto": "Si un servidor envía datos a un destino desconocido: 1) conservar evidencia primero, copiando los registros de red al almacén de evidencia antes de cambiar nada; 2) anotar la dirección y el puerto de destino; 3) comprobar si otros equipos hablan con el mismo destino; 4) avisar al responsable de turno en los primeros 20 minutos; 5) con su aprobación, aislar el host de la red. Nunca se apaga el equipo antes de copiar la evidencia, porque se pierde la memoria volátil."
+  },
+  {
+    "id": "playbook_phishing",
+    "fuente": "playbook_phishing.md",
+    "titulo": "Playbook: correo de phishing reportado",
+    "texto": "Quien recibe un correo sospechoso no lo reenvía: usa el botón Reportar a seguridad o escribe a seguridad@aurora.ejemplo.test. Un analista lo revisa dentro de 2 horas hábiles y, si es phishing, bloquea al remitente y el enlace. Si la persona ya escribió su contraseña, se cambia dentro de 1 hora y se cierran todas sus sesiones abiertas. Cada trimestre se hace un ejercicio de phishing simulado y se publica el porcentaje de personas que reportaron."
+  },
+  {
+    "id": "politica_contrasenas_mfa",
+    "fuente": "politica_contrasenas_mfa.md",
+    "titulo": "Política de contraseñas y MFA",
+    "texto": "Las contraseñas de Taller Aurora tienen al menos 14 caracteres y se guardan en el gestor aprobado, llamado Bóveda Aurora. El segundo factor (MFA) es obligatorio para el correo y para la VPN. Las contraseñas no se rotan por calendario: se cambian solo si hay sospecha de compromiso. Está prohibido compartir una cuenta; cada persona usa la suya. Las cuentas de personas que dejan la empresa se desactivan el mismo día de su salida."
+  },
+  {
+    "id": "guia_respaldos",
+    "fuente": "guia_respaldos.md",
+    "titulo": "Guía de respaldos y recuperación",
+    "texto": "Taller Aurora hace una copia diaria de sus sistemas y la conserva 28 días. Una de las copias se guarda desconectada de la red, para que un ransomware no pueda cifrarla. Cada primer lunes de mes se prueba una restauración real. Para el sistema de facturación el objetivo de recuperación es de 8 horas (RTO) y la pérdida máxima aceptada de datos es de 24 horas (RPO)."
+  },
+  {
+    "id": "clasificacion_incidentes",
+    "fuente": "clasificacion_incidentes.md",
+    "titulo": "Clasificación de incidentes",
+    "texto": "Los incidentes de seguridad se clasifican en tres niveles. S1 (crítico): afecta datos de clientes o detiene la operación; se atiende en 15 minutos. S2 (alto): afecta un sistema sin detener la operación; se atiende en 2 horas. S3 (bajo): sin impacto visible; se atiende al siguiente día hábil. El nivel lo declara el responsable de turno y puede subirse, pero no bajarse sin dejar constancia escrita."
+  },
+  {
+    "id": "agente_aprobacion_humana",
+    "fuente": "agente_aprobacion_humana.md",
+    "titulo": "Agente de apoyo: aprobación humana",
+    "texto": "El agente de apoyo puede proponer aislar un host, pero solo uno de laboratorio (nombre terminado en .ejemplo.test) y solo con la aprobación de una persona; la acción es una simulación y no toca ninguna red. Aprueba únicamente la respuesta s. Si nadie responde en 60 segundos por defecto, o falla la lectura, cuenta como no aprobado. El agente puede pedir como máximo 3 aprobaciones por turno y 10 por corrida, y no vuelve a preguntar por un host ya negado en el mismo turno."
+  },
+  {
+    "id": "agente_limites_trazas",
+    "fuente": "agente_limites_trazas.md",
+    "titulo": "Agente de apoyo: límites y trazas",
+    "texto": "Cada corrida real del agente tiene un tope de gasto de 0,10 dólares, un máximo de 30 llamadas al modelo y de 4 iteraciones por turno. Cada turno deja una traza en un archivo privado (permisos 0600) con la entrada completa. Una persona revisa cada semana una muestra de trazas y todas las que usaron una herramienta de riesgo alto. La revisión automática solo marca candidatos; no concluye nada."
+  }
+]
