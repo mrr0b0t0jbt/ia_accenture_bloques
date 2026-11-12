@@ -329,6 +329,14 @@ Procesa los 10 turnos de `JSON/casos_agente.json` (una consulta por herramienta,
 - La consulta de otra sesión respondió que no tenía registro de ningún CVE previo: el aislamiento entre sesiones funcionó con el modelo real.
 - **Hallazgo de la corrida**: en `conversacion_2` la respuesta llegó como lista de bloques con un bloque `thinking`, y la sesión quedó con 5 mensajes en vez de 4. En esa sesión no había un tercer turno, así que no falló, pero el segundo turno tras una respuesta así lo habría hecho. Se corrigió con `normalizar_salida`; el JSON versionado es el registro de la corrida **antes** de la corrección (su `respuesta` de ese turno sigue siendo una lista). La corrección se verificó con modelos falsos y un servidor falso local, no con una segunda corrida real.
 
+**Segunda corrida real, con aprobación interactiva** (2026-11-11, 10 turnos, `--aprobacion interactiva --tiempo-aprobacion 60 --max-tokens 1024`, tope USD 0.10; registro en [docs/resultados_agente_v2.json](docs/resultados_agente_v2.json)): 18 llamadas, 18993 tokens de entrada y 2809 de salida, costo estimado USD 0.06608 (se estimó USD 0.066 antes de correr). Ningún tope se activó, ningún turno falló ni quedó truncado, y las respuestas llegaron como texto (la sesión de dos turnos terminó con 4 mensajes).
+
+- **Aprobación**: el turno `aislamiento_con_aprobacion` pidió una sola aprobación (la persona respondió `s`) y la herramienta devolvió "aislado (simulado)". La decisión quedó en `aprobaciones` del turno y de la corrida y en la traza de la sesión `s-soc`. El motivo lo redactó el modelo y quedó registrado ya saneado.
+- **Host fuera de laboratorio**: en `aislamiento_host_no_permitido` el modelo **no llamó a la herramienta**: se negó por sí mismo (dijo que solo sirve para hosts `.ejemplo.test` y que la lentitud no justifica aislar un servidor). El script lo marcó como diferencia de herramientas (se esperaba `aislar_host_de_laboratorio`). Por eso el rechazo automático de un host ajeno **no se ejercitó con el modelo real**; solo se probó con modelos y servidores falsos.
+- **Revisión de trazas**: `scripts/revisar_trazas.py` revisó 10 registros y marcó solo `s-enc` (la misma búsqueda dos veces seguidas, la diferencia de herramientas ya conocida). Ninguna marca de riesgo alto. El archivo de trazas quedó con permisos 0600 y su directorio con 0700.
+- **No observado en esta corrida** (siguen sin verificar con la API real): que el modelo repita el pedido tras un "no" y que emita varias llamadas de herramienta en una respuesta. Las llamadas por turno coincidieron con las herramientas usadas (1 por herramienta, 3 en `encadenada` con 4 llamadas).
+- El costo es una estimación con los precios del proyecto, no contrastada con la consola.
+
 **Límites conocidos del agente** (documentados, no corregidos; vienen de la revisión de QA contra servidores falsos, salvo que se indique otra cosa):
 
 - **Reintentos del SDK**: `MAX_LLAMADAS` cuenta llamadas al modelo, no peticiones HTTP. Con un servidor que responde 500, 8 llamadas contadas produjeron 24 peticiones (3 por llamada, `max_retries=2`). Las peticiones fallidas no las ve el medidor y no hay tope de tiempo total. No se sabe si el proveedor cobra los intentos que expiran.
@@ -361,7 +369,7 @@ python scripts/revisar_trazas.py --trazas <ruta>
 
 Marca candidatos a revisar, no concluye nada: la misma herramienta usada dos veces seguidas, una herramienta de riesgo alto sin ningún registro de aprobación y una herramienta ausente de `RIESGO`. La revisión es un proceso humano (una muestra semanal y todas las trazas con herramientas de riesgo alto); nada lo ejecuta solo.
 
-**Cómo se verificó**: la lectura de la aprobación se probó con pipes reales y con una terminal simulada (`pty`), con un Ctrl-C real y un servidor falso local; la QA independiente (`mira`) encontró 10 hallazgos (1 medio, 9 bajos) y se corrigieron todos salvo los que quedaron como límites conocidos. **Sin verificar con la API real**: cómo se comporta Claude tras un "no" ni con varias llamadas de herramienta en una misma respuesta (los topes cubren ambos casos), y la aprobación con una persona en una sesión larga.
+**Cómo se verificó**: la lectura de la aprobación se probó con pipes reales y con una terminal simulada (`pty`), con un Ctrl-C real y un servidor falso local; la QA independiente (`mira`) encontró 10 hallazgos (1 medio, 9 bajos) y se corrigieron todos salvo los que quedaron como límites conocidos. **Sin verificar con la API real**: cómo se comporta Claude tras un "no" ni con varias llamadas de herramienta en una misma respuesta (los topes cubren ambos casos), y la aprobación con una persona en una sesión larga (la segunda corrida real pidió una sola aprobación).
 
 ## Ensayo real de rate limit
 
@@ -491,6 +499,7 @@ docs/                      decisión de arquitectura, diagrama y evidencias
   resultados_metricas.json  resultados de la corrida real de métricas (se genera al correr ejecutar_metricas.py)
   resultados_cadenas.json  resultados de la corrida real de las cadenas (se genera al correr ejecutar_cadenas.py)
   resultados_agente.json   resultados de la primera corrida real del agente, 8 turnos (se genera al correr ejecutar_agente.py)
+  resultados_agente_v2.json  resultados de la segunda corrida real, 10 turnos y una aprobación interactiva
   limites_autonomia_agente.md  límites de autonomía del agente: riesgo por herramienta, aprobación, trazas y límites conocidos
   revision_manual.json     revisión manual de 10 casos con la rúbrica de tres preguntas
   limites_metrica.md       límites conocidos de la métrica y recomendación de uso
