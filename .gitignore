@@ -222,3 +222,5 @@ __marimo__/
 trazas/
 *trazas*.jsonl
 trazas*/
+vectorstore/
+vectorstore*/
