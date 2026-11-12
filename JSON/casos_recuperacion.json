@@ -1,0 +1,10 @@
+[
+  {"id": "q1_plazo_critico_cola", "pregunta": "¿En cuánto tiempo hay que mitigar la vulnerabilidad de la cola de mensajes?", "fuentes_esperadas": ["aviso_cve_2099_10002", "politica_parcheo"], "respondible": true, "nota": "necesita dos documentos: el aviso (crítica) y la política (4 días hábiles)"},
+  {"id": "q2_parafrasis_trafico", "pregunta": "Un servidor empezó a mandar información a un lugar que no conocemos, ¿qué hago primero?", "fuentes_esperadas": ["playbook_trafico_saliente"], "respondible": true, "nota": "casi sin palabras en común con el documento"},
+  {"id": "q3_phishing_clave", "pregunta": "Alguien hizo clic en un enlace de un correo raro y escribió su clave, ¿qué sigue?", "fuentes_esperadas": ["playbook_phishing"], "respondible": true, "nota": "paráfrasis: clave vs contraseña"},
+  {"id": "q4_perdida_datos", "pregunta": "¿Cuántos datos podemos perder como máximo si falla la facturación?", "fuentes_esperadas": ["guia_respaldos"], "respondible": true, "nota": "RPO de 24 horas"},
+  {"id": "q5_agente_sin_respuesta", "pregunta": "¿Qué pasa si nadie responde cuando el agente pide aprobación para aislar un host?", "fuentes_esperadas": ["agente_aprobacion_humana"], "respondible": true, "nota": "documenta el propio agente"},
+  {"id": "q6_nivel_s1", "pregunta": "¿Qué significa que un incidente sea S1 y en cuánto tiempo se atiende?", "fuentes_esperadas": ["clasificacion_incidentes"], "respondible": true, "nota": ""},
+  {"id": "q7_sin_respuesta_presupuesto", "pregunta": "¿Cuál es el presupuesto anual de seguridad de Taller Aurora?", "fuentes_esperadas": [], "respondible": false, "nota": "el corpus no lo dice; debe responder que no alcanza"},
+  {"id": "q8_sin_respuesta_moviles", "pregunta": "¿Cuál es el plazo para parchear los teléfonos móviles de la empresa?", "fuentes_esperadas": [], "respondible": false, "nota": "tema cercano (parcheo) pero la política no menciona móviles; debe decir que no alcanza"}
+]
