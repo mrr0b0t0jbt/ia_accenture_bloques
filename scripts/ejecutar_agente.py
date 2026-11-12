@@ -13,6 +13,7 @@ Las trazas van a un directorio fuera de git (trazas/), porque guardan las entrad
 """
 import argparse
 import importlib.util
+import json
 import logging
 import os
 import sys
@@ -113,7 +114,7 @@ def ejecutar_turnos(
     from agente import AlmacenHistoriales, construir_agente_con_memoria, construir_ejecutor
     from api_claude_refactor import INPUT_PRICING, OUTPUT_PRICING
     from herramientas_agente import construir_herramientas
-    from supervision import RegistroAprobaciones
+    from supervision import LimiteAprobaciones, RegistroAprobaciones
     from trazas import registrar_traza
 
     # el medidor solo suma los mensajes cuyo response_metadata trae model_name; ChatAnthropic lo informa
@@ -134,7 +135,8 @@ def ejecutar_turnos(
     # sin streaming: con herramientas, ChatAnthropic haría streaming con output como lista de bloques, y esa lista rompe el historial
     # aprobador None = denegar_siempre: sin un humano que apruebe, la acción de riesgo alto no se ejecuta
     registro_aprobaciones = RegistroAprobaciones()
-    herramientas = construir_herramientas(aprobador, registro_aprobaciones)
+    limite_aprobaciones = LimiteAprobaciones()
+    herramientas = construir_herramientas(aprobador, registro_aprobaciones, limite_aprobaciones)
     ejecutor = construir_ejecutor(modelo, herramientas=herramientas, max_iterations=max_iteraciones, stream_runnable=False)
     agente = construir_agente_con_memoria(ejecutor, almacen)
     salida = {
@@ -152,6 +154,7 @@ def ejecutar_turnos(
         if costo_actual() >= tope_usd:
             salida["cortado_por_tope"] = True
             break
+        limite_aprobaciones.nuevo_turno()
         llamadas_antes = limitador.llamadas
         aprobaciones_antes = len(registro_aprobaciones.registros)
         entrada_antes, salida_antes = tokens_acumulados()
@@ -165,6 +168,7 @@ def ejecutar_turnos(
         }
         config = {"callbacks": [medidor, limitador, detector], "configurable": {"session_id": sesion}}
         resultado = None
+        interrumpido = False
         try:
             resultado = agente.invoke({"entrada": turno["mensaje"]}, config=config)
             pasos = [
@@ -179,6 +183,10 @@ def ejecutar_turnos(
                 pasos=pasos,
                 hubo_fallo=resultado["output"] == SALIDA_MAX_ITERACIONES,
             )
+        except KeyboardInterrupt:
+            # Ctrl-C: se guarda lo ya decidido (las aprobaciones viven en el registro, no en el resultado del agente) y se vuelve a lanzar
+            interrumpido = True
+            registro["interrumpido"] = True
         except LimiteExcedido as error:
             registro.update(error=str(error), hubo_fallo=True)
             salida["cortado_por_llamadas" if limitador.motivo == MOTIVO_LLAMADAS else "cortado_por_tope"] = True
@@ -189,9 +197,16 @@ def ejecutar_turnos(
         todas = registro_aprobaciones.registros
         registro["aprobaciones"] = todas[aprobaciones_antes:]
         salida["aprobaciones"] = todas
-        if ruta_trazas is not None and resultado is not None:
+        if ruta_trazas is not None and (resultado is not None or interrumpido):
             try:
-                registrar_traza(sesion, turno["mensaje"], resultado, ruta=ruta_trazas, aprobaciones=registro["aprobaciones"])
+                registrar_traza(
+                    sesion,
+                    turno["mensaje"],
+                    resultado or {"output": ""},
+                    ruta=ruta_trazas,
+                    aprobaciones=registro["aprobaciones"],
+                    interrumpido=interrumpido,
+                )
             except Exception:
                 # un fallo al escribir la traza no marca el turno como error ni corta la corrida
                 logger.exception("No se pudo escribir la traza del turno")
@@ -216,6 +231,8 @@ def ejecutar_turnos(
         salida["costo_total_estimado"] = costo_actual()
         # guardado incremental: si algo falla a mitad no se pierde lo ya pagado
         ejecutar_cadenas.guardar_resultados(salida, ruta_salida)
+        if interrumpido:
+            raise KeyboardInterrupt
         if salida["cortado_por_llamadas"] or salida["cortado_por_tope"] or salida["cortado_por_falta_de_uso"]:
             break
     ejecutar_cadenas.guardar_resultados(salida, ruta_salida)
@@ -251,6 +268,22 @@ def informar(salida: dict) -> None:
     print(f"Llamadas totales: {salida['llamadas_totales']}")
     print(f"Costo total estimado: ${salida['costo_total_estimado']:.5f}")
     print(salida["nota_costo"])
+
+
+def _problema_de_trazas(ruta: str, casos: str, salida: str) -> str | None:
+    """Motivo por el que --trazas no es seguro (se le agregan líneas), o None. Inexistente o vacío se permite."""
+    if ejecutar_cadenas.es_el_mismo_archivo(ruta, casos) or ejecutar_cadenas.es_el_mismo_archivo(ruta, salida):
+        return "--trazas no puede ser el mismo archivo que --casos ni que --salida."
+    if not os.path.exists(ruta):
+        return None
+    try:
+        with open(ruta, encoding="utf-8") as archivo:
+            lineas = [linea for linea in archivo if linea.strip()][:5]
+        if lineas and not all(isinstance(json.loads(linea), dict) for linea in lineas):
+            raise ValueError
+    except (OSError, ValueError):
+        return f"--trazas existe y no parece un archivo de trazas (JSONL): {ruta}"
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -294,6 +327,10 @@ def main(argv: list[str] | None = None) -> int:
     if not 0 < args.tiempo_aprobacion <= TIEMPO_APROBACION_MAXIMO:
         print(f"Error: --tiempo-aprobacion debe ser mayor que 0 y como máximo {TIEMPO_APROBACION_MAXIMO}.", file=sys.stderr)
         return 1
+    problema = None if args.sin_trazas else _problema_de_trazas(args.trazas, args.casos, args.salida)
+    if problema:
+        print(f"Error: {problema}", file=sys.stderr)
+        return 1
     casos = ejecutar_cadenas.cargar_casos(args.casos)
     problema = validar_casos_agente(casos)
     if problema:
@@ -317,7 +354,12 @@ def main(argv: list[str] | None = None) -> int:
 
         aprobador = crear_aprobador_interactivo(args.tiempo_aprobacion)
     ruta_trazas = None if args.sin_trazas else args.trazas
-    salida = ejecutar_turnos(casos, modelo, args.tope_usd, args.salida, aprobador=aprobador, ruta_trazas=ruta_trazas)
+    try:
+        salida = ejecutar_turnos(casos, modelo, args.tope_usd, args.salida, aprobador=aprobador, ruta_trazas=ruta_trazas)
+    except KeyboardInterrupt:
+        # ejecutar_turnos ya guardó el JSON y la traza del turno interrumpido
+        print("Interrumpido por la persona. Resultados parciales guardados.", file=sys.stderr)
+        return 130
     informar(salida)
     if not any("error" not in r and not r.get("hubo_fallo") for r in salida["resultados"]):
         print("Error: ningún turno dio un resultado útil.", file=sys.stderr)

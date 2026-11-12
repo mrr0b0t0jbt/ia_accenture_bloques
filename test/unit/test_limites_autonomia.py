@@ -1,7 +1,9 @@
 import inspect
+import re
 from pathlib import Path
 
 from herramientas_agente import HERRAMIENTAS, RIESGO
+from supervision import MAX_APROBACIONES_POR_CORRIDA, MAX_APROBACIONES_POR_TURNO
 
 RAIZ = Path(__file__).parents[2]
 DOCUMENTO = RAIZ / "docs" / "limites_autonomia_agente.md"
@@ -67,3 +69,25 @@ def test_el_documento_y_el_script_comparten_las_opciones_de_aprobacion_y_trazas(
 
 def test_el_documento_dice_que_la_herramienta_de_riesgo_alto_esta_simulada():
     assert "simulada" in _texto()
+
+
+def test_el_documento_fija_los_topes_de_aprobacion_y_las_frases_clave_del_codigo():
+    documento = _texto()
+    por_turno, por_corrida = MAX_APROBACIONES_POR_TURNO, MAX_APROBACIONES_POR_CORRIDA
+    maximo_script = int(re.search(r"^TIEMPO_APROBACION_MAXIMO = (\d+)$", SCRIPT.read_text(encoding="utf-8"), re.M)[1])
+    minutos = por_corrida * maximo_script // 60
+    for frase in (
+        f"máximo {por_turno} aprobaciones solicitadas por turno y {por_corrida} por corrida",
+        f"{por_corrida} aprobaciones x {maximo_script} s = {minutos} minutos",
+        "Tiempo agotado: no aprobado.",
+        "0600",
+        "0700",
+        "Interrumpido por la persona. Resultados parciales guardados.",
+        "tope de aprobaciones",
+        "ya denegado en este turno",
+    ):
+        assert frase in documento, frase
+    # el documento ya no aconseja "desactivar" la herramienta ni dice que el aprobador personalizado solo falla con errores de lectura
+    assert "Desactivar la herramienta" not in documento
+    assert "dejar el aprobador" not in documento
+    assert "distinta de un error de lectura" not in documento

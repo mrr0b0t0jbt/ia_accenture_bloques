@@ -26,9 +26,13 @@ def main(argv: list[str] | None = None) -> int:
     except FileNotFoundError:
         print(f"Error: no se encontró {args.trazas}", file=sys.stderr)
         return 1
-    except ValueError as error:
+    except (ValueError, OSError) as error:
+        # OSError cubre un directorio, la falta de permisos y similares; el mensaje evita el traceback
         print(f"Error: {error}", file=sys.stderr)
         return 1
+    if not registros:
+        print("Archivo sin registros.")
+        return 0
     marcas = marcar_repeticiones_sospechosas(registros) + marcar_riesgo_alto_sin_aprobacion(registros)
     print("\n".join(marcas) if marcas else "Sin marcas.")
     print(f"Registros revisados: {len(registros)}")

@@ -1,5 +1,8 @@
+import fnmatch
 import importlib.util
 import json
+import os
+import stat
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -101,15 +104,19 @@ def test_registrar_traza_escribe_los_acentos_en_utf8(tmp_path):
     assert b"\\u00e9" not in contenido
 
 
+def _linea(session_id: str) -> str:
+    return json.dumps(_registro(session_id, []))
+
+
 def test_leer_trazas_devuelve_los_registros_y_salta_lineas_en_blanco(tmp_path):
     ruta = tmp_path / "trazas.jsonl"
-    ruta.write_text('{"session_id": "a"}\n\n   \n{"session_id": "b"}\n', encoding="utf-8")
-    assert leer_trazas(str(ruta)) == [{"session_id": "a"}, {"session_id": "b"}]
+    ruta.write_text(f"{_linea('a')}\n\n   \n{_linea('b')}\n", encoding="utf-8")
+    assert leer_trazas(str(ruta)) == [_registro("a", []), _registro("b", [])]
 
 
 def test_leer_trazas_con_linea_corrupta_lanza_valueerror_con_su_numero(tmp_path):
     ruta = tmp_path / "trazas.jsonl"
-    ruta.write_text('{"session_id": "a"}\nno es json\n', encoding="utf-8")
+    ruta.write_text(f"{_linea('a')}\nno es json\n", encoding="utf-8")
     with pytest.raises(ValueError) as error:
         leer_trazas(str(ruta))
     # sin match="2": la ruta temporal puede contener un 2
@@ -168,7 +175,7 @@ def test_revisar_trazas_imprime_las_marcas_y_devuelve_0(tmp_path, capsys):
 
 def test_revisar_trazas_con_linea_corrupta_devuelve_1_y_menciona_la_linea(tmp_path, capsys):
     ruta = tmp_path / "trazas.jsonl"
-    ruta.write_text('{"session_id": "a"}\nno es json\n', encoding="utf-8")
+    ruta.write_text(f"{_linea('a')}\nno es json\n", encoding="utf-8")
     assert revisar_trazas.main(["--trazas", str(ruta)]) == 1
     error = capsys.readouterr().err
     assert error.startswith("Error:") and "línea" in error
@@ -177,3 +184,67 @@ def test_revisar_trazas_con_linea_corrupta_devuelve_1_y_menciona_la_linea(tmp_pa
 def test_revisar_trazas_con_archivo_inexistente_devuelve_1_y_avisa_por_stderr(tmp_path, capsys):
     assert revisar_trazas.main(["--trazas", str(tmp_path / "no_existe.jsonl")]) == 1
     assert capsys.readouterr().err.startswith("Error:")
+
+
+def test_registrar_traza_crea_el_archivo_con_modo_0600_y_el_directorio_con_0700(tmp_path):
+    anterior = os.umask(0o022)
+    try:
+        ruta = tmp_path / "nuevo" / "trazas.jsonl"
+        registrar_traza("s1", "x", _resultado(), str(ruta))
+    finally:
+        os.umask(anterior)
+    assert stat.S_IMODE(os.stat(ruta).st_mode) == 0o600
+    assert stat.S_IMODE(os.stat(ruta.parent).st_mode) == 0o700
+
+
+def test_registrar_traza_no_cambia_el_modo_de_un_archivo_existente(tmp_path):
+    ruta = tmp_path / "trazas.jsonl"
+    ruta.write_text("", encoding="utf-8")
+    os.chmod(ruta, 0o640)
+    registrar_traza("s1", "x", _resultado(), str(ruta))
+    assert stat.S_IMODE(os.stat(ruta).st_mode) == 0o640
+
+
+def test_leer_trazas_rechaza_los_registros_sin_la_forma_esperada_con_su_numero_de_linea(tmp_path):
+    malos = [
+        "[]", "5", "null", "{}",
+        '{"acciones": null, "aprobaciones": []}',
+        '{"acciones": [{"argumentos": {}}], "aprobaciones": []}',
+    ]
+    for mala in malos:
+        ruta = tmp_path / "trazas.jsonl"
+        ruta.write_text(f"{_linea('a')}\n{mala}\n", encoding="utf-8")
+        with pytest.raises(ValueError) as error:
+            leer_trazas(str(ruta))
+        assert str(error.value).startswith("Línea 2: la traza no tiene la forma esperada ("), mala
+
+
+def test_revisar_trazas_con_un_directorio_devuelve_1_sin_traceback_y_con_un_archivo_vacio_avisa(tmp_path, capsys):
+    assert revisar_trazas.main(["--trazas", str(tmp_path)]) == 1
+    error = capsys.readouterr().err
+    assert error.startswith("Error:") and "Traceback" not in error
+    vacio = tmp_path / "vacio.jsonl"
+    vacio.write_text("", encoding="utf-8")
+    assert revisar_trazas.main(["--trazas", str(vacio)]) == 0
+    assert "Archivo sin registros." in capsys.readouterr().out
+
+
+def test_revisar_trazas_no_imprime_crudos_los_controles_del_session_id(tmp_path, capsys):
+    ruta = tmp_path / "trazas.jsonl"
+    registro = _registro("a\x1b[2Kb", ["calcular", "calcular"])
+    ruta.write_text(json.dumps(registro) + "\n", encoding="utf-8")
+    assert revisar_trazas.main(["--trazas", str(ruta)]) == 0
+    impreso = capsys.readouterr().out
+    assert "\x1b" not in impreso and "usó 'calcular' dos veces seguidas" in impreso
+
+
+def test_una_herramienta_ausente_de_riesgo_se_marca_como_sin_nivel_de_riesgo():
+    [marca] = marcar_riesgo_alto_sin_aprobacion([_registro("s1", ["herramienta_nueva"])])
+    assert "sin nivel de riesgo" in marca and "herramienta_nueva" in marca
+
+
+def test_el_gitignore_deja_fuera_de_git_las_trazas_en_cualquier_ruta_razonable():
+    reglas = (RAIZ / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert all(regla in reglas for regla in ("trazas/", "*trazas*.jsonl", "trazas*/"))
+    assert all(fnmatch.fnmatch(nombre, "*trazas*.jsonl") for nombre in ("trazas_agente.jsonl", "mis_trazas.jsonl"))
+    assert fnmatch.fnmatch("trazas2", "trazas*")
