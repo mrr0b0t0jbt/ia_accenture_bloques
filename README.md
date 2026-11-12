@@ -371,6 +371,65 @@ Marca candidatos a revisar, no concluye nada: la misma herramienta usada dos vec
 
 **Cómo se verificó**: la lectura de la aprobación se probó con pipes reales y con una terminal simulada (`pty`), con un Ctrl-C real y un servidor falso local; la QA independiente (`mira`) encontró 10 hallazgos (1 medio, 9 bajos) y se corrigieron todos salvo los que quedaron como límites conocidos. **Sin verificar con la API real**: cómo se comporta Claude tras un "no" ni con varias llamadas de herramienta en una misma respuesta (los topes cubren ambos casos), y la aprobación con una persona en una sesión larga (la segunda corrida real pidió una sola aprobación).
 
+## RAG: indexación y recuperación con citas (Bloques 24 a 26)
+
+Un corpus propio se indexa en un vector store persistente (Chroma) con embeddings de Gemini (`gemini-embedding-001`, vectores de 3072 dimensiones) y se consulta con recuperación semántica; Claude responde solo con el contexto recuperado y cita sus fuentes. Los embeddings requieren Gemini porque Anthropic no ofrece un modelo de embeddings; la respuesta la da Claude. Dependencias: `chromadb` 1.5.9 y `langchain-chroma` 1.1.0 (verificadas en Python 3.14 con `pip check` limpio).
+
+**Corpus** (`JSON/corpus_miniapp.json`): 10 documentos de una empresa ficticia, Taller Aurora: política de parcheo, avisos de los dos CVE ficticios del agente, playbooks de tráfico saliente y de phishing, contraseñas y MFA, respaldos, clasificación de incidentes y dos documentos sobre el propio agente (aprobación humana, límites y trazas). Los valores son inventados (por ejemplo "4 días hábiles" para vulnerabilidades críticas) para que Claude no pueda responderlos de memoria: si una respuesta los cita con su fuente, la recuperación funcionó. No hay datos de ninguna organización real.
+
+**Indexación** (`src/indexacion.py`, `src/embeddings_gemini.py`, `scripts/indexar_corpus.py`):
+
+- Cada documento se parte con `RecursiveCharacterTextSplitter` (200 caracteres con solapamiento de 30 por defecto) y cada chunk lleva metadata `fuente`, `documento` y `fragmento`, con ids deterministas `<documento>_<n>`. Reindexar el mismo corpus no duplica; los chunks de un documento editado se reemplazan y los de un documento quitado se borran **después** de agregar, de modo que si la adición falla el índice anterior queda intacto.
+- Colección explícita (`corpus_miniapp`) y ruta absoluta: Chroma crea sin avisar un índice vacío si la ruta relativa apunta a otro lugar, así que `cargar_vectorstore` comprueba que el directorio existe y que la colección no está vacía. El índice vive en `vectorstore/` (fuera de git) y se valida el nombre de la colección, los ids, el máximo de 50 documentos y de 200 chunks.
+- Un error 429 se reintenta con esperas de 5, 10 y 20 s; una clave rechazada o un 403 salen con un mensaje claro y un error desconocido se informa sin traceback.
+- Sin `--confirmar-api-real` el script funciona en **modo revisión**: divide el corpus, verifica la integridad (sin vacíos, sin duplicados, sin chunks sin fuente) e imprime los chunks sin llamar a ninguna API. `--comparar-tamanos 120,200,300` compara tamaños de chunk (con solapamiento 30: 50, 29 y 20 chunks, con 5408, 4865 y 4628 caracteres). Con el flag indexa de verdad.
+
+```bash
+python scripts/indexar_corpus.py                           # modo revisión, sin API
+python scripts/indexar_corpus.py --comparar-tamanos 120,200,300
+python scripts/indexar_corpus.py --confirmar-api-real      # llama a la API de embeddings de Gemini
+```
+
+La primera indexación real creó 29 chunks (4865 caracteres) con una sola petición de embeddings. No se estima un costo en dólares porque el proyecto no tiene el precio de ese modelo.
+
+**Recuperación y citas** (`src/recuperacion.py`, `scripts/consultar_corpus.py`, `JSON/casos_recuperacion.json`):
+
+- `recuperar` busca los k fragmentos más parecidos con su **distancia** (menor es más parecido). `formatear_contexto` los numera `[1]..[k]` y guarda el mapa número -> fuente; `extraer_citas` separa las citas válidas, las inválidas (un `[99]` que el modelo inventa) y detecta la ausencia de citas.
+- El prompt trata el contexto como **datos, no instrucciones**: va entre `<contexto>` y `</contexto>`, una regla lo declara material de consulta y las etiquetas que traiga un chunk se neutralizan. Si el contexto no alcanza el modelo debe responder con una frase fija ("El contexto no alcanza para responder esa pregunta."), lo que permite comprobar por código si la admitió. Son desvíos de la clase, que solo pide "dilo explícitamente".
+- `construir_prompt` recibe el índice ya abierto y nunca calcula embeddings del corpus (reindexar dentro de cada consulta es el error que la clase señala).
+- El script exige `--confirmar-api-real` (sin él sale con código 2 sin hacer nada) y lleva topes forzados en código: gasto máximo USD 0.05, `--max-tokens` hasta 1024 (512 por defecto), `--k` de 1 a 5 y como máximo 10 preguntas. Guarda el JSON después de cada caso, de forma atómica, con la distancia y la fuente de cada fragmento recuperado (no su texto) y la verificación de las citas.
+
+```bash
+python scripts/consultar_corpus.py --confirmar-api-real --max-tokens 512 --tope-usd 0.05
+```
+
+**Primera corrida real** (2026-11-12, `k=3`, 8 preguntas, 6 con respuesta en el corpus y 2 sin ella; registro en [docs/resultados_recuperacion.json](docs/resultados_recuperacion.json)): 8 consultas de embeddings y 8 llamadas a Claude, 3624 tokens de entrada y 1029 de salida, costo estimado USD 0.01754 (se estimó USD 0.017). No hubo cortes ni fallos.
+
+| Pregunta | Tokens (entrada / salida) | Costo (USD) | Citas válidas | Admitió falta de contexto | Documento esperado recuperado |
+|---|---|---|---|---|---|
+| q1_plazo_critico_cola | 395 / 402 | 0.00481 | 2, 1 | no | no |
+| q2_parafrasis_trafico | 466 / 147 | 0.00240 | 1, 2 | no | sí |
+| q3_phishing_clave | 494 / 237 | 0.00336 | 1, 2, 3 | no | sí |
+| q4_perdida_datos | 474 / 41 | 0.00136 | 1 | no | sí |
+| q5_agente_sin_respuesta | 412 / 106 | 0.00188 | - | sí | sí |
+| q6_nivel_s1 | 480 / 54 | 0.00150 | 1 | no | sí |
+| q7_sin_respuesta_presupuesto | 502 / 21 | 0.00121 | - | sí | - |
+| q8_sin_respuesta_moviles | 401 / 21 | 0.00101 | - | sí | - |
+
+- Claude respondió con datos exactos y citas válidas en las preguntas con respuesta, y admitió la falta de contexto en las dos que el corpus no cubre, incluida una de tema cercano (el plazo de parcheo de teléfonos móviles). No inventó ningún dato.
+- **La métrica por documento es demasiado generosa**: en `q5_agente_sin_respuesta` el documento correcto sí se recuperó, pero no el fragmento que contiene la respuesta (la frase "si nadie responde en 60 segundos… no aprobado" quedó en el fragmento 1 y se recuperaron el 0 y el 2 más un fragmento de otro documento). Claude respondió, correctamente, que el contexto no alcanzaba: fue una falla de recuperación y no una alucinación. En `q1_plazo_critico_cola` la política de parcheo no llegó, pero el propio aviso repite el plazo. Con `k=3` los fragmentos vecinos y solapados ocupan los puestos. La medición útil es por chunk (los ids `<documento>_<n>` ya lo permiten) y es lo que evalúa el Bloque 27; el corpus y el tamaño de chunk no se tocaron para partir de esta línea base.
+- El costo es una estimación con los precios del proyecto, no contrastada con la consola.
+
+**Límites conocidos de la recuperación** (verificados con servidores locales falsos del cliente real de Gemini y de Claude, más la corrida real de arriba):
+
+- **Sin datos de uso el tope de gasto no frena**: si Claude no devolviera `usage_metadata`, el costo quedaría en 0 y las preguntas correrían igual (el agente sí corta en ese caso; este script todavía no). El techo natural con 8 preguntas y 512 tokens es de unos USD 0.046.
+- Los reintentos del SDK de Anthropic (`max_retries=2`) no se cuentan como llamadas.
+- Un 429 persistente de embeddings cuesta tiempo y no dinero: 4 intentos con esperas de 5, 10 y 20 s por pregunta (unos 35 s por pregunta).
+- `acierto_recuperacion` se calcula por documento (ver arriba) y es solo informativo.
+- La pregunta del archivo de casos se usa tal cual (es un archivo propio); lo que se neutraliza son las etiquetas de los chunks recuperados y no se cubren variantes Unicode de las etiquetas.
+- El guardián de las pruebas del índice compara solo la fecha del directorio `vectorstore/` y no detecta escrituras sobre un índice existente que no lo cambien.
+- Sin verificar: la calidad de la recuperación con otras preguntas distintas de las 8 de la corrida, y la comparación de tamaños de chunk con embeddings reales.
+
 ## Ensayo real de rate limit
 
 Envía N peticiones seguidas a Claude pidiendo una respuesta de una sola palabra, para intentar provocar un 429 real del proveedor. Registra la petición del primer 429, las esperas del backoff, las llamadas HTTP y el costo:
@@ -448,6 +507,9 @@ src/
   agente.py                agente con herramientas, traza de decisión, memoria por sesión y normalización de la salida
   supervision.py           aprobación humana con plazo, registro de decisiones y topes de aprobaciones por turno y por corrida
   trazas.py                trazas JSONL por turno y marcas para su revisión
+  embeddings_gemini.py     crea los embeddings de Gemini a pedido y clasifica los errores de la API (límite, clave u otro)
+  indexacion.py            carga y valida el corpus, lo parte en chunks con ids deterministas e indexa en Chroma de forma idempotente
+  recuperacion.py          recuperación con distancia, contexto numerado, prompt que trata el contexto como datos y verificación de citas
 scripts/
   ensayo_rate_limit_simulado.py  ensayo de rate limit simulado con mocks
   ejecutar_pipeline.py           pipeline de texto sobre respuestas reales de Claude (con costo)
@@ -456,6 +518,8 @@ scripts/
   ejecutar_cadenas.py            chain de tres pasos y enrutamiento sobre respuestas reales de Claude o Gemini (con costo)
   ejecutar_agente.py             agente con herramientas y memoria sobre respuestas reales de Claude, con topes de llamadas y de gasto, aprobación y trazas (con costo)
   revisar_trazas.py              revisa las trazas del agente y marca candidatos a revisar (sin costo)
+  indexar_corpus.py              revisa (sin API) o indexa el corpus en Chroma con embeddings de Gemini
+  consultar_corpus.py            recuperación semántica con embeddings de Gemini y respuestas de Claude con citas verificadas (con costo)
 test/
   unit/test_api_claude_refactor.py     pruebas unitarias con mocks
   unit/test_api_gemini.py              pruebas minimas del manejo de errores del cliente Gemini, con mocks
@@ -479,7 +543,14 @@ test/
   unit/test_trazas.py                  pruebas de las trazas, su lectura validada y su revisión
   unit/test_limites_autonomia.py       pruebas que cruzan el documento de límites con el código
   unit/test_conftest_guardian.py       prueba del guardián que impide que la suite escriba en las trazas reales
-  unit/conftest.py                     guardián automático: falla una prueba que escriba en trazas/trazas_agente.jsonl
+  unit/conftest.py                     guardianes automáticos: fallan una prueba que escriba en trazas/trazas_agente.jsonl o en vectorstore/
+  unit/test_conftest_guardian.py       pruebas de las funciones que miden el estado de trazas/ y vectorstore/
+  unit/test_guardianes.py              prueba, en un pytest aparte, que los dos guardianes fallan de verdad
+  unit/embeddings_falsos.py            embeddings falsos por tema para probar el orden de recuperación (sin pruebas propias)
+  unit/test_indexacion.py              pruebas de la indexación con Chroma real y embeddings falsos
+  unit/test_indexar_corpus.py          pruebas del script de indexación (modo revisión, errores de la API)
+  unit/test_recuperacion.py            pruebas de la recuperación, el contexto numerado, el prompt y las citas
+  unit/test_consultar_corpus.py        pruebas del script de consulta, con un modelo falso
   test_consistencia.py         prueba de consistencia con Claude
   test_consistencia_gemini.py  misma prueba con Gemini (comparativa)
 JSON/
@@ -491,6 +562,8 @@ JSON/
   casos_metricas.json              consultas y referencias de las métricas de texto
   casos_cadenas.json               aviso y mensajes ficticios de las cadenas de LangChain
   casos_agente.json                10 turnos de la corrida real del agente (8 de herramientas y memoria, 2 de aislamiento)
+  corpus_miniapp.json              10 documentos ficticios de Taller Aurora para el RAG
+  casos_recuperacion.json          8 preguntas del RAG (6 con respuesta en el corpus y 2 sin ella)
 docs/                      decisión de arquitectura, diagrama y evidencias
   registro_rate_limit.md   registro del ensayo de rate limit (simulado)
   registro_pipeline.md     registro del pipeline de texto (se genera al correr el script)
@@ -500,6 +573,7 @@ docs/                      decisión de arquitectura, diagrama y evidencias
   resultados_cadenas.json  resultados de la corrida real de las cadenas (se genera al correr ejecutar_cadenas.py)
   resultados_agente.json   resultados de la primera corrida real del agente, 8 turnos (se genera al correr ejecutar_agente.py)
   resultados_agente_v2.json  resultados de la segunda corrida real, 10 turnos y una aprobación interactiva
+  resultados_recuperacion.json  resultados de la primera corrida real de la recuperación con citas
   limites_autonomia_agente.md  límites de autonomía del agente: riesgo por herramienta, aprobación, trazas y límites conocidos
   revision_manual.json     revisión manual de 10 casos con la rúbrica de tres preguntas
   limites_metrica.md       límites conocidos de la métrica y recomendación de uso
