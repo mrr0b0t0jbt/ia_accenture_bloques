@@ -286,6 +286,7 @@ python scripts/ejecutar_cadenas.py --confirmar-api-real --proveedor gemini
 | `buscar_en_documentacion` | Responde sobre cómo funciona la miniaplicación (reintentos, costo, topes) con textos fijos del proyecto |
 | `calcular` | Aritmética con un evaluador propio sobre `ast` (sin `eval`): `+ - * / // %`, signo y paréntesis; sin `**`, nombres ni llamadas; máximo 100 caracteres. Rechaza lo no permitido con `Expresión no permitida.`, devuelve `No se puede dividir entre cero.` y `Resultado fuera de rango.` si el resultado no es finito. Los floats enteros mayores o iguales a 2^53 se muestran con `str(float)` (por ejemplo `1e+23`), no con su expansión binaria |
 | `consultar_cve_de_laboratorio` | Consulta un CVE ficticio (`CVE-2099-10001` o `CVE-2099-10002`) con `args_schema` (`cve_id` e `incluir_mitigacion`) y nombre explícito. Normaliza el identificador y, si no existe, refleja a lo más 64 caracteres de él |
+| `aislar_host_de_laboratorio` | **Riesgo alto, simulada** (Bloque 23): solo acepta hosts `*.ejemplo.test`, pide aprobación humana y registra cada decisión. No toca ninguna red, proceso ni archivo; la acción real no existe. Ver [Supervisión humana](#supervisión-humana-y-trazas-bloque-23) |
 
 **Desvío de la clase**: la clase calcula con `eval()` filtrado por caracteres; aquí se reemplaza por el evaluador de `ast` por seguridad.
 
@@ -301,7 +302,7 @@ Se prueba sin red con `test/unit/modelo_falso_herramientas.py`, un modelo falso 
 python scripts/ejecutar_agente.py --confirmar-api-real
 ```
 
-Procesa los 8 turnos de `JSON/casos_agente.json` (una consulta por herramienta, una que encadena dos, una general, una conversación de 2 turnos y una consulta de otra sesión para comprobar el aislamiento) y escribe `docs/resultados_agente.json` (`--salida` lo cambia).
+Procesa los 10 turnos de `JSON/casos_agente.json` (una consulta por herramienta, una que encadena dos, una general, una conversación de 2 turnos, una consulta de otra sesión para comprobar el aislamiento, un pedido de aislar un host de laboratorio y otro sobre un host fuera de laboratorio) y escribe `docs/resultados_agente.json` (`--salida` lo cambia). La primera corrida real tuvo solo los 8 primeros turnos.
 
 - `--confirmar-api-real` es obligatorio: sin él sale con código 2 sin cargar LangChain ni leer la clave.
 - `--tope-usd` es US$ 0.10 por defecto y como máximo; `--max-tokens` es 1024 por defecto y 2048 como máximo.
@@ -309,6 +310,7 @@ Procesa los 8 turnos de `JSON/casos_agente.json` (una consulta por herramienta, 
 - **Sin datos de uso no hay tope de gasto**: si un turno termina sin error pero el medidor no registró tokens, la corrida se detiene (`cortado_por_falta_de_uso`) en vez de seguir con costo 0.
 - El JSON trae por turno la respuesta (siempre texto), las herramientas usadas y esperadas, la traza de pasos con su observación, llamadas, tokens, costo estimado, `truncado`, `hubo_fallo` y los mensajes de la sesión; y el total de llamadas y los cortes. Se guarda después de cada turno, de forma atómica. Un enlace duro de `--salida` al archivo de casos se detecta y se rechaza.
 - El script desactiva el streaming del ejecutor (`stream_runnable=False`).
+- `--aprobacion {denegar,interactiva}` (por defecto `denegar`), `--tiempo-aprobacion` (segundos, mayor que 0 y como máximo 300; 60 por defecto), `--trazas <ruta>` (por defecto `trazas/trazas_agente.jsonl`) y `--sin-trazas`. Detalle en la sección siguiente.
 
 **Primera corrida real** (2026-11-11, `--max-tokens 1024`, tope USD 0.10; registro en [docs/resultados_agente.json](docs/resultados_agente.json)): 15 llamadas, 13570 tokens de entrada y 1388 de salida, costo estimado USD 0.04102. No hubo cortes ni fallos y ningún tope se activó. El costo se calcula con los precios del proyecto y es una estimación; no se contrastó con la consola de Anthropic.
 
@@ -330,13 +332,36 @@ Procesa los 8 turnos de `JSON/casos_agente.json` (una consulta por herramienta, 
 **Límites conocidos del agente** (documentados, no corregidos; vienen de la revisión de QA contra servidores falsos, salvo que se indique otra cosa):
 
 - **Reintentos del SDK**: `MAX_LLAMADAS` cuenta llamadas al modelo, no peticiones HTTP. Con un servidor que responde 500, 8 llamadas contadas produjeron 24 peticiones (3 por llamada, `max_retries=2`). Las peticiones fallidas no las ve el medidor y no hay tope de tiempo total. No se sabe si el proveedor cobra los intentos que expiran.
-- **Un 401 no corta la corrida**: intenta los 8 turnos (8 peticiones sin costo) y termina con código 1.
+- **Un 401 no corta la corrida**: intenta todos los turnos (una petición sin costo por turno) y termina con código 1.
 - **Argumentos de herramienta inválidos** (por ejemplo `expresion` numérica): el `ValidationError` mata ese turno; el historial queda intacto y el turno siguiente corre. Con el esquema de Claude es improbable.
 - **Corte por `max_iterations`**: la respuesta `Agent stopped due to max iterations.` se guarda como respuesta del asistente y los turnos siguientes de esa sesión la ven.
 - **`session_id`**: no se normalizan; `"a"` y `"a "` son sesiones distintas.
 - **`--casos` inexistente o con JSON roto** termina con traza, sin mensaje `Error:` (patrón heredado de `ejecutar_cadenas.py`).
 - **`normalizar_salida`** falla con `TypeError` si un bloque `text` trae `None`; Claude no lo hace. Ninguna prueba distingue incluir el texto de un bloque `thinking` no vacío (en la corrida real vino vacío).
 - **Sin verificar con la API real**: el streaming (el script lo desactiva), la facturación de intentos fallidos y la corrección de los bloques `thinking`.
+
+## Supervisión humana y trazas (Bloque 23)
+
+El agente tiene una herramienta de riesgo alto, `aislar_host_de_laboratorio`, **simulada**: acepta solo hosts `*.ejemplo.test` y devuelve "aislado (simulado: no se modificó ninguna red)". Sirve para tener algo real que supervisar sin tocar nada. El documento completo es [docs/limites_autonomia_agente.md](docs/limites_autonomia_agente.md): herramientas por nivel de riesgo (`RIESGO`), qué requiere aprobación y por qué, revisión de trazas, qué hacer ante un comportamiento inesperado, controles automáticos y límites conocidos. Lo que sigue es el resumen.
+
+**Aprobación humana** (`src/supervision.py`):
+
+- `--aprobacion denegar` (por defecto): nadie aprueba, así que una corrida desatendida nunca ejecuta una acción de riesgo alto; el intento queda registrado como no aprobado. `--aprobacion interactiva` pregunta por consola con plazo (`--tiempo-aprobacion`).
+- Solo la respuesta `s` aprueba (mayúsculas y espacios se ignoran). Plazo vencido, fin de entrada, línea parcial, línea de más de 1024 bytes, tiempo inválido, descriptor cerrado o cualquier otro error cuentan como **no aprobado**; solo `KeyboardInterrupt` se propaga. El plazo cubre toda la lectura (`os.read` con `select`) y en una terminal se descarta lo tecleado antes de preguntar. Un aprobador personalizado solo aprueba si devuelve exactamente `True`.
+- El motivo que escribe el modelo se sanea (una línea, solo caracteres imprimibles, máximo 200) y se muestra entre comillas como "texto del modelo, no verificado". Se encontró que sin sanear podía borrar la línea del mensaje de aprobación con secuencias ESC y simular una aprobación previa.
+- **Topes**: 3 aprobaciones solicitadas por turno y 10 por corrida; un host ya negado en el turno no se vuelve a preguntar. Peor caso desatendido con `--tiempo-aprobacion 300`: 10 x 300 s = 50 minutos. Un host fuera de laboratorio se rechaza sin pedir aprobación, pero el intento queda registrado (clave `rechazo`) porque es una señal de seguridad. Cada decisión queda en `aprobaciones` del JSON por turno y de la corrida.
+- **Ctrl-C** guarda lo ya decidido (JSON y traza con `"interrumpido": true`) y el script sale con código 130.
+
+**Trazas** (`src/trazas.py`, `scripts/revisar_trazas.py`): una línea JSONL por turno en `trazas/trazas_agente.jsonl` con la entrada completa, las acciones, la respuesta y las aprobaciones. Quedan fuera de git (`trazas/`, `*trazas*.jsonl`, `trazas*/`), se crean con permisos 0600/0700 y no tienen rotación. `--trazas` se rechaza si coincide con `--casos` o `--salida`, o si apunta a un archivo que no es JSONL.
+
+```bash
+python scripts/revisar_trazas.py                    # lee trazas/trazas_agente.jsonl
+python scripts/revisar_trazas.py --trazas <ruta>
+```
+
+Marca candidatos a revisar, no concluye nada: la misma herramienta usada dos veces seguidas, una herramienta de riesgo alto sin ningún registro de aprobación y una herramienta ausente de `RIESGO`. La revisión es un proceso humano (una muestra semanal y todas las trazas con herramientas de riesgo alto); nada lo ejecuta solo.
+
+**Cómo se verificó**: la lectura de la aprobación se probó con pipes reales y con una terminal simulada (`pty`), con un Ctrl-C real y un servidor falso local; la QA independiente (`mira`) encontró 10 hallazgos (1 medio, 9 bajos) y se corrigieron todos salvo los que quedaron como límites conocidos. **Sin verificar con la API real**: cómo se comporta Claude tras un "no" ni con varias llamadas de herramienta en una misma respuesta (los topes cubren ambos casos), y la aprobación con una persona en una sesión larga.
 
 ## Ensayo real de rate limit
 
@@ -411,15 +436,18 @@ src/
   modelo_gemini.py         crea el ChatGoogleGenerativeAI de Gemini 3.5 Flash-Lite a pedido
   cadena_tres_pasos.py     chain de tres pasos: aviso, puntos clave, lenguaje simple, checklist
   enrutamiento.py          clasifica mensajes, los envía a la ruta de su categoría y controla los fallos
-  herramientas_agente.py   herramientas del agente: documentación, cálculo seguro con ast y CVE de laboratorio con args_schema
+  herramientas_agente.py   herramientas del agente: documentación, cálculo seguro con ast, CVE de laboratorio y aislamiento simulado con aprobación
   agente.py                agente con herramientas, traza de decisión, memoria por sesión y normalización de la salida
+  supervision.py           aprobación humana con plazo, registro de decisiones y topes de aprobaciones por turno y por corrida
+  trazas.py                trazas JSONL por turno y marcas para su revisión
 scripts/
   ensayo_rate_limit_simulado.py  ensayo de rate limit simulado con mocks
   ejecutar_pipeline.py           pipeline de texto sobre respuestas reales de Claude (con costo)
   ejecutar_metricas.py           precisión, cobertura y F1 sobre respuestas reales de Claude (con costo)
   ensayo_rate_limit_real.py      ensayo de rate limit real contra Claude (con costo)
   ejecutar_cadenas.py            chain de tres pasos y enrutamiento sobre respuestas reales de Claude o Gemini (con costo)
-  ejecutar_agente.py             agente con herramientas y memoria sobre respuestas reales de Claude, con topes de llamadas y de gasto (con costo)
+  ejecutar_agente.py             agente con herramientas y memoria sobre respuestas reales de Claude, con topes de llamadas y de gasto, aprobación y trazas (con costo)
+  revisar_trazas.py              revisa las trazas del agente y marca candidatos a revisar (sin costo)
 test/
   unit/test_api_claude_refactor.py     pruebas unitarias con mocks
   unit/test_api_gemini.py              pruebas minimas del manejo de errores del cliente Gemini, con mocks
@@ -435,10 +463,15 @@ test/
   unit/test_orquestacion.py            pruebas de los fallos controlados y del flujo completo, con mocks
   unit/test_ejecutar_cadenas.py        pruebas del script de las cadenas, con un modelo falso
   unit/modelo_falso_herramientas.py    modelo falso con guion y bind_tools para probar el agente (sin pruebas propias)
-  unit/test_herramientas_agente.py     pruebas de las tres herramientas y del evaluador seguro
+  unit/test_herramientas_agente.py     pruebas de las herramientas, del evaluador seguro y de la herramienta de riesgo alto
   unit/test_agente.py                  pruebas del agente: elección de herramienta, traza, max_iterations
   unit/test_memoria_agente.py          pruebas de la memoria: historial, aislamiento de sesiones y normalización
   unit/test_ejecutar_agente.py         pruebas del script del agente, con un modelo falso
+  unit/test_supervision.py             pruebas de la aprobación (pipes, pty), el registro y los topes
+  unit/test_trazas.py                  pruebas de las trazas, su lectura validada y su revisión
+  unit/test_limites_autonomia.py       pruebas que cruzan el documento de límites con el código
+  unit/test_conftest_guardian.py       prueba del guardián que impide que la suite escriba en las trazas reales
+  unit/conftest.py                     guardián automático: falla una prueba que escriba en trazas/trazas_agente.jsonl
   test_consistencia.py         prueba de consistencia con Claude
   test_consistencia_gemini.py  misma prueba con Gemini (comparativa)
 JSON/
@@ -449,7 +482,7 @@ JSON/
   casos_pipeline.json              consultas y referencias del pipeline de texto
   casos_metricas.json              consultas y referencias de las métricas de texto
   casos_cadenas.json               aviso y mensajes ficticios de las cadenas de LangChain
-  casos_agente.json                8 turnos de la corrida real del agente
+  casos_agente.json                10 turnos de la corrida real del agente (8 de herramientas y memoria, 2 de aislamiento)
 docs/                      decisión de arquitectura, diagrama y evidencias
   registro_rate_limit.md   registro del ensayo de rate limit (simulado)
   registro_pipeline.md     registro del pipeline de texto (se genera al correr el script)
@@ -457,7 +490,8 @@ docs/                      decisión de arquitectura, diagrama y evidencias
   registro_rate_limit_real_concurrente.md  registro del ensayo concurrente (se genera al correr el ensayo con --concurrencia mayor que 1)
   resultados_metricas.json  resultados de la corrida real de métricas (se genera al correr ejecutar_metricas.py)
   resultados_cadenas.json  resultados de la corrida real de las cadenas (se genera al correr ejecutar_cadenas.py)
-  resultados_agente.json   resultados de la primera corrida real del agente (se genera al correr ejecutar_agente.py)
+  resultados_agente.json   resultados de la primera corrida real del agente, 8 turnos (se genera al correr ejecutar_agente.py)
+  limites_autonomia_agente.md  límites de autonomía del agente: riesgo por herramienta, aprobación, trazas y límites conocidos
   revision_manual.json     revisión manual de 10 casos con la rúbrica de tres preguntas
   limites_metrica.md       límites conocidos de la métrica y recomendación de uso
 ```
