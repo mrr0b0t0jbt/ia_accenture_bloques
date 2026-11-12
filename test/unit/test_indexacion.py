@@ -334,3 +334,46 @@ def test_22_un_corpus_con_demasiados_chunks_falla_antes_de_los_embeddings(tmp_pa
     with pytest.raises(ValueError, match="chunks"):
         indexacion.indexar(documentos, embeddings, str(directorio), chunk_size=50, chunk_overlap=0)
     assert embeddings.llamadas == 0 and not directorio.exists()
+
+
+def test_23_si_la_segunda_indexacion_falla_el_indice_anterior_queda_intacto(corpus, tmp_path):
+    class EmbeddingsQueFallanDespues(Embeddings):
+        falla = False
+
+        def embed_documents(self, textos):
+            if self.falla:
+                raise RuntimeError("fallo de la API")
+            return [[float(len(texto)), 1.0] for texto in textos]
+
+        def embed_query(self, texto):
+            return [float(len(texto)), 1.0]
+
+    embeddings = EmbeddingsQueFallanDespues()
+    directorio = str(tmp_path / "indice")
+    indexacion.indexar(corpus, embeddings, directorio)
+    antes = indexacion.cargar_vectorstore(embeddings, directorio).get()
+    embeddings.falla = True
+    # un documento menos: borrar los huérfanos antes de agregar alteraría el índice
+    with pytest.raises(RuntimeError, match="fallo de la API"):
+        indexacion.indexar(corpus[:-1], embeddings, directorio)
+    despues = indexacion.cargar_vectorstore(embeddings, directorio).get()
+    assert len(despues["ids"]) == len(antes["ids"]) == 29
+    assert sorted(despues["ids"]) == sorted(antes["ids"])
+    assert any(i.startswith("agente_limites_trazas") for i in despues["ids"])
+
+
+def test_24_describir_error_api_clasifica_limite_clave_y_otro():
+    describir = embeddings_gemini.describir_error_api
+    for texto in ("Error embedding content (RESOURCE_EXHAUSTED): 429 RESOURCE_EXHAUSTED. {}", "429", "RESOURCE_EXHAUSTED"):
+        categoria, mensaje = describir(RuntimeError(texto))
+        assert categoria == "limite"
+        assert mensaje == "Se agotó el límite de peticiones de la API: espera un minuto y vuelve a ejecutar."
+    for texto in ("400 INVALID_ARGUMENT. API key not valid. Please pass a valid API key.", "PERMISSION_DENIED", "UNAUTHENTICATED", "401", "403"):
+        categoria, mensaje = describir(RuntimeError(texto))
+        assert categoria == "clave"
+        assert mensaje == "La API rechazó la clave o no tiene permiso para usar embeddings: revisa GEMINI_API_KEY en .env."
+    categoria, mensaje = describir(RuntimeError("x" * 400))
+    assert categoria == "otro"
+    assert mensaje == f"No se pudo completar la operación con la API (RuntimeError): {'x' * 300}"
+    # el límite tiene prioridad sobre la clave
+    assert describir(RuntimeError("429 y además API key not valid"))[0] == "limite"

@@ -17,6 +17,17 @@ indexar_corpus = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(indexar_corpus)
 
 
+class _EmbeddingsQueFallan(Embeddings):
+    def __init__(self, error: Exception):
+        self.error = error
+
+    def embed_documents(self, textos):
+        raise self.error
+
+    def embed_query(self, texto):
+        raise self.error
+
+
 def _embeddings_falsos(monkeypatch):
     monkeypatch.setattr(embeddings_gemini, "crear_embeddings", lambda: DeterministicFakeEmbedding(size=16))
 
@@ -120,6 +131,55 @@ def test_08_argumentos_invalidos_terminan_con_error(capsys):
     for argv in casos:
         assert indexar_corpus.main(argv) == 1
         assert "Error:" in capsys.readouterr().err
+
+
+def test_11_el_directorio_y_el_corpus_por_defecto_salen_de_la_raiz_y_no_del_cwd(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    recibido = {}
+
+    def indexar_falso(documentos, embeddings, directorio, **kwargs):
+        recibido["directorio"] = directorio
+        recibido["documentos"] = documentos
+        return {"chunks": 0, "caracteres_chunks": 0, "directorio": directorio, "coleccion": "x", "eliminados": 0, "total_en_indice": 0}
+
+    monkeypatch.setattr(embeddings_gemini, "crear_embeddings", lambda: object())
+    monkeypatch.setattr(indexacion, "indexar", indexar_falso)
+    assert indexar_corpus.main(["--confirmar-api-real"]) == 0
+    assert recibido["directorio"] == str(indexar_corpus.RAIZ / "vectorstore")
+    assert recibido["documentos"] == indexacion.cargar_corpus(str(indexar_corpus.RAIZ / "JSON" / "corpus_miniapp.json"))
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_12_un_corpus_con_textos_repetidos_en_modo_revision_devuelve_1(tmp_path, capsys):
+    corpus = [{"id": n, "fuente": f"{n}.md", "texto": "mismo texto de prueba"} for n in ("a", "b")]
+    ruta = tmp_path / "corpus.json"
+    ruta.write_text(json.dumps(corpus), encoding="utf-8")
+    assert indexar_corpus.main(["--corpus", str(ruta)]) == 1
+    assert "Integridad: problemas" in capsys.readouterr().out
+
+
+def test_13_una_clave_rechazada_o_un_403_se_informan_sin_traceback(tmp_path, monkeypatch, capsys):
+    errores = (
+        "Error embedding content (INVALID_ARGUMENT): 400 INVALID_ARGUMENT. {'error': {'code': 400, "
+        "'message': 'API key not valid. Please pass a valid API key.', 'status': 'INVALID_ARGUMENT'}}",
+        "Error embedding content (PERMISSION_DENIED): 403 PERMISSION_DENIED. {'error': {'code': 403, "
+        "'message': 'The caller does not have permission', 'status': 'PERMISSION_DENIED'}}",
+    )
+    for texto in errores:
+        monkeypatch.setattr(embeddings_gemini, "crear_embeddings", lambda texto=texto: _EmbeddingsQueFallan(RuntimeError(texto)))
+        assert indexar_corpus.main(["--directorio", str(tmp_path / "vs"), "--confirmar-api-real"]) == 1
+        error = capsys.readouterr().err
+        assert "Error:" in error and "rechazó la clave" in error and "Traceback" not in error
+
+
+def test_14_un_error_cualquiera_se_informa_sin_traceback_y_un_argumento_roto_es_de_argparse(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(embeddings_gemini, "crear_embeddings", lambda: _EmbeddingsQueFallan(RuntimeError("boom")))
+    assert indexar_corpus.main(["--directorio", str(tmp_path / "vs"), "--confirmar-api-real"]) == 1
+    error = capsys.readouterr().err
+    assert "Error:" in error and "RuntimeError" in error and "boom" in error and "Traceback" not in error
+    with pytest.raises(SystemExit) as salida:
+        indexar_corpus.main(["--chunk-size", "abc"])
+    assert salida.value.code == 2
 
 
 def test_10_gitignore_y_el_script_no_carga_gemini_al_importarse(tmp_path):
