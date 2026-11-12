@@ -397,6 +397,28 @@ def test_aislar_no_vuelve_a_preguntar_por_un_host_ya_negado_en_el_turno():
     assert len(aprobador.mensajes) == 3
 
 
+def test_aislar_registra_un_host_rechazado_de_exactamente_100_caracteres_completo():
+    herramienta, _, registro = _aislar(True)
+    herramienta.invoke({"host": "a" * 100, "motivo": "x"})
+    assert registro.registros[0]["argumentos"]["host"] == "a" * 100
+
+
+def test_aislar_registra_un_host_vacio_o_solo_espacios_como_host_vacio():
+    for host in ("", "   "):
+        herramienta, aprobador, registro = _aislar(True)
+        assert herramienta.invoke({"host": host, "motivo": "x"}).startswith("Host no permitido")
+        assert registro.registros[0]["argumentos"]["host"] == "(host vacío)", repr(host)
+        assert aprobador.mensajes == []
+
+
+def test_aislar_limpia_el_motivo_de_un_host_rechazado_en_el_registro():
+    herramienta, _, registro = _aislar(True)
+    herramienta.invoke({"host": "malo.com", "motivo": "a\x1b[2K\nb" + "m" * 300})
+    motivo = registro.registros[0]["argumentos"]["motivo"]
+    assert motivo.startswith("a [2K b") and len(motivo) == 200
+    assert "\x1b" not in motivo and "\n" not in motivo
+
+
 def test_construir_herramientas_conserva_el_orden_y_la_global_niega_por_defecto():
     nombres = [herramienta.name for herramienta in construir_herramientas()]
     assert nombres == [
