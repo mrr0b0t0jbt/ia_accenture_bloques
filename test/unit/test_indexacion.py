@@ -1,8 +1,10 @@
+import fcntl
 import json
 import os
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import chromadb.errors
@@ -377,3 +379,188 @@ def test_24_describir_error_api_clasifica_limite_clave_y_otro():
     assert mensaje == f"No se pudo completar la operación con la API (RuntimeError): {'x' * 300}"
     # el límite tiene prioridad sobre la clave
     assert describir(RuntimeError("429 y además API key not valid"))[0] == "limite"
+
+
+class _EmbeddingsContador(Embeddings):
+    def __init__(self):
+        self.llamadas = 0
+
+    def embed_documents(self, textos):
+        self.llamadas += 1
+        return [[float(len(texto)), 1.0] for texto in textos]
+
+    def embed_query(self, texto):
+        self.llamadas += 1
+        return [float(len(texto)), 1.0]
+
+
+class _EmbeddingsQueFallan(_EmbeddingsContador):
+    def embed_documents(self, textos):
+        raise RuntimeError("fallo de la API")
+
+
+def _documentos_distintos(cantidad: int, palabras: int = 60) -> list[dict]:
+    return [
+        {"id": f"d{n}", "fuente": f"d{n}.md", "texto": " ".join(f"w{n}x{i}" for i in range(palabras))}
+        for n in range(cantidad)
+    ]
+
+
+def _tomar_bloqueo(directorio) -> int:
+    """Toma el bloqueo del índice con un descriptor propio de la prueba; devuelve el descriptor."""
+    descriptor = os.open(f"{os.path.abspath(directorio)}.lock", os.O_CREAT | os.O_RDWR, 0o600)
+    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return descriptor
+
+
+def _esta_libre(directorio) -> bool:
+    descriptor = os.open(f"{os.path.abspath(directorio)}.lock", os.O_RDWR)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except BlockingIOError:
+        return False
+    finally:
+        os.close(descriptor)
+
+
+def test_25_con_el_bloqueo_tomado_indexar_falla_sin_tocar_el_indice(corpus, tmp_path):
+    directorio = tmp_path / "indice"
+    indexacion.indexar(corpus, _embeddings(), str(directorio))
+    antes = _ids_del_indice(indexacion.cargar_vectorstore(_embeddings(), str(directorio)))
+    descriptor = _tomar_bloqueo(directorio)
+    try:
+        with pytest.raises(ValueError, match="otra indexacion"):
+            indexacion.indexar(corpus[:3], _embeddings(), str(directorio))
+    finally:
+        os.close(descriptor)
+    assert _ids_del_indice(indexacion.cargar_vectorstore(_embeddings(), str(directorio))) == antes
+
+
+def test_26_el_bloqueo_se_libera_tras_indexar_y_tras_un_fallo(corpus, tmp_path):
+    directorio = tmp_path / "indice"
+    indexacion.indexar(corpus, _embeddings(), str(directorio))
+    assert _esta_libre(directorio)
+    with pytest.raises(RuntimeError, match="fallo de la API"):
+        indexacion.indexar(corpus[:2], _EmbeddingsQueFallan(), str(directorio))
+    assert _esta_libre(directorio)
+    assert indexacion.indexar(corpus, _embeddings(), str(directorio))["total_en_indice"] == 29
+
+
+def test_27_el_archivo_de_bloqueo_queda_al_lado_del_indice_con_permisos_600(corpus, tmp_path):
+    directorio = tmp_path / "indice"
+    indexacion.indexar(corpus, _embeddings(), str(directorio))
+    bloqueo = tmp_path / "indice.lock"
+    assert bloqueo.is_file() and (bloqueo.stat().st_mode & 0o777) == 0o600
+    assert not [p for p in directorio.rglob("*") if p.suffix == ".lock"]
+
+
+def test_28_cargar_vectorstore_no_toma_el_bloqueo(corpus, tmp_path):
+    directorio = tmp_path / "indice"
+    indexacion.indexar(corpus, _embeddings(), str(directorio))
+    descriptor = _tomar_bloqueo(directorio)
+    try:
+        assert indexacion.cargar_vectorstore(_embeddings(), str(directorio))._collection.count() == 29
+    finally:
+        os.close(descriptor)
+
+
+SCRIPT_INDEXADOR = """
+import os, sys, time
+from langchain_core.embeddings import Embeddings
+import indexacion
+
+directorio, nombre, marca, liberar = sys.argv[1:5]
+
+
+class Espera(Embeddings):
+    def embed_documents(self, textos):
+        open(marca, "w").close()
+        limite = time.time() + 20
+        while not os.path.exists(liberar) and time.time() < limite:
+            time.sleep(0.02)
+        return [[float(len(t)), 1.0] for t in textos]
+
+    def embed_query(self, texto):
+        return [1.0, 1.0]
+
+
+documentos = [{"id": nombre, "fuente": nombre + ".md", "texto": "texto de " + nombre}]
+try:
+    indexacion.indexar(documentos, Espera(), directorio)
+except ValueError as error:
+    print(error, file=sys.stderr)
+    sys.exit(1)
+"""
+
+
+def _esperar(ruta, segundos=30):
+    limite = time.time() + segundos
+    while not ruta.exists() and time.time() < limite:
+        time.sleep(0.02)
+    assert ruta.exists(), f"no apareció {ruta}"
+
+
+def test_29_dos_procesos_sobre_el_mismo_indice_no_lo_dejan_vacio(tmp_path):
+    script = tmp_path / "indexador.py"
+    script.write_text(SCRIPT_INDEXADOR, encoding="utf-8")
+    directorio, liberar = tmp_path / "indice", tmp_path / "liberar"
+    entorno = {**os.environ, "PYTHONPATH": str(RAIZ / "src")}
+
+    def lanzar(nombre):
+        argv = [sys.executable, str(script), str(directorio), nombre, str(tmp_path / f"{nombre}.marca"), str(liberar)]
+        return subprocess.Popen(argv, env=entorno, stderr=subprocess.PIPE, text=True)
+
+    primero = lanzar("aaa")
+    try:
+        _esperar(tmp_path / "aaa.marca")  # el primero ya tiene el bloqueo y está dentro de embed_documents
+        segundo = lanzar("bbb")
+        error_segundo = segundo.communicate(timeout=30)[1]
+        liberar.write_text("", encoding="utf-8")
+        primero.communicate(timeout=30)
+    finally:
+        liberar.write_text("", encoding="utf-8")
+        primero.kill()
+    assert (primero.returncode, segundo.returncode) == (0, 1)
+    assert "otra indexacion" in error_segundo
+    assert _ids_del_indice(indexacion.cargar_vectorstore(_embeddings(), str(directorio))) == ["aaa_0"]
+
+
+def test_30_validar_division_rechaza_exceso_duplicados_y_vacios_y_acepta_el_corpus_real(corpus):
+    chunks, _ = indexacion.dividir_corpus(corpus, 200, 30)
+    assert indexacion.validar_division(chunks, corpus)["chunks"] == 29
+    muchos = _documentos_distintos(40)
+    chunks_muchos, _ = indexacion.dividir_corpus(muchos, 50, 0)
+    assert len(chunks_muchos) > indexacion.MAX_CHUNKS
+    with pytest.raises(ValueError, match="chunks"):
+        indexacion.validar_division(chunks_muchos, muchos)
+    iguales = [{"id": n, "fuente": f"{n}.md", "texto": "mismo texto"} for n in ("a", "b")]
+    chunks_iguales, _ = indexacion.dividir_corpus(iguales, 200, 30)
+    with pytest.raises(ValueError, match="duplicados"):
+        indexacion.validar_division(chunks_iguales, iguales)
+    with pytest.raises(ValueError, match="vacíos"):
+        indexacion.validar_division([Document(page_content=" ", metadata={"fuente": "a.md"})], [{"texto": " "}])
+    with pytest.raises(ValueError, match="sin fuente"):
+        indexacion.validar_division([Document(page_content="x", metadata={})], [{"texto": "x"}])
+
+
+def test_31_indexar_rechaza_exceso_y_duplicados_antes_de_los_embeddings(tmp_path):
+    embeddings = _EmbeddingsContador()
+    iguales = [{"id": n, "fuente": f"{n}.md", "texto": "mismo texto"} for n in ("a", "b")]
+    for documentos, tamano, solape in ((_documentos_distintos(40), 50, 0), (iguales, 200, 30)):
+        with pytest.raises(ValueError):
+            indexacion.indexar(documentos, embeddings, str(tmp_path / "indice"), chunk_size=tamano, chunk_overlap=solape)
+    assert embeddings.llamadas == 0 and not (tmp_path / "indice").exists()
+    assert not (tmp_path / "indice.lock").exists()
+
+
+def test_32_ruta_absoluta_expande_la_tilde_y_no_crea_una_carpeta_tilde(corpus, tmp_path, monkeypatch):
+    casa, cwd = tmp_path / "casa", tmp_path / "cwd"
+    casa.mkdir()
+    cwd.mkdir()
+    monkeypatch.setenv("HOME", str(casa))
+    monkeypatch.chdir(cwd)
+    assert indexacion.ruta_absoluta("~/idx") == str(casa / "idx")
+    assert indexacion.indexar(corpus, _embeddings(), "~/idx")["directorio"] == str(casa / "idx")
+    assert indexacion.cargar_vectorstore(_embeddings(), "~/idx")._collection.count() == 29
+    assert list(cwd.iterdir()) == []

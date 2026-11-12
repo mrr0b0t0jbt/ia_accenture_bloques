@@ -1,3 +1,5 @@
+import contextlib
+import fcntl
 import json
 import os
 import re
@@ -115,10 +117,47 @@ def con_reintentos(operacion, max_intentos: int = 4, espera_inicial: float = 5, 
             espera *= 2
 
 
+def validar_division(chunks: list[Document], documentos: list[dict]) -> dict:
+    """Rechaza una división con demasiados chunks o con problemas de integridad; devuelve el informe."""
+    if len(chunks) > MAX_CHUNKS:
+        raise ValueError(f"El corpus produce {len(chunks)} chunks; el máximo es {MAX_CHUNKS}.")
+    informe = verificar_integridad(documentos, chunks)
+    if not informe["ok"]:
+        raise ValueError(
+            f"Integridad: chunks vacíos {informe['vacios']}, duplicados {informe['duplicados']}, "
+            f"sin fuente {informe['sin_fuente']}."
+        )
+    return informe
+
+
+def ruta_absoluta(ruta: str) -> str:
+    """Expande ~ y devuelve la ruta absoluta."""
+    return os.path.abspath(os.path.expanduser(ruta))
+
+
+@contextlib.contextmanager
+def bloqueo_de_indexacion(ruta: str):
+    """Toma sin esperar el bloqueo exclusivo del índice (archivo hermano .lock); ValueError si ya está tomado."""
+    ruta = ruta_absoluta(ruta)
+    # el archivo va al lado y no dentro del directorio, que gestiona Chroma; fcntl: solo Linux/macOS
+    descriptor = os.open(f"{ruta}.lock", os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError(f"Ya hay otra indexacion en curso sobre {ruta}: espera a que termine.") from None
+        try:
+            yield
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+    finally:
+        os.close(descriptor)
+
+
 def abrir_vectorstore(embeddings, directorio: str, coleccion: str) -> Chroma:
     """Abre (o crea) la colección de Chroma en la ruta absoluta, sin telemetría."""
     validar_nombre_coleccion(coleccion)
-    ruta = os.path.abspath(directorio)
+    ruta = ruta_absoluta(directorio)
     return Chroma(
         collection_name=coleccion,
         embedding_function=embeddings,
@@ -139,17 +178,19 @@ def indexar(
     """Indexa el corpus con ids deterministas: reindexar no duplica y borra lo que ya no está."""
     validar_nombre_coleccion(coleccion)
     chunks, ids = dividir_corpus(documentos, chunk_size, chunk_overlap)
-    if len(chunks) > MAX_CHUNKS:
-        raise ValueError(f"El corpus produce {len(chunks)} chunks; el máximo es {MAX_CHUNKS}.")
-    ruta = os.path.abspath(directorio)
+    validar_division(chunks, documentos)
+    ruta = ruta_absoluta(directorio)
     if os.path.exists(ruta) and not os.path.isdir(ruta):
         raise ValueError(f"El directorio del índice no es un directorio: {ruta}")
-    vectorstore = abrir_vectorstore(embeddings, ruta, coleccion)
-    con_reintentos(lambda: vectorstore.add_documents(chunks, ids=ids), dormir=dormir)
-    # los huérfanos se borran después de agregar: si la adición falla, el índice anterior queda intacto
-    huerfanos = sorted(set(vectorstore.get()["ids"]) - set(ids))
-    if huerfanos:
-        vectorstore.delete(ids=huerfanos)
+    # sin el bloqueo, dos indexaciones con corpus distintos se borran mutuamente los huérfanos y dejan el índice vacío
+    with bloqueo_de_indexacion(ruta):
+        vectorstore = abrir_vectorstore(embeddings, ruta, coleccion)
+        con_reintentos(lambda: vectorstore.add_documents(chunks, ids=ids), dormir=dormir)
+        # los huérfanos se borran después de agregar: si la adición falla, el índice anterior queda intacto
+        huerfanos = sorted(set(vectorstore.get()["ids"]) - set(ids))
+        if huerfanos:
+            vectorstore.delete(ids=huerfanos)
+        total_en_indice = vectorstore._collection.count()
     return {
         "documentos": len(documentos),
         "chunks": len(chunks),
@@ -157,14 +198,14 @@ def indexar(
         "caracteres_chunks": sum(len(chunk.page_content) for chunk in chunks),
         "directorio": ruta,
         "coleccion": coleccion,
-        "total_en_indice": vectorstore._collection.count(),
+        "total_en_indice": total_en_indice,
         "eliminados": len(huerfanos),
     }
 
 
 def cargar_vectorstore(embeddings, directorio: str, coleccion: str = COLECCION_POR_DEFECTO) -> Chroma:
     """Abre un índice ya creado; falla si el directorio no existe o la colección está vacía."""
-    ruta = os.path.abspath(directorio)
+    ruta = ruta_absoluta(directorio)
     # Chroma crea el directorio sin avisar, por eso se comprueba antes
     if not os.path.isdir(ruta):
         raise FileNotFoundError(f"No existe el índice en {ruta}: ejecútalo primero con scripts/indexar_corpus.py.")
