@@ -425,7 +425,7 @@ python scripts/consultar_corpus.py --confirmar-api-real --max-tokens 512 --tope-
 
 **Límites conocidos de la recuperación** (verificados con servidores locales falsos del cliente real de Gemini y de Claude, más la corrida real de arriba):
 
-- **Sin datos de uso el tope de gasto sigue siendo nominal**: el script corta si `usage_metadata` viene vacío o sin enteros, pero el cliente real (`ChatAnthropic`) entrega ceros (`input_tokens: 0`) cuando la API no trae el uso, de modo que ese corte no se dispara y el costo queda en 0. Lo mismo ocurre con el agente y con `ejecutar_cadenas.py`. El techo natural con 8 preguntas y 512 tokens es de unos USD 0.046.
+- **Corte por falta de datos de uso**: el cliente real (`ChatAnthropic`) no deja `usage_metadata` vacío cuando la API no trae el uso: entrega `input_tokens: 0`. Por eso el script trata `input_tokens` igual a 0 (o no entero) como uso faltante: registra el caso, marca `cortado_por_falta_de_uso` y no sigue, porque sin uso no se puede controlar el gasto. Si solo falta `output_tokens` no corta y queda en 0. Probado con el cliente real contra un servidor local falso. El agente y `ejecutar_cadenas.py` no tienen esta regla (con ceros suman 0 y el costo queda subestimado). El techo natural con 8 preguntas y 512 tokens es de unos USD 0.046.
 - Los reintentos del SDK de Anthropic (`max_retries=2`) no se cuentan como llamadas.
 - Un 429 persistente de embeddings cuesta tiempo y no dinero: 4 intentos con esperas de 5, 10 y 20 s por pregunta (unos 35 s por pregunta).
 - `acierto_recuperacion` se calcula por documento (ver arriba) y es solo informativo.
