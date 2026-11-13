@@ -156,13 +156,15 @@ def consultar_casos(casos: list[dict], vectorstore, modelo, k: int, tope_usd: fl
                 else:
                     uso = getattr(mensaje, "usage_metadata", None) or {}
                     entrada, salida_tokens = uso.get("input_tokens"), uso.get("output_tokens")
-                    if not (_es_entero(entrada) or _es_entero(salida_tokens)):
-                        # sin datos de uso el tope de gasto no se puede controlar: se registra el caso y se corta
+                    if not _es_entero(entrada) or entrada == 0:
+                        # falta el uso si input_tokens no es entero o es 0: el cliente real (ChatAnthropic) no lo deja vacío
+                        # sino en ceros, y una llamada real siempre consume tokens de entrada; sin uso el tope no se controla
+                        # (si falta solo output_tokens no se corta y queda en 0)
                         logger.warning("Caso sin datos de uso: el costo no se puede controlar")
                         resultado["sin_datos_de_uso"] = True
                         salida["cortado_por_falta_de_uso"] = True
                     else:
-                        resultado["tokens_entrada"] = entrada if _es_entero(entrada) else 0
+                        resultado["tokens_entrada"] = entrada
                         resultado["tokens_salida"] = salida_tokens if _es_entero(salida_tokens) else 0
                         resultado["costo_estimado"] = resultado["tokens_entrada"] * INPUT_PRICING + resultado["tokens_salida"] * OUTPUT_PRICING
                     resultado["truncado"] = getattr(mensaje, "response_metadata", {}).get("stop_reason") == "max_tokens"

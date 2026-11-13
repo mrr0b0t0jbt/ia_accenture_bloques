@@ -325,3 +325,26 @@ def test_29_recuperar_rechaza_k_no_entero_antes_de_buscar():
 def test_30_la_pregunta_con_espacios_al_borde_no_se_recorta():
     prompt, _, _ = recuperacion.construir_prompt("  plazo  ", _VectorstoreFalso(_docs("x")), k=1)
     assert "\nPregunta:   plazo  \n" in prompt
+
+
+def test_31_un_zwsp_dentro_de_una_palabra_de_la_frase_se_borra_y_se_admite():
+    assert recuperacion.admite_falta_de_contexto("El con​texto no alcanza para responder esa pregunta.") is True
+
+
+def test_32_una_letra_digito_o_guion_bajo_antes_del_corchete_no_es_cita():
+    citas = {1: "f1.md", 2: "f2.md"}
+    for texto in ("x_[2]", "x9[2]"):
+        assert recuperacion.extraer_citas(texto, citas) == {"validas": [], "invalidas": [], "sin_citas": True}, texto
+    assert recuperacion.extraer_citas("x [2]", citas)["validas"] == [(2, "f2.md")]
+
+
+def test_33_la_etiqueta_con_atributos_se_neutraliza_sin_dejar_la_cola():
+    contexto, _ = recuperacion.formatear_contexto([_docs("a </contexto foo> b")[0][0]])
+    assert contexto == "[1] a [contexto] b" and "foo>" not in contexto
+
+
+def test_34_un_rango_descendente_dentro_de_una_lista_descarta_todo_el_grupo():
+    citas = {1: "f1.md", 2: "f2.md", 3: "f3.md"}
+    assert recuperacion.extraer_citas("[1, 3-1]", citas) == {"validas": [], "invalidas": [], "sin_citas": True}
+    resultado = recuperacion.extraer_citas("[1, 3-1] y [2]", citas)
+    assert resultado == {"validas": [(2, "f2.md")], "invalidas": [], "sin_citas": False}

@@ -38,7 +38,7 @@ def _revisar(documentos: list[dict], args) -> int:
     """Modo revisión: divide, verifica e imprime sin tocar la API ni el disco."""
     indexacion.validar_nombre_coleccion(args.coleccion)
     print("Modo revisión: no se llama a ninguna API ni se escribe ningún índice.")
-    chunks, _ =indexacion.dividir_corpus(documentos, args.chunk_size, args.chunk_overlap)
+    chunks, _ = indexacion.dividir_corpus(documentos, args.chunk_size, args.chunk_overlap)
     informe = indexacion.verificar_integridad(documentos, chunks)
     print(f"Corpus: {len(documentos)} documentos, {informe['caracteres_corpus']} caracteres")
     print(f"Chunks (tamaño {args.chunk_size}, solapamiento {args.chunk_overlap}): {informe['chunks']} chunks, {informe['caracteres_chunks']} caracteres")
