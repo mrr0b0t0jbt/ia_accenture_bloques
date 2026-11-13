@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -222,9 +223,17 @@ def test_10_indice_inexistente_vacio_o_sin_las_fuentes_esperadas(tmp_path, monke
     assert consultar_corpus.main(_argv(tmp_path, directorio)) == 1
     assert "Error:" in capsys.readouterr().err and not directorio.exists()
     # sin --directorio ni --casos, la raíz sale de la ubicación del script y no del directorio actual
-    monkeypatch.chdir(tmp_path)
+    # la raíz se parchea a una carpeta sin vectorstore/ para no depender del índice real del repo
+    raiz_falsa = tmp_path / "raiz_falsa"
+    (raiz_falsa / "JSON").mkdir(parents=True)
+    shutil.copy(RUTA_CASOS, raiz_falsa / "JSON" / "casos_recuperacion.json")
+    monkeypatch.setattr(consultar_corpus, "RAIZ", raiz_falsa)
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
     assert consultar_corpus.main(["--confirmar-api-real", "--salida", str(tmp_path / "salida.json")]) == 1
-    assert str(RAIZ / "vectorstore") in capsys.readouterr().err
+    assert str(raiz_falsa / "vectorstore") in capsys.readouterr().err
+    assert not (raiz_falsa / "vectorstore").exists() and list(cwd.iterdir()) == []
     indexacion.abrir_vectorstore(embeddings, str(directorio), indexacion.COLECCION_POR_DEFECTO)
     assert consultar_corpus.main(_argv(tmp_path, directorio)) == 1
     assert "Error:" in capsys.readouterr().err
@@ -574,3 +583,84 @@ def test_32_los_valores_por_defecto_son_rutas_absolutas_bajo_la_raiz_y_no_depend
     for ruta in (args.salida, args.directorio, args.casos):
         assert os.path.isabs(ruta) and Path(ruta).is_relative_to(RAIZ)
     assert args.salida == str(RAIZ / "docs" / "resultados_recuperacion.json")
+
+
+@pytest.mark.parametrize(
+    "uso",
+    [
+        {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        {"input_tokens": 0, "output_tokens": 50},
+    ],
+)
+def test_33_input_tokens_en_cero_cuenta_como_falta_de_datos_de_uso(tmp_path, monkeypatch, embeddings, uso):
+    directorio, _, _ = _montar(tmp_path, monkeypatch, embeddings, lambda n, prompt: _mensaje_con_uso(uso))
+    assert consultar_corpus.main(_argv(tmp_path, directorio)) == 0
+    salida = _leer(tmp_path)
+    assert salida["cortado_por_falta_de_uso"] is True and salida["preguntas_procesadas"] == 1
+    assert salida["resultados"][0]["sin_datos_de_uso"] is True and "error" not in salida["resultados"][0]
+
+
+def test_34_con_entrada_positiva_no_corta_aunque_falte_la_salida_o_sea_cero(tmp_path, monkeypatch, embeddings):
+    directorio, _, _ = _montar(tmp_path, monkeypatch, embeddings, lambda n, prompt: _mensaje_con_uso({"input_tokens": 100}))
+    assert consultar_corpus.main(_argv(tmp_path, directorio)) == 0
+    salida = _leer(tmp_path)
+    assert salida["cortado_por_falta_de_uso"] is False and salida["preguntas_procesadas"] == 8
+    assert all(r["tokens_salida"] == 0 and r["tokens_entrada"] == 100 for r in salida["resultados"])
+    directorio, _, _ = _montar(tmp_path, monkeypatch, embeddings, lambda n, prompt: _mensaje(entrada=1, salida=0))
+    assert consultar_corpus.main(_argv(tmp_path, directorio)) == 0
+    salida = _leer(tmp_path)
+    assert salida["cortado_por_falta_de_uso"] is False and salida["preguntas_procesadas"] == 8
+    assert salida["resultados"][0]["tokens_entrada"] == 1
+
+
+def test_35_salida_en_una_carpeta_sin_permiso_de_ejecucion_se_rechaza(tmp_path, monkeypatch, capsys, embeddings):
+    if os.geteuid() == 0:
+        pytest.skip("root ignora los permisos")
+    directorio, modelo, fabrica = _montar(tmp_path, monkeypatch, embeddings)
+    carpeta = tmp_path / "sin_ejecucion"
+    carpeta.mkdir()
+    carpeta.chmod(0o600)
+    try:
+        assert consultar_corpus.main(["--confirmar-api-real", "--directorio", str(directorio), "--salida", str(carpeta / "s.json")]) == 1
+    finally:
+        carpeta.chmod(0o755)
+    assert "Error:" in capsys.readouterr().err
+    assert _sin_peticiones(embeddings, modelo, fabrica)
+
+
+@pytest.mark.parametrize("previo", [{"resultados": 1, "nota_costo": "x"}, {"resultados": [], "nota_costo": 5}])
+def test_36_un_resultado_previo_con_tipos_equivocados_no_se_sobrescribe(tmp_path, monkeypatch, capsys, embeddings, previo):
+    directorio, modelo, fabrica = _montar(tmp_path, monkeypatch, embeddings)
+    ruta = tmp_path / "previo.json"
+    ruta.write_text(json.dumps(previo), encoding="utf-8")
+    original = ruta.read_text(encoding="utf-8")
+    assert consultar_corpus.main(["--confirmar-api-real", "--directorio", str(directorio), "--salida", str(ruta)]) == 1
+    assert "ya existe y no es un resultado de una corrida anterior" in capsys.readouterr().err
+    assert ruta.read_text(encoding="utf-8") == original and _sin_peticiones(embeddings, modelo, fabrica)
+
+
+def test_37_un_directorio_que_es_symlink_al_indice_rechaza_una_salida_dentro_del_indice_real(tmp_path, monkeypatch, capsys, embeddings):
+    directorio, modelo, fabrica = _montar(tmp_path, monkeypatch, embeddings)
+    enlace = tmp_path / "enlace_al_indice"
+    enlace.symlink_to(directorio, target_is_directory=True)
+    argv = ["--confirmar-api-real", "--directorio", str(enlace), "--salida", str(directorio / "s.json")]
+    assert consultar_corpus.main(argv) == 1
+    assert "dentro del directorio del índice" in capsys.readouterr().err
+    assert not (directorio / "s.json").exists() and _sin_peticiones(embeddings, modelo, fabrica)
+
+
+def test_38_una_respuesta_con_salto_final_imprime_la_linea_vacia_con_prefijo(tmp_path, monkeypatch, capsys, embeddings):
+    directorio, _, _ = _montar(tmp_path, monkeypatch, embeddings, lambda n, prompt: _mensaje("a\n"))
+    assert consultar_corpus.main(_argv(tmp_path, directorio, _casos_en(tmp_path, [CASO_SIMPLE]))) == 0
+    lineas = capsys.readouterr().out.split("\n")
+    inicio = lineas.index("  Respuesta:")
+    assert lineas[inicio + 1 : inicio + 3] == ["    | a", "    | "]
+
+
+def test_39_la_tilde_se_expande_tambien_en_casos(tmp_path, monkeypatch, embeddings):
+    directorio, _, _ = _montar(tmp_path, monkeypatch, embeddings)
+    _casos_en(tmp_path, [CASO_SIMPLE])
+    monkeypatch.setenv("HOME", str(tmp_path))
+    argv = ["--confirmar-api-real", "--casos", "~/casos.json", "--directorio", str(directorio), "--salida", str(tmp_path / "salida.json")]
+    assert consultar_corpus.main(argv) == 0
+    assert _leer(tmp_path)["preguntas_procesadas"] == 1
