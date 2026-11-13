@@ -182,9 +182,54 @@ def test_14_un_error_cualquiera_se_informa_sin_traceback_y_un_argumento_roto_es_
     assert salida.value.code == 2
 
 
+def _corpus_con_muchos_chunks(tmp_path) -> Path:
+    corpus = [
+        {"id": f"d{n}", "fuente": f"d{n}.md", "texto": " ".join(f"w{n}x{i}" for i in range(60))} for n in range(40)
+    ]
+    ruta = tmp_path / "grande.json"
+    ruta.write_text(json.dumps(corpus), encoding="utf-8")
+    return ruta
+
+
+def test_15_la_revision_rechaza_una_coleccion_invalida(capsys):
+    for nombre in ("a", "ñandu"):
+        assert indexar_corpus.main(["--coleccion", nombre]) == 1
+        assert "Error:" in capsys.readouterr().err
+
+
+def test_16_la_revision_coincide_con_la_indexacion_ante_demasiados_chunks(tmp_path, monkeypatch, capsys):
+    ruta = _corpus_con_muchos_chunks(tmp_path)
+    argv = ["--corpus", str(ruta), "--chunk-size", "50", "--chunk-overlap", "0"]
+    assert indexar_corpus.main(argv) == 1
+    revision = capsys.readouterr()
+    assert "chunks" in revision.err and "máximo" in revision.err
+    _embeddings_falsos(monkeypatch)
+    assert indexar_corpus.main([*argv, "--directorio", str(tmp_path / "vs"), "--confirmar-api-real"]) == 1
+    assert "máximo" in capsys.readouterr().err
+    assert not (tmp_path / "vs").exists()
+
+
+def test_17_la_revision_del_corpus_real_sigue_igual(capsys):
+    assert indexar_corpus.main([]) == 0
+    captura = capsys.readouterr()
+    assert "Corpus: 10 documentos, 4375 caracteres" in captura.out
+    assert "29 chunks, 4865 caracteres" in captura.out and captura.err == ""
+
+
+def test_18_el_parser_no_acepta_abreviaturas(tmp_path, monkeypatch):
+    def prohibido():
+        raise AssertionError("no debe crear embeddings")
+
+    monkeypatch.setattr(embeddings_gemini, "crear_embeddings", prohibido)
+    with pytest.raises(SystemExit) as salida:
+        indexar_corpus.main(["--conf", "--directorio", str(tmp_path / "vs")])
+    assert salida.value.code == 2
+    assert not (tmp_path / "vs").exists()
+
+
 def test_10_gitignore_y_el_script_no_carga_gemini_al_importarse(tmp_path):
     lineas = (RAIZ / ".gitignore").read_text(encoding="utf-8").splitlines()
-    assert "vectorstore/" in lineas and "vectorstore*/" in lineas
+    assert "vectorstore/" in lineas and "vectorstore*/" in lineas and "vectorstore*.lock" in lineas
     # intérprete limpio: lo que ya importó pytest no enmascara lo que carga el script
     codigo = (
         "import importlib.util, sys\n"

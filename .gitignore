@@ -224,3 +224,4 @@ trazas/
 trazas*/
 vectorstore/
 vectorstore*/
+vectorstore*.lock

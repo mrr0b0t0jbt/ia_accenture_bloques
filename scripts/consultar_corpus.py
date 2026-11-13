@@ -5,6 +5,9 @@ embeddings REALES de Gemini, le pide a Claude que responda SOLO con ese contexto
 y verifica cada cita. Escribe los resultados en docs/resultados_recuperacion.json después de
 cada caso. Hace llamadas REALES a las APIs, con costo.
 
+La corrida corta ENTRE casos (por el tope, por falta de datos de uso o por Ctrl-C), de modo que el
+gasto puede pasarse del tope como máximo en lo que cuesta UN caso. Con Ctrl-C guarda lo hecho y sale con 130.
+
 Requiere el índice creado antes con scripts/indexar_corpus.py --confirmar-api-real.
 
 Cómo correrlo (desde cualquier directorio):
@@ -14,6 +17,7 @@ Cómo correrlo (desde cualquier directorio):
 """
 import argparse
 import importlib.util
+import json
 import logging
 import os
 import sys
@@ -74,8 +78,13 @@ def validar_casos_recuperacion(casos) -> str | None:
     return None
 
 
+def _es_entero(valor) -> bool:
+    """Indica si el valor es un entero (un booleano no cuenta)."""
+    return isinstance(valor, int) and not isinstance(valor, bool)
+
+
 def consultar_casos(casos: list[dict], vectorstore, modelo, k: int, tope_usd: float, ruta_salida: str) -> dict:
-    """Recupera, pregunta a Claude y verifica las citas de cada caso; corta entre casos al llegar al tope."""
+    """Recupera, pregunta a Claude y verifica las citas de cada caso; corta entre casos por tope, por falta de datos de uso o por Ctrl-C (que se guarda, no se relanza)."""
     import indexacion
     import recuperacion
     from api_claude_refactor import INPUT_PRICING, OUTPUT_PRICING
@@ -88,10 +97,13 @@ def consultar_casos(casos: list[dict], vectorstore, modelo, k: int, tope_usd: fl
         "llamadas_a_claude": 0,
         "costo_total_estimado": 0.0,
         "cortado_por_tope": False,
+        "cortado_por_falta_de_uso": False,
+        "interrumpido": False,
         "resultados": [],
     }
     for caso in casos:
-        if salida["costo_total_estimado"] >= tope_usd:
+        # tolerancia: con 25000 tokens de entrada el costo en punto flotante queda en 0.049999999999999996
+        if salida["costo_total_estimado"] >= tope_usd - 1e-9:
             salida["cortado_por_tope"] = True
             break
         resultado = {
@@ -116,47 +128,59 @@ def consultar_casos(casos: list[dict], vectorstore, modelo, k: int, tope_usd: fl
             return recuperacion.construir_prompt(caso["pregunta"], vectorstore, k)
 
         try:
-            prompt, mapa_citas, encontrados = indexacion.con_reintentos(buscar)
-        except Exception as error:
-            resultado["error"] = embeddings_gemini.describir_error_api(error)[1]
-        else:
-            resultado["recuperados"] = [
-                {
-                    "rango": rango,
-                    "documento": documento.metadata.get("documento"),
-                    "fragmento": documento.metadata.get("fragmento"),
-                    "fuente": documento.metadata.get("fuente"),
-                    "distancia": distancia,
-                }
-                for rango, (documento, distancia) in enumerate(encontrados, start=1)
-            ]
-            if caso["respondible"]:
-                recuperados = {r["documento"] for r in resultado["recuperados"]}
-                resultado["acierto_recuperacion"] = set(caso["fuentes_esperadas"]) <= recuperados
-            resultado["llamadas_modelo"] = 1
             try:
-                mensaje = modelo.invoke(prompt)
+                prompt, mapa_citas, encontrados = indexacion.con_reintentos(buscar)
             except Exception as error:
-                # un caso fallido no corta los siguientes
-                logger.exception("Error consultando al modelo")
-                resultado["error"] = f"{type(error).__name__}: {str(error)[:300]}"
+                resultado["error"] = embeddings_gemini.describir_error_api(error)[1]
             else:
-                uso = getattr(mensaje, "usage_metadata", None) or {}
-                if not uso:
-                    logger.warning("Caso sin datos de uso: el costo estimado puede quedar subestimado")
-                resultado["tokens_entrada"] = uso.get("input_tokens", 0)
-                resultado["tokens_salida"] = uso.get("output_tokens", 0)
-                resultado["costo_estimado"] = resultado["tokens_entrada"] * INPUT_PRICING + resultado["tokens_salida"] * OUTPUT_PRICING
-                resultado["truncado"] = getattr(mensaje, "response_metadata", {}).get("stop_reason") == "max_tokens"
-                resultado["respuesta"] = recuperacion.texto_de_respuesta(mensaje)
-                resultado["citas"] = recuperacion.extraer_citas(resultado["respuesta"], mapa_citas)
-                resultado["admite_falta_de_contexto"] = recuperacion.admite_falta_de_contexto(resultado["respuesta"])
+                resultado["recuperados"] = [
+                    {
+                        "rango": rango,
+                        "documento": documento.metadata.get("documento"),
+                        "fragmento": documento.metadata.get("fragmento"),
+                        "fuente": documento.metadata.get("fuente"),
+                        "distancia": distancia,
+                    }
+                    for rango, (documento, distancia) in enumerate(encontrados, start=1)
+                ]
+                if caso["respondible"]:
+                    recuperados = {r["documento"] for r in resultado["recuperados"]}
+                    resultado["acierto_recuperacion"] = set(caso["fuentes_esperadas"]) <= recuperados
+                resultado["llamadas_modelo"] = 1
+                try:
+                    mensaje = modelo.invoke(prompt)
+                except Exception as error:
+                    # un caso fallido no corta los siguientes
+                    logger.exception("Error consultando al modelo")
+                    resultado["error"] = f"{type(error).__name__}: {str(error)[:300]}"
+                else:
+                    uso = getattr(mensaje, "usage_metadata", None) or {}
+                    entrada, salida_tokens = uso.get("input_tokens"), uso.get("output_tokens")
+                    if not (_es_entero(entrada) or _es_entero(salida_tokens)):
+                        # sin datos de uso el tope de gasto no se puede controlar: se registra el caso y se corta
+                        logger.warning("Caso sin datos de uso: el costo no se puede controlar")
+                        resultado["sin_datos_de_uso"] = True
+                        salida["cortado_por_falta_de_uso"] = True
+                    else:
+                        resultado["tokens_entrada"] = entrada if _es_entero(entrada) else 0
+                        resultado["tokens_salida"] = salida_tokens if _es_entero(salida_tokens) else 0
+                        resultado["costo_estimado"] = resultado["tokens_entrada"] * INPUT_PRICING + resultado["tokens_salida"] * OUTPUT_PRICING
+                    resultado["truncado"] = getattr(mensaje, "response_metadata", {}).get("stop_reason") == "max_tokens"
+                    resultado["respuesta"] = recuperacion.texto_de_respuesta(mensaje)
+                    resultado["citas"] = recuperacion.extraer_citas(resultado["respuesta"], mapa_citas)
+                    resultado["admite_falta_de_contexto"] = recuperacion.admite_falta_de_contexto(resultado["respuesta"])
+        except KeyboardInterrupt:
+            # Ctrl-C: el caso en vuelo queda registrado (llamadas_modelo dice si ya se pidió la respuesta) y se guarda lo ya pagado
+            resultado["error"] = "interrumpido por la persona"
+            salida["interrumpido"] = True
         salida["resultados"].append(resultado)
         salida["preguntas_procesadas"] += 1
         salida["llamadas_a_claude"] += resultado["llamadas_modelo"]
         salida["costo_total_estimado"] += resultado["costo_estimado"]
         # guardado incremental: si algo falla a mitad no se pierde lo ya pagado
         ejecutar_cadenas.guardar_resultados(salida, ruta_salida)
+        if salida["interrumpido"] or salida["cortado_por_falta_de_uso"]:
+            break
     ejecutar_cadenas.guardar_resultados(salida, ruta_salida)
     return salida
 
@@ -172,7 +196,10 @@ def informar(salida: dict) -> None:
         if "error" in resultado:
             print(f"  Error: {limpio(resultado['error'])}")
         if resultado["llamadas_modelo"] and "error" not in resultado:
-            print(f"  Respuesta: {limpio(resultado['respuesta'])}")
+            # con margen, ninguna línea del modelo puede empezar como una línea del informe
+            print("  Respuesta:")
+            for linea in limpio(resultado["respuesta"]).split("\n"):
+                print(f"    | {linea}")
         citas = resultado["citas"]
         for numero, fuente in citas["validas"]:
             print(f"  Cita [{numero}] -> {limpio(fuente)}")
@@ -189,6 +216,8 @@ def informar(salida: dict) -> None:
             print("  ADMITIO falta de contexto aunque la pregunta era respondible")
     if salida["cortado_por_tope"]:
         print("\nLa ejecución se detuvo al alcanzar el tope de gasto.")
+    if salida["cortado_por_falta_de_uso"]:
+        print("\nLa ejecución se detuvo porque Claude no informó los tokens usados y no se puede controlar el gasto.")
     print(f"\nPreguntas procesadas: {salida['preguntas_procesadas']}")
     print(f"Consultas de embeddings: {salida['consultas_de_embeddings']}")
     print(f"Llamadas a Claude: {salida['llamadas_a_claude']}")
@@ -201,9 +230,41 @@ def _error(mensaje: str) -> int:
     return 1
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Consulta el corpus contra las APIs reales solo con --confirmar-api-real."""
-    parser = argparse.ArgumentParser(description="Responde preguntas con recuperación semántica (Gemini) y Claude, citando fuentes (con costo).")
+def _es_resultado_previo(ruta: str) -> bool:
+    """Indica si el archivo es un JSON objeto con 'resultados' (lista) y 'nota_costo' (texto), como el que escribe este script."""
+    try:
+        with open(ruta, encoding="utf-8") as archivo:
+            contenido = json.load(archivo)
+    except (OSError, ValueError):
+        return False
+    return isinstance(contenido, dict) and isinstance(contenido.get("resultados"), list) and isinstance(contenido.get("nota_costo"), str)
+
+
+def _problema_de_salida(salida: str, casos: str, directorio_indice: str) -> str | None:
+    """Motivo por el que --salida no es seguro (se pisaría un archivo ajeno o no se podría escribir), o None."""
+    if not salida:
+        return "--salida no puede estar vacío."
+    carpeta = os.path.dirname(os.path.abspath(salida))
+    if not os.path.isdir(carpeta) or os.path.isdir(salida):
+        return f"--salida no es un archivo en un directorio existente: {salida}"
+    if ejecutar_cadenas.es_el_mismo_archivo(salida, casos):
+        return "--salida no puede ser el mismo archivo que --casos."
+    indice = os.path.realpath(directorio_indice)
+    if os.path.commonpath([indice, os.path.realpath(salida)]) == indice:
+        return "--salida no puede quedar dentro del directorio del índice (--directorio)."
+    if not os.access(carpeta, os.W_OK | os.X_OK) or (os.path.exists(salida) and not os.access(salida, os.W_OK)):
+        return f"no se puede escribir en --salida: {salida}"
+    if os.path.exists(salida) and not (os.path.isfile(salida) and _es_resultado_previo(salida)):
+        return "--salida ya existe y no es un resultado de una corrida anterior; usa otra ruta o borralo."
+    return None
+
+
+def _crear_parser() -> argparse.ArgumentParser:
+    """Arma el parser; allow_abbrev=False evita que '--conf' active --confirmar-api-real."""
+    parser = argparse.ArgumentParser(
+        description="Responde preguntas con recuperación semántica (Gemini) y Claude, citando fuentes (con costo).",
+        allow_abbrev=False,
+    )
     parser.add_argument("--casos", default=str(RAIZ / "JSON" / "casos_recuperacion.json"))
     parser.add_argument("--directorio", default=str(RAIZ / "vectorstore"))
     parser.add_argument("--coleccion", default="corpus_miniapp")
@@ -212,7 +273,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tope-usd", type=float, default=TOPE_USD_MAXIMO)
     parser.add_argument("--max-tokens", type=int, default=MAX_TOKENS_POR_DEFECTO)
     parser.add_argument("--confirmar-api-real", action="store_true")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Consulta el corpus contra las APIs reales solo con --confirmar-api-real."""
+    args = _crear_parser().parse_args(argv)
+    args.casos, args.directorio, args.salida = (os.path.expanduser(ruta) for ruta in (args.casos, args.directorio, args.salida))
     if not args.confirmar_api_real:
         print(
             "Este script hace llamadas REALES a las APIs de Gemini (embeddings) y de Claude, con costo. "
@@ -226,11 +293,9 @@ def main(argv: list[str] | None = None) -> int:
         return _error(f"--tope-usd debe ser mayor que 0 y como máximo {TOPE_USD_MAXIMO}.")
     if not 1 <= args.max_tokens <= MAX_TOKENS_MAXIMO:
         return _error(f"--max-tokens debe estar entre 1 y {MAX_TOKENS_MAXIMO}.")
-    carpeta_salida = os.path.dirname(os.path.abspath(args.salida))
-    if not os.path.isdir(carpeta_salida) or os.path.isdir(args.salida):
-        return _error(f"--salida no es un archivo en un directorio existente: {args.salida}")
-    if ejecutar_cadenas.es_el_mismo_archivo(args.salida, args.casos):
-        return _error("--salida no puede ser el mismo archivo que --casos.")
+    problema = _problema_de_salida(args.salida, args.casos, args.directorio)
+    if problema:
+        return _error(problema)
     try:
         casos = ejecutar_cadenas.cargar_casos(args.casos)
     except (OSError, ValueError) as error:  # JSONDecodeError y UnicodeDecodeError son ValueError
@@ -257,6 +322,9 @@ def main(argv: list[str] | None = None) -> int:
         return _error(str(error))
     salida = consultar_casos(casos, vectorstore, modelo, args.k, args.tope_usd, args.salida)
     informar(salida)
+    if salida["interrumpido"]:
+        print("Interrumpido por la persona. Resultados parciales guardados.", file=sys.stderr)
+        return 130
     if all("error" in resultado for resultado in salida["resultados"]):
         return _error("ningun caso dio un resultado util.")
     return 0

@@ -36,8 +36,9 @@ def _tamanos(texto: str) -> list[int]:
 
 def _revisar(documentos: list[dict], args) -> int:
     """Modo revisión: divide, verifica e imprime sin tocar la API ni el disco."""
+    indexacion.validar_nombre_coleccion(args.coleccion)
     print("Modo revisión: no se llama a ninguna API ni se escribe ningún índice.")
-    chunks, _ = indexacion.dividir_corpus(documentos, args.chunk_size, args.chunk_overlap)
+    chunks, _ =indexacion.dividir_corpus(documentos, args.chunk_size, args.chunk_overlap)
     informe = indexacion.verificar_integridad(documentos, chunks)
     print(f"Corpus: {len(documentos)} documentos, {informe['caracteres_corpus']} caracteres")
     print(f"Chunks (tamaño {args.chunk_size}, solapamiento {args.chunk_overlap}): {informe['chunks']} chunks, {informe['caracteres_chunks']} caracteres")
@@ -51,7 +52,9 @@ def _revisar(documentos: list[dict], args) -> int:
         for tamano in _tamanos(args.comparar_tamanos):
             otros, _ = indexacion.dividir_corpus(documentos, tamano, args.chunk_overlap)
             print(f"tamaño {tamano}: {len(otros)} chunks, {sum(len(c.page_content) for c in otros)} caracteres")
-    return 0 if informe["ok"] else 1
+    # mismas reglas que la indexación; el informe ya se imprimió y un ValueError sale como Error: con código 1
+    indexacion.validar_division(chunks, documentos)
+    return 0
 
 
 def _indexar(documentos: list[dict], args) -> int:
@@ -73,7 +76,7 @@ def _indexar(documentos: list[dict], args) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     """Revisa el corpus sin API o, con --confirmar-api-real, lo indexa en Chroma."""
-    parser = argparse.ArgumentParser(description="Indexa el corpus en Chroma con embeddings de Gemini (modo revisión sin API por defecto).")
+    parser = argparse.ArgumentParser(description="Indexa el corpus en Chroma con embeddings de Gemini (modo revisión sin API por defecto).", allow_abbrev=False)
     parser.add_argument("--corpus", default=str(RAIZ / "JSON" / "corpus_miniapp.json"))
     parser.add_argument("--directorio", default=str(RAIZ / "vectorstore"))
     parser.add_argument("--coleccion", default=indexacion.COLECCION_POR_DEFECTO)
