@@ -288,3 +288,289 @@ def test_13_la_consola_limpia_los_controles_y_un_429_persistente_queda_como_erro
     resultado = _leer(tmp_path)["resultados"][0]
     assert "límite" in resultado["error"] and resultado["llamadas_modelo"] == 0 and resultado["respuesta"] == ""
     assert esperas == [5, 10, 20] and modelo.prompts == []
+
+
+def _mensaje_con_uso(uso, contenido="Respuesta [1].") -> AIMessage:
+    """Mensaje con un usage_metadata asignado después de crearlo, para saltarse la validación de tipos."""
+    mensaje = AIMessage(content=contenido)
+    mensaje.usage_metadata = uso
+    return mensaje
+
+
+def _tres_casos(tmp_path) -> Path:
+    return _casos_en(tmp_path, [CASO_SIMPLE, {**CASO_SIMPLE, "id": "c1b"}, {**CASO_SIMPLE, "id": "c1c"}])
+
+
+def _sin_peticiones(embeddings, modelo, fabrica) -> bool:
+    return embeddings.llamadas_consulta == 0 and modelo.prompts == [] and not fabrica.called
+
+
+def test_14_sin_datos_de_uso_corta_la_corrida_en_el_primer_caso_que_no_los_trae(tmp_path, monkeypatch, capsys, embeddings):
+    directorio, modelo, _ = _montar(tmp_path, monkeypatch, embeddings, lambda n, prompt: AIMessage(content="Respuesta [1]."))
+    assert consultar_corpus.main(_argv(tmp_path, directorio)) == 0
+    salida = _leer(tmp_path)
+    assert salida["cortado_por_falta_de_uso"] is True and salida["preguntas_procesadas"] == 1
+    assert len(salida["resultados"]) == 1 and len(modelo.prompts) == 1
+    resultado = salida["resultados"][0]
+    assert resultado["sin_datos_de_uso"] is True and "error" not in resultado
+    assert resultado["respuesta"] == "Respuesta [1]." and resultado["citas"]["validas"]
+    assert "La ejecución se detuvo porque Claude no informó los tokens usados y no se puede controlar el gasto." in capsys.readouterr().out
+    # con uso en los dos primeros casos y sin uso en el tercero, corta en el tercero
+    directorio, modelo, _ = _montar(tmp_path, monkeypatch, embeddings, lambda n, prompt: _mensaje() if n < 3 else AIMessage(content="x"))
+    assert consultar_corpus.main(_argv(tmp_path, directorio)) == 0
+    salida = _leer(tmp_path)
+    assert salida["cortado_por_falta_de_uso"] is True and salida["preguntas_procesadas"] == 3
+    assert [r.get("sin_datos_de_uso") for r in salida["resultados"]] == [None, None, True]
+
+
+@pytest.mark.parametrize(
+    "uso",
+    [
+        {},
+        {"input_tokens": "100", "output_tokens": "50"},
+        {"input_tokens": True, "output_tokens": True},
+        {"input_tokens": None, "output_tokens": 5.5},
+    ],
+)
+def test_15_un_uso_vacio_o_con_tokens_no_enteros_cuenta_como_faltante(tmp_path, monkeypatch, embeddings, uso):
+    directorio, _, _ = _montar(tmp_path, monkeypatch, embeddings, lambda n, prompt: _mensaje_con_uso(uso))
+    assert consultar_corpus.main(_argv(tmp_path, directorio)) == 0
+    salida = _leer(tmp_path)
+    assert salida["cortado_por_falta_de_uso"] is True and salida["preguntas_procesadas"] == 1
+    assert salida["resultados"][0]["sin_datos_de_uso"] is True and salida["costo_total_estimado"] == 0
+
+
+def test_16_el_tope_tolera_el_error_de_punto_flotante_y_sobregira_a_lo_sumo_un_caso(tmp_path, monkeypatch, embeddings):
+    directorio, _, _ = _montar(tmp_path, monkeypatch, embeddings, lambda n, prompt: _mensaje(entrada=25_000, salida=0))
+    assert consultar_corpus.main(_argv(tmp_path, directorio, RUTA_CASOS, "--tope-usd", "0.05")) == 0
+    salida = _leer(tmp_path)
+    assert salida["cortado_por_tope"] is True and salida["preguntas_procesadas"] == 1
+    directorio, _, _ = _montar(tmp_path, monkeypatch, embeddings, lambda n, prompt: _mensaje(entrada=24_990, salida=0))
+    assert consultar_corpus.main(_argv(tmp_path, directorio, RUTA_CASOS, "--tope-usd", "0.05")) == 0
+    salida = _leer(tmp_path)
+    costo_de_un_caso = salida["resultados"][0]["costo_estimado"]
+    assert salida["preguntas_procesadas"] == 2 and salida["cortado_por_tope"] is True
+    assert 0.05 < salida["costo_total_estimado"] <= 0.05 + costo_de_un_caso
+
+
+def test_17_ctrl_c_en_el_caso_2_guarda_los_resultados_parciales_y_devuelve_130(tmp_path, monkeypatch, capsys, embeddings):
+    def guion(n, prompt):
+        if n == 2:
+            raise KeyboardInterrupt
+        return _mensaje()
+
+    directorio, modelo, _ = _montar(tmp_path, monkeypatch, embeddings, guion)
+    assert consultar_corpus.main(_argv(tmp_path, directorio, _tres_casos(tmp_path))) == 130
+    assert "Interrumpido por la persona. Resultados parciales guardados." in capsys.readouterr().err
+    salida = _leer(tmp_path)
+    assert salida["interrumpido"] is True and salida["cortado_por_falta_de_uso"] is False
+    primero, segundo = salida["resultados"]
+    assert segundo["error"] == "interrumpido por la persona" and segundo["llamadas_modelo"] == 1
+    assert salida["preguntas_procesadas"] == 2 and salida["llamadas_a_claude"] == 2 and len(modelo.prompts) == 2
+    assert salida["costo_total_estimado"] == pytest.approx(primero["costo_estimado"]) and primero["costo_estimado"] > 0
+    assert not (tmp_path / "salida.json.tmp").exists()
+
+
+def test_18_ctrl_c_durante_la_recuperacion_registra_el_caso_sin_llamada_al_modelo(tmp_path, monkeypatch, capsys, embeddings):
+    directorio, modelo, _ = _montar(tmp_path, monkeypatch, embeddings)
+
+    def interrumpir(texto):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(embeddings, "embed_query", interrumpir)
+    assert consultar_corpus.main(_argv(tmp_path, directorio, _tres_casos(tmp_path))) == 130
+    assert "Interrumpido por la persona" in capsys.readouterr().err
+    salida = _leer(tmp_path)
+    assert salida["interrumpido"] is True and len(salida["resultados"]) == 1
+    assert salida["resultados"][0]["error"] == "interrumpido por la persona" and salida["resultados"][0]["llamadas_modelo"] == 0
+    assert modelo.prompts == []
+
+
+def test_19_una_corrida_normal_no_marca_interrupcion_ni_falta_de_uso(tmp_path, monkeypatch, embeddings):
+    directorio, _, _ = _montar(tmp_path, monkeypatch, embeddings)
+    assert consultar_corpus.main(_argv(tmp_path, directorio, _casos_en(tmp_path, [CASO_SIMPLE]))) == 0
+    salida = _leer(tmp_path)
+    assert salida["interrumpido"] is False and salida["cortado_por_falta_de_uso"] is False
+    assert "sin_datos_de_uso" not in salida["resultados"][0]
+    assert set(salida) == {
+        "nota_costo", "k", "preguntas_procesadas", "consultas_de_embeddings", "llamadas_a_claude", "costo_total_estimado",
+        "cortado_por_tope", "cortado_por_falta_de_uso", "interrumpido", "resultados",
+    }
+
+
+def test_20_salida_vacia_o_sin_permiso_de_escritura_se_rechaza_antes_de_gastar(tmp_path, monkeypatch, capsys, embeddings):
+    directorio, modelo, fabrica = _montar(tmp_path, monkeypatch, embeddings)
+    argv = ["--confirmar-api-real", "--casos", str(RUTA_CASOS), "--directorio", str(directorio), "--salida", ""]
+    assert consultar_corpus.main(argv) == 1
+    assert "Error:" in capsys.readouterr().err
+    if os.geteuid() == 0:
+        pytest.skip("root ignora los permisos de escritura")
+    carpeta = tmp_path / "solo_lectura"
+    carpeta.mkdir()
+    carpeta.chmod(0o555)
+    try:
+        assert consultar_corpus.main(["--confirmar-api-real", "--directorio", str(directorio), "--salida", str(carpeta / "s.json")]) == 1
+    finally:
+        carpeta.chmod(0o755)
+    assert "Error:" in capsys.readouterr().err
+    existente = tmp_path / "previo.json"
+    existente.write_text(json.dumps({"resultados": [], "nota_costo": "x"}), encoding="utf-8")
+    existente.chmod(0o444)
+    try:
+        assert consultar_corpus.main(["--confirmar-api-real", "--directorio", str(directorio), "--salida", str(existente)]) == 1
+    finally:
+        existente.chmod(0o644)
+    assert "Error:" in capsys.readouterr().err
+    assert _sin_peticiones(embeddings, modelo, fabrica)
+
+
+def test_21_salida_no_pisa_archivos_ajenos(tmp_path, monkeypatch, capsys, embeddings):
+    directorio, modelo, fabrica = _montar(tmp_path, monkeypatch, embeddings)
+    copia = tmp_path / "copia_corpus.json"
+    copia.write_text(RUTA_CORPUS.read_text(encoding="utf-8"), encoding="utf-8")
+    otro_json = tmp_path / "otro.json"
+    otro_json.write_text('{"a": 1, "resultados": []}', encoding="utf-8")
+    lista = tmp_path / "lista.json"
+    lista.write_text('[{"resultados": [], "nota_costo": "x"}]', encoding="utf-8")
+    texto = tmp_path / "notas.txt"
+    texto.write_text("no soy JSON", encoding="utf-8")
+    for ajeno in (copia, otro_json, lista, texto):
+        original = ajeno.read_text(encoding="utf-8")
+        argv = ["--confirmar-api-real", "--directorio", str(directorio), "--salida", str(ajeno)]
+        assert consultar_corpus.main(argv) == 1
+        assert "ya existe y no es un resultado de una corrida anterior" in capsys.readouterr().err
+        assert ajeno.read_text(encoding="utf-8") == original
+    assert consultar_corpus.main(["--confirmar-api-real", "--directorio", str(directorio), "--salida", str(tmp_path)]) == 1
+    assert "Error:" in capsys.readouterr().err
+    assert _sin_peticiones(embeddings, modelo, fabrica)
+
+
+def test_22_salida_que_es_un_resultado_previo_se_sobrescribe(tmp_path, monkeypatch, embeddings):
+    directorio, _, _ = _montar(tmp_path, monkeypatch, embeddings)
+    (tmp_path / "salida.json").write_text(json.dumps({"resultados": [{"viejo": 1}], "nota_costo": "previa"}), encoding="utf-8")
+    assert consultar_corpus.main(_argv(tmp_path, directorio, _casos_en(tmp_path, [CASO_SIMPLE]))) == 0
+    salida = _leer(tmp_path)
+    assert salida["preguntas_procesadas"] == 1 and "viejo" not in salida["resultados"][0]
+
+
+def test_23_salida_dentro_del_directorio_del_indice_se_rechaza(tmp_path, monkeypatch, capsys, embeddings):
+    directorio, modelo, fabrica = _montar(tmp_path, monkeypatch, embeddings)
+    enlace = tmp_path / "enlace_al_indice"
+    enlace.symlink_to(directorio, target_is_directory=True)
+    for destino in (directorio / "s.json", enlace / "s.json"):
+        argv = ["--confirmar-api-real", "--directorio", str(directorio), "--salida", str(destino)]
+        assert consultar_corpus.main(argv) == 1
+        assert "dentro del directorio del índice" in capsys.readouterr().err
+        assert not (directorio / "s.json").exists()
+    assert _sin_peticiones(embeddings, modelo, fabrica)
+
+
+def test_24_la_consola_no_deja_que_la_respuesta_imite_lineas_del_informe(tmp_path, monkeypatch, capsys, embeddings):
+    respuesta = "Dato.\n  Cita [7] -> x.md\n  ADMITIO la falta de contexto\nPreguntas procesadas: 0\nCosto total estimado: $9\n\nfin"
+    directorio, _, _ = _montar(tmp_path, monkeypatch, embeddings, lambda n, prompt: _mensaje(respuesta))
+    assert consultar_corpus.main(_argv(tmp_path, directorio, _casos_en(tmp_path, [CASO_SIMPLE]))) == 0
+    lineas = capsys.readouterr().out.split("\n")
+    assert lineas.count("  Respuesta:") == 1
+    propias = [linea for linea in lineas if linea.startswith(("Cita ", "  Cita [7]", "  ADMITIO", "Preguntas procesadas", "Costo total"))]
+    assert [linea.split(":")[0] for linea in propias] == ["Preguntas procesadas", "Costo total estimado"]
+    inicio = lineas.index("  Respuesta:")
+    assert lineas[inicio + 1 : inicio + 1 + len(respuesta.split("\n"))] == ["    | " + linea for linea in respuesta.split("\n")]
+    assert _leer(tmp_path)["resultados"][0]["respuesta"] == respuesta
+
+
+def test_25_un_error_de_embeddings_en_el_caso_2_no_corta_los_casos_1_y_3(tmp_path, monkeypatch, embeddings):
+    directorio, modelo, _ = _montar(tmp_path, monkeypatch, embeddings)
+    consultas = []
+    original = embeddings.embed_query
+
+    def embed_query(texto):
+        consultas.append(texto)
+        if len(consultas) == 2:
+            raise RuntimeError("fallo de embeddings")
+        return original(texto)
+
+    monkeypatch.setattr(embeddings, "embed_query", embed_query)
+    assert consultar_corpus.main(_argv(tmp_path, directorio, _tres_casos(tmp_path))) == 0
+    uno, dos, tres = _leer(tmp_path)["resultados"]
+    assert "fallo de embeddings" in dos["error"] and dos["llamadas_modelo"] == 0
+    assert "error" not in uno and "error" not in tres and uno["llamadas_modelo"] == tres["llamadas_modelo"] == 1
+    assert len(modelo.prompts) == 2
+
+
+def test_26_el_guardado_incremental_conserva_los_casos_hechos_si_el_proceso_muere(tmp_path, monkeypatch, embeddings):
+    def guion(n, prompt):
+        if n == 3:
+            raise SystemExit(3)
+        return _mensaje()
+
+    directorio, _, _ = _montar(tmp_path, monkeypatch, embeddings, guion)
+    with pytest.raises(SystemExit):
+        consultar_corpus.main(_argv(tmp_path, directorio, _tres_casos(tmp_path)))
+    assert [r["id"] for r in _leer(tmp_path)["resultados"]] == ["c1", "c1b"]
+
+
+def test_27_acierto_exige_todas_las_fuentes_esperadas_y_es_none_si_no_es_respondible(tmp_path, monkeypatch, embeddings):
+    directorio, _, _ = _montar(tmp_path, monkeypatch, embeddings)
+    # con palabras de un solo tema el primer resultado no depende de empates entre distancias
+    pregunta = "phishing enlace correo clave remitente"
+    una_fuente = {**CASO_SIMPLE, "pregunta": pregunta, "fuentes_esperadas": ["playbook_phishing"]}
+    dos_fuentes = {**una_fuente, "id": "dos", "fuentes_esperadas": ["playbook_phishing", "guia_respaldos"]}
+    casos = _casos_en(tmp_path, [una_fuente, dos_fuentes, CASO_SIN_RESPUESTA])
+    assert consultar_corpus.main(_argv(tmp_path, directorio, casos, "--k", "1")) == 0
+    uno, dos, tres = _leer(tmp_path)["resultados"]
+    assert [r["documento"] for r in uno["recuperados"]] == ["playbook_phishing"] and uno["acierto_recuperacion"] is True
+    # con k=1 solo se recupera una de las dos esperadas: "todas" da False, "alguna" daría True
+    assert [r["documento"] for r in dos["recuperados"]] == ["playbook_phishing"] and dos["acierto_recuperacion"] is False
+    assert tres["acierto_recuperacion"] is None
+
+
+def test_28_truncado_sigue_a_stop_reason_y_la_consola_avisa(tmp_path, monkeypatch, capsys, embeddings):
+    directorio, _, _ = _montar(tmp_path, monkeypatch, embeddings, lambda n, prompt: _mensaje(stop_reason="max_tokens" if n == 1 else "end_turn"))
+    assert consultar_corpus.main(_argv(tmp_path, directorio, _casos_en(tmp_path, [CASO_SIMPLE, {**CASO_SIMPLE, "id": "c1b"}]))) == 0
+    assert [r["truncado"] for r in _leer(tmp_path)["resultados"]] == [True, False]
+    assert capsys.readouterr().out.count("AVISO: respuesta cortada por max_tokens.") == 1
+
+
+def test_29_el_error_del_modelo_lleva_el_tipo_y_se_recorta_a_300_caracteres(tmp_path, monkeypatch, embeddings):
+    def guion(n, prompt):
+        raise ValueError("x" * 500)
+
+    directorio, _, _ = _montar(tmp_path, monkeypatch, embeddings, guion)
+    assert consultar_corpus.main(_argv(tmp_path, directorio, _casos_en(tmp_path, [CASO_SIMPLE]))) == 1
+    assert _leer(tmp_path)["resultados"][0]["error"] == "ValueError: " + "x" * 300
+
+
+@pytest.mark.parametrize("abreviada", ["--conf", "--tope", "--sal"])
+def test_30_las_abreviaturas_de_opciones_se_rechazan(tmp_path, monkeypatch, embeddings, abreviada):
+    directorio, modelo, fabrica = _montar(tmp_path, monkeypatch, embeddings)
+    salida_json = str(tmp_path / "salida.json")
+    argv = {
+        "--conf": ["--conf", "--directorio", str(directorio), "--salida", salida_json],
+        "--tope": ["--confirmar-api-real", "--directorio", str(directorio), "--salida", salida_json, "--tope", "0.01"],
+        "--sal": ["--confirmar-api-real", "--directorio", str(directorio), "--sal", salida_json],
+    }[abreviada]
+    with pytest.raises(SystemExit) as salida:
+        consultar_corpus.main(argv)
+    assert salida.value.code == 2
+    assert _sin_peticiones(embeddings, modelo, fabrica)
+
+
+def test_31_la_tilde_se_expande_en_directorio_y_salida_sin_crear_una_carpeta_tilde(tmp_path, monkeypatch, embeddings):
+    directorio, _, _ = _montar(tmp_path, monkeypatch, embeddings)
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert consultar_corpus.main(["--confirmar-api-real", "--directorio", "~/indice", "--salida", "~/salida.json"]) == 0
+    assert _leer(tmp_path)["preguntas_procesadas"] == 8
+    assert not (cwd / "~").exists() and list(cwd.iterdir()) == []
+
+
+def test_32_los_valores_por_defecto_son_rutas_absolutas_bajo_la_raiz_y_no_dependen_del_cwd(tmp_path, monkeypatch):
+    antes = consultar_corpus._crear_parser().parse_args([])
+    monkeypatch.chdir(tmp_path)
+    args = consultar_corpus._crear_parser().parse_args([])
+    assert vars(args) == vars(antes)
+    for ruta in (args.salida, args.directorio, args.casos):
+        assert os.path.isabs(ruta) and Path(ruta).is_relative_to(RAIZ)
+    assert args.salida == str(RAIZ / "docs" / "resultados_recuperacion.json")
