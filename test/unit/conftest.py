@@ -6,12 +6,20 @@ RUTA_TRAZAS_REALES = "trazas/trazas_agente.jsonl"
 RUTA_INDICE_REAL = "vectorstore"
 
 
+RUTA_RESULTADOS_EVALUACION_REALES = "docs/resultados_evaluacion_recuperacion.json"
+
+
 def _estado(ruta: str) -> tuple | None:
     """Devuelve (tamaño, mtime_ns) del archivo, o None si no existe."""
     if not os.path.exists(ruta):
         return None
     info = os.stat(ruta)
     return info.st_size, info.st_mtime_ns
+
+
+def estado_de_los_resultados_de_evaluacion_reales() -> tuple | None:
+    """Estado de docs/resultados_evaluacion_recuperacion.json respecto del directorio actual (None si no existe)."""
+    return _estado(os.path.abspath(RUTA_RESULTADOS_EVALUACION_REALES))
 
 
 def estado_de_las_trazas_reales() -> tuple | None:
@@ -32,6 +40,15 @@ def _no_escribe_en_el_indice_real():
     yield
     if estado_del_indice_real() != antes:
         pytest.fail(f"La prueba escribió en {RUTA_INDICE_REAL}/: debe usar un directorio en tmp_path.")
+
+
+@pytest.fixture(autouse=True)
+def _no_escribe_en_los_resultados_de_evaluacion_reales():
+    """Falla la prueba que cree o modifique docs/resultados_evaluacion_recuperacion.json respecto del directorio actual."""
+    antes = estado_de_los_resultados_de_evaluacion_reales()
+    yield
+    if estado_de_los_resultados_de_evaluacion_reales() != antes:
+        pytest.fail(f"La prueba escribió en {RUTA_RESULTADOS_EVALUACION_REALES}: debe pasar --salida en tmp_path.")
 
 
 @pytest.fixture(autouse=True)
