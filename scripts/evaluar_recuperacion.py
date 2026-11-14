@@ -7,7 +7,10 @@ docs/resultados_evaluacion_recuperacion.json después de cada caso de la primera
 
 Con --repeticiones 2 (por defecto) repite todas las consultas para comprobar si la recuperación es determinista.
 Los topes (casos, repeticiones y consultas de embeddings) están en el código: sin ellos el script no gasta.
-Con Ctrl-C guarda lo hecho y sale con 130.
+Con Ctrl-C guarda lo hecho y sale con 130. El tope de consultas también se fuerza en ejecución (los reintentos de un 429 cuentan).
+
+Mientras la corrida no termina todas sus pasadas el JSON lleva "incompleto": true; si abortó por un error (no Ctrl-C) guarda
+lo hecho con "error" (el mismo texto de stderr) y sale con 1. Si falla el primer caso no se escribe ningún archivo.
 
 Requiere el índice creado antes con scripts/indexar_corpus.py --confirmar-api-real (mismo corpus y tamaños).
 
@@ -47,6 +50,10 @@ NOTA_METODO = (
     "exhaustividad y F1 son solo sobre los casos respondibles y los casos sin respuesta se reportan aparte "
     "(ver el docstring de metricas_recuperacion)."
 )
+
+
+class TopeDeConsultas(Exception):
+    """Se alcanzó MAX_CONSULTAS_EMBEDDING durante la corrida (su texto no puede contener 429 ni RESOURCE_EXHAUSTED)."""
 
 
 def _error(mensaje: str, codigo: int = 1) -> int:
@@ -112,6 +119,8 @@ def _consultar(vectorstore, pregunta: str, corrida: dict) -> list[tuple[str, flo
     import recuperacion
 
     def buscar():
+        if corrida["consultas"] >= MAX_CONSULTAS_EMBEDDING:
+            raise TopeDeConsultas(f"se alcanzó el tope de {MAX_CONSULTAS_EMBEDDING} consultas de embedding; no se hicieron más peticiones.")
         corrida["consultas"] += 1
         return recuperacion.recuperar(vectorstore, pregunta, k=K_MAXIMO)
 
@@ -135,6 +144,8 @@ def _documento(corrida: dict, casos: list[dict], k: int, configuracion: dict) ->
         "configuracion": configuracion,
         "consultas_de_embeddings": corrida["consultas"],
         "interrumpido": corrida["interrumpido"],
+        "incompleto": corrida["incompleto"],
+        "error": corrida["error"],
         "determinista": corrida["determinista"],
         "max_dif_distancia": corrida["max_dif_distancia"],
         "nota_metodo": NOTA_METODO,
@@ -159,9 +170,26 @@ def _guardar(documento: dict, ruta: str) -> None:
     ejecutar_cadenas.guardar_resultados(guardado, ruta)
 
 
+def _mensaje_de_error(error: Exception) -> str:
+    """Texto en español del error de una corrida (el de stderr y el del JSON)."""
+    import embeddings_gemini
+
+    if isinstance(error, ValueError):  # metadata sin la forma esperada
+        return str(error)[:300]
+    if isinstance(error, TopeDeConsultas):
+        return str(error)
+    return embeddings_gemini.describir_error_api(error)[1]
+
+
 def _correr(casos: list[dict], vectorstore, args, configuracion: dict) -> dict:
-    """Primera pasada con guardado tras cada caso y, si se pide, segunda pasada para medir el determinismo."""
-    corrida = {"pares": [], "consultas": 0, "interrumpido": False, "determinista": None, "max_dif_distancia": None}
+    """Primera pasada con guardado tras cada caso y, si se pide, segunda pasada para medir el determinismo.
+
+    Ante un error que no es Ctrl-C guarda lo hecho como incompleto (si hay al menos un caso) y relanza el error marcado con guardado_parcial.
+    """
+    corrida = {
+        "pares": [], "consultas": 0, "interrumpido": False, "incompleto": True, "error": None, "determinista": None,
+        "max_dif_distancia": None,
+    }
     try:
         for caso in casos:
             corrida["pares"].append(_consultar(vectorstore, caso["pregunta"], corrida))
@@ -173,8 +201,15 @@ def _correr(casos: list[dict], vectorstore, args, configuracion: dict) -> dict:
                 iguales = iguales and [i for i, _ in primeros] == [i for i, _ in segundos]
                 diferencias += [abs(a[1] - b[1]) for a, b in zip(primeros, segundos)]
             corrida["determinista"], corrida["max_dif_distancia"] = iguales, max(diferencias, default=0.0)
+        corrida["incompleto"] = False
     except KeyboardInterrupt:
         corrida["interrumpido"] = True
+    except Exception as error:
+        if corrida["pares"]:
+            corrida["error"] = _mensaje_de_error(error)
+            _guardar(_documento(corrida, casos, args.k, configuracion), args.salida)
+            error.guardado_parcial = True
+        raise
     documento = _documento(corrida, casos, args.k, configuracion)
     _guardar(documento, args.salida)
     return documento
@@ -300,10 +335,11 @@ def main(argv: list[str] | None = None) -> int:
     }
     try:
         documento = _correr(casos, vectorstore, args, configuracion)
-    except ValueError as error:  # metadata sin la forma esperada
-        return _error(str(error))
     except Exception as error:
-        return _error(embeddings_gemini.describir_error_api(error)[1])
+        codigo = _error(_mensaje_de_error(error))
+        if getattr(error, "guardado_parcial", False):
+            print(f"Resultados parciales (incompletos) guardados en {args.salida}.", file=sys.stderr)
+        return codigo
     informar(documento, args.k)
     if documento["interrumpido"]:
         print("Interrumpido por la persona. Resultados parciales guardados.", file=sys.stderr)

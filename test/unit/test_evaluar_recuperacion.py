@@ -38,8 +38,8 @@ CASOS = [
     {"id": "c4_falla_en_k1", "pregunta": "phishing enlace correo clave", "ids_relevantes": ["respaldos_0"], "respondible": True},
 ]
 CLAVES_SALIDA = [
-    "nota_costo", "fecha", "configuracion", "consultas_de_embeddings", "interrumpido", "determinista", "max_dif_distancia",
-    "nota_metodo", "promedios_respondibles", "sin_respuesta", "por_caso",
+    "nota_costo", "fecha", "configuracion", "consultas_de_embeddings", "interrumpido", "incompleto", "error", "determinista",
+    "max_dif_distancia", "nota_metodo", "promedios_respondibles", "sin_respuesta", "por_caso",
 ]
 
 
@@ -304,6 +304,7 @@ def test_12_ctrl_c_guarda_lo_hecho_y_devuelve_130_sin_traceback(tmp_path, monkey
     assert "Interrumpido por la persona" in captura.err and "Traceback" not in captura.err
     salida = _leer(tmp_path)
     assert salida["interrumpido"] is True and salida["determinista"] is None
+    assert salida["incompleto"] is True and salida["error"] is None
     assert [c["id"] for c in salida["por_caso"]] == ["c1_parcheo", "c2_respaldos"]
     assert not (tmp_path / "salida.json.tmp").exists()
 
@@ -322,6 +323,7 @@ def test_12b_ctrl_c_durante_la_segunda_pasada_deja_el_determinismo_en_null(tmp_p
     assert evaluar.main(_argv(tmp_path, directorio)) == 130
     salida = _leer(tmp_path)
     assert salida["interrumpido"] is True and salida["determinista"] is None and len(salida["por_caso"]) == 2
+    assert salida["incompleto"] is True and salida["error"] is None
 
 
 def test_13_el_archivo_ya_existe_y_es_json_valido_tras_el_caso_2(tmp_path, monkeypatch, embeddings):
@@ -339,6 +341,8 @@ def test_13_el_archivo_ya_existe_y_es_json_valido_tras_el_caso_2(tmp_path, monke
     assert len(instantaneas) == 1
     assert [c["id"] for c in instantaneas[0]["por_caso"]] == ["c1_parcheo", "c2_respaldos"]
     assert instantaneas[0]["interrumpido"] is False and instantaneas[0]["consultas_de_embeddings"] == 2
+    assert instantaneas[0]["incompleto"] is True
+    assert _leer(tmp_path)["incompleto"] is False
 
 
 @pytest.mark.parametrize(
@@ -389,6 +393,127 @@ def test_15_la_consola_limpia_los_controles_y_saltos_de_los_nombres_de_caso(tmp_
     out = capsys.readouterr().out
     assert "\x1b" not in out
     assert "  uno [31mrojo segunda\n" in out and "  dos [0m linea\n" in out
+
+
+TEXTO_LIMITE = embeddings_gemini.describir_error_api(RuntimeError("429 RESOURCE_EXHAUSTED"))[1]
+
+
+def _falla_desde(monkeypatch, embeddings, desde: int, error: Exception) -> tuple[list, list]:
+    """Hace que embed_query falle desde la petición número `desde` (1 = la primera) y anula las esperas; devuelve (intentos, dormidas)."""
+    original, intentos, dormidas = embeddings.embed_query, [], []
+
+    def embed_query(texto):
+        intentos.append(texto)
+        if len(intentos) >= desde:
+            raise error
+        return original(texto)
+
+    monkeypatch.setattr(embeddings, "embed_query", embed_query)
+    monkeypatch.setattr(indexacion.time, "sleep", dormidas.append)
+    return intentos, dormidas
+
+
+@pytest.mark.parametrize("repeticiones", ["1", "2"])
+def test_08b_una_corrida_completa_no_es_incompleta_y_no_tiene_error(tmp_path, monkeypatch, embeddings, repeticiones):
+    directorio = _preparar(tmp_path, monkeypatch, embeddings)
+    assert evaluar.main(_argv(tmp_path, directorio, "--repeticiones", repeticiones)) == 0
+    salida = _leer(tmp_path)
+    assert list(salida) == CLAVES_SALIDA
+    assert salida["incompleto"] is False and salida["error"] is None
+
+
+def test_17_un_429_persistente_en_la_primera_pasada_guarda_lo_hecho_como_incompleto(tmp_path, monkeypatch, capsys, embeddings):
+    directorio = _preparar(tmp_path, monkeypatch, embeddings)
+    _falla_desde(monkeypatch, embeddings, 3, RuntimeError("429 RESOURCE_EXHAUSTED"))
+    assert evaluar.main(_argv(tmp_path, directorio, "--repeticiones", "1")) == 1
+    err = capsys.readouterr().err
+    assert "Error:" in err and "Resultados parciales" in err
+    salida = _leer(tmp_path)
+    assert [c["id"] for c in salida["por_caso"]] == ["c1_parcheo", "c2_respaldos"]
+    assert salida["incompleto"] is True and salida["error"] == TEXTO_LIMITE and TEXTO_LIMITE in err
+    assert salida["interrumpido"] is False and salida["determinista"] is None
+    assert salida["consultas_de_embeddings"] == 6
+    assert salida["promedios_respondibles"]["1"]["precision"] == 1.0
+
+
+def test_17b_un_429_persistente_en_la_segunda_pasada_cuenta_todos_los_intentos(tmp_path, monkeypatch, capsys, embeddings):
+    directorio = _preparar(tmp_path, monkeypatch, embeddings)
+    _falla_desde(monkeypatch, embeddings, 6, RuntimeError("429 RESOURCE_EXHAUSTED"))
+    assert evaluar.main(_argv(tmp_path, directorio)) == 1
+    assert "Resultados parciales" in capsys.readouterr().err
+    salida = _leer(tmp_path)
+    assert len(salida["por_caso"]) == 4 and salida["incompleto"] is True and salida["error"] == TEXTO_LIMITE
+    assert salida["determinista"] is None and salida["max_dif_distancia"] is None
+    assert salida["consultas_de_embeddings"] == 9
+
+
+def test_17c_un_value_error_a_mitad_de_corrida_guarda_lo_hecho(tmp_path, monkeypatch, capsys, embeddings):
+    directorio = _preparar(tmp_path, monkeypatch, embeddings, CASOS[:2])
+    original, llamadas = recuperacion.recuperar, []
+
+    def recuperar(vectorstore, pregunta, k=3):
+        llamadas.append(pregunta)
+        if len(llamadas) == 2:
+            return [(Document(id="x", page_content="t", metadata={}), 0.1)]
+        return original(vectorstore, pregunta, k)
+
+    monkeypatch.setattr(recuperacion, "recuperar", recuperar)
+    assert evaluar.main(_argv(tmp_path, directorio)) == 1
+    err = capsys.readouterr().err
+    assert "Error:" in err and "Resultados parciales" in err
+    salida = _leer(tmp_path)
+    assert len(salida["por_caso"]) == 1 and salida["incompleto"] is True and "metadata" in salida["error"]
+
+
+def test_17d_un_error_en_el_primer_caso_no_crea_el_archivo(tmp_path, monkeypatch, capsys, embeddings):
+    directorio = _preparar(tmp_path, monkeypatch, embeddings)
+    _falla_desde(monkeypatch, embeddings, 1, RuntimeError("API key not valid"))
+    assert evaluar.main(_argv(tmp_path, directorio)) == 1
+    err = capsys.readouterr().err
+    assert "Error:" in err and "Resultados parciales" not in err
+    assert not (tmp_path / "salida.json").exists()
+
+
+def test_17e_un_error_en_el_primer_caso_no_pisa_un_resultado_previo(tmp_path, monkeypatch, capsys, embeddings):
+    directorio = _preparar(tmp_path, monkeypatch, embeddings)
+    assert evaluar.main(_argv(tmp_path, directorio, "--repeticiones", "1")) == 0
+    previo = (tmp_path / "salida.json").read_bytes()
+    _falla_desde(monkeypatch, embeddings, 1, RuntimeError("fallo raro"))
+    capsys.readouterr()
+    assert evaluar.main(_argv(tmp_path, directorio)) == 1
+    assert "Resultados parciales" not in capsys.readouterr().err
+    assert (tmp_path / "salida.json").read_bytes() == previo
+
+
+def test_18_el_tope_de_consultas_se_fuerza_en_ejecucion_sin_pasarse_ni_una_peticion(tmp_path, monkeypatch, capsys, embeddings):
+    monkeypatch.setattr(evaluar, "MAX_CONSULTAS_EMBEDDING", 6)
+    directorio = _preparar(tmp_path, monkeypatch, embeddings)
+    original, peticiones, dormidas, por_pregunta = embeddings.embed_query, [], [], {}
+
+    def embed_query(texto):
+        peticiones.append(texto)
+        por_pregunta[texto] = por_pregunta.get(texto, 0) + 1
+        if por_pregunta[texto] <= 2:
+            raise RuntimeError("429 RESOURCE_EXHAUSTED")
+        return original(texto)
+
+    monkeypatch.setattr(embeddings, "embed_query", embed_query)
+    monkeypatch.setattr(indexacion.time, "sleep", dormidas.append)
+    assert evaluar.main(_argv(tmp_path, directorio, "--repeticiones", "1")) == 1
+    assert "Error:" in (err := capsys.readouterr().err) and "tope" in err and "Resultados parciales" in err
+    assert len(peticiones) == 6 and len(dormidas) == 4
+    salida = _leer(tmp_path)
+    assert len(salida["por_caso"]) == 2 and salida["incompleto"] is True
+    assert salida["consultas_de_embeddings"] == 6 and "tope" in salida["error"]
+
+
+def test_18b_el_mensaje_del_tope_no_se_confunde_con_un_limite_de_la_api():
+    corrida = {"consultas": evaluar.MAX_CONSULTAS_EMBEDDING}
+    with pytest.raises(evaluar.TopeDeConsultas) as info:
+        evaluar._consultar(None, "pregunta", corrida)
+    mensaje = str(info.value)
+    assert "429" not in mensaje and "RESOURCE_EXHAUSTED" not in mensaje and "tope" in mensaje
+    assert corrida["consultas"] == evaluar.MAX_CONSULTAS_EMBEDDING
 
 
 def test_16_el_script_no_importa_nada_de_claude(tmp_path, monkeypatch, embeddings):
