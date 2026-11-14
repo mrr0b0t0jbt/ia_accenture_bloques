@@ -1,3 +1,4 @@
+import datetime
 import gc
 import importlib.util
 import json
@@ -514,6 +515,140 @@ def test_18b_el_mensaje_del_tope_no_se_confunde_con_un_limite_de_la_api():
     mensaje = str(info.value)
     assert "429" not in mensaje and "RESOURCE_EXHAUSTED" not in mensaje and "tope" in mensaje
     assert corrida["consultas"] == evaluar.MAX_CONSULTAS_EMBEDDING
+
+
+def test_19_la_consola_respeta_k_y_coincide_con_el_json(tmp_path, monkeypatch, capsys, embeddings):
+    directorio = _preparar(tmp_path, monkeypatch, embeddings)
+    lineas = {}
+    for k in (1, 3, 5):
+        assert evaluar.main(_argv(tmp_path, directorio, "--k", str(k), "--repeticiones", "1")) == 0
+        out = capsys.readouterr().out
+        lineas[k] = [linea for linea in out.splitlines() if linea.startswith("P=")]
+        esperadas = [
+            f"P={c['metricas'][str(k)]['precision']:.2f} R={c['metricas'][str(k)]['exhaustividad']:.2f} "
+            f"F1={c['metricas'][str(k)]['f1']:.2f}  {c['id']}"
+            for c in _leer(tmp_path)["por_caso"] if c["respondible"]
+        ]
+        assert lineas[k] == esperadas and len(esperadas) == 3
+    assert lineas[1] != lineas[3]
+
+
+def test_20_la_configuracion_guardada_refleja_el_k_pedido(tmp_path, monkeypatch, embeddings):
+    directorio = _preparar(tmp_path, monkeypatch, embeddings)
+    for k in (1, 5):
+        assert evaluar.main(_argv(tmp_path, directorio, "--k", str(k), "--repeticiones", "1")) == 0
+        assert _leer(tmp_path)["configuracion"]["k"] == k
+
+
+def test_21_coleccion_se_respeta(tmp_path, monkeypatch, capsys, embeddings):
+    directorio = _preparar(tmp_path, monkeypatch, embeddings, indexar=False)
+    indexacion.indexar(CORPUS, embeddings, str(directorio), coleccion="otra_coleccion")
+    embeddings.llamadas_consulta = 0
+    assert evaluar.main(_argv(tmp_path, directorio, "--coleccion", "otra_coleccion", "--repeticiones", "1")) == 0
+    assert _leer(tmp_path)["configuracion"]["coleccion"] == "otra_coleccion"
+    (tmp_path / "salida.json").unlink()
+    embeddings.llamadas_consulta = 0
+    capsys.readouterr()
+    assert evaluar.main(_argv(tmp_path, directorio)) == 1
+    err = capsys.readouterr().err
+    assert "Error:" in err and "reindexa" in err
+    assert embeddings.llamadas_consulta == 0 and not (tmp_path / "salida.json").exists()
+
+
+def test_22_la_fecha_guardada_es_la_de_hoy(tmp_path, monkeypatch, embeddings):
+    directorio = _preparar(tmp_path, monkeypatch, embeddings)
+    assert evaluar.main(_argv(tmp_path, directorio, "--repeticiones", "1")) == 0
+    hoy = datetime.date.today()
+    assert _leer(tmp_path)["fecha"] in {hoy.isoformat(), (hoy - datetime.timedelta(days=1)).isoformat()}
+
+
+def test_23_las_distancias_del_archivo_van_redondeadas_a_6_decimales(tmp_path, monkeypatch, embeddings):
+    directorio = _preparar(tmp_path, monkeypatch, embeddings, CASOS[:3])
+    original, llamadas = recuperacion.recuperar, []
+
+    def recuperar(vectorstore, pregunta, k=3):
+        llamadas.append(pregunta)
+        desfase = 0.1234567891 if len(llamadas) > 3 else 0.0  # la segunda pasada se corre para que max_dif_distancia tenga decimales
+        return [(documento, 0.123456789 + n / 7 + desfase) for n, (documento, _) in enumerate(original(vectorstore, pregunta, k))]
+
+    monkeypatch.setattr(recuperacion, "recuperar", recuperar)
+    assert evaluar.main(_argv(tmp_path, directorio)) == 0
+    salida = _leer(tmp_path)
+    distancias = [r["distancia"] for c in salida["por_caso"] for r in c["recuperados"]]
+    distancias += [s["distancia_minima"] for s in salida["sin_respuesta"]] + [salida["max_dif_distancia"]]
+    assert len(distancias) == 9 + 1 + 1 and salida["max_dif_distancia"] > 0.1
+    assert all(round(d, 6) == d for d in distancias) and salida["por_caso"][0]["recuperados"][0]["distancia"] == 0.123457
+
+
+def test_24_guardar_es_atomico_si_falla_el_reemplazo(tmp_path, monkeypatch, embeddings):
+    directorio = _preparar(tmp_path, monkeypatch, embeddings)
+    assert evaluar.main(_argv(tmp_path, directorio, "--repeticiones", "1")) == 0
+    ruta = tmp_path / "salida.json"
+    previo = ruta.read_bytes()
+    documento = {**json.loads(previo), "consultas_de_embeddings": 999}
+
+    def falla(origen, destino):
+        raise OSError("disco lleno")
+
+    monkeypatch.setattr(os, "replace", falla)
+    with pytest.raises(OSError):
+        evaluar._guardar(documento, str(ruta))
+    assert ruta.read_bytes() == previo and list(tmp_path.glob("*.tmp")) == []
+
+
+def test_25_salida_por_un_enlace_simbolico_dentro_del_indice_se_rechaza(tmp_path, monkeypatch, capsys, embeddings):
+    directorio = _preparar(tmp_path, monkeypatch, embeddings)
+    enlace = tmp_path / "enlace"
+    enlace.symlink_to(directorio, target_is_directory=True)
+    antes = sorted(directorio.rglob("*"))
+    assert evaluar.main(_argv(tmp_path, directorio, salida=enlace / "res.json")) == 1
+    err = capsys.readouterr().err
+    assert "Error:" in err and "dentro del directorio del índice" in err
+    assert embeddings.llamadas_consulta == 0 and sorted(directorio.rglob("*")) == antes and not (directorio / "res.json").exists()
+
+
+def test_26_salida_vacia_se_rechaza(tmp_path, monkeypatch, capsys, embeddings):
+    directorio = _preparar(tmp_path, monkeypatch, embeddings)
+    argv = _argv(tmp_path, directorio)
+    argv[argv.index("--salida") + 1] = ""
+    assert evaluar.main(argv) == 1
+    err = capsys.readouterr().err
+    assert "Error:" in err and "no puede estar vacío" in err and embeddings.llamadas_consulta == 0
+
+
+def test_27_se_recuperan_k_maximo_chunks_aunque_el_indice_sea_chico(tmp_path, monkeypatch, embeddings):
+    relleno = [
+        {"id": f"d{n}", "fuente": f"d{n}.md", "texto": f"Documento de relleno numero {n} sin temas."} for n in range(1, 8)
+    ]
+    corpus = [{"id": "d0", "fuente": "d0.md", "texto": "Plazo de parche: vulnerabilidad con cvss alto."}, *relleno]
+    _escribir(tmp_path / "corpus.json", corpus)
+    _escribir(tmp_path / "casos.json", [CASOS[0] | {"ids_relevantes": ["d0_0"]}])
+    indexacion.indexar(corpus, embeddings, str(tmp_path / "indice"))
+    monkeypatch.setattr(embeddings_gemini, "crear_embeddings", lambda: embeddings)
+    assert evaluar.main(_argv(tmp_path, tmp_path / "indice", "--repeticiones", "1")) == 0
+    caso = _leer(tmp_path)["por_caso"][0]
+    assert [r["id"] for r in caso["recuperados"]][0] == "d0_0" and len(caso["recuperados"]) == metricas_recuperacion.K_MAXIMO == 5
+    assert caso["metricas"]["5"]["precision"] == pytest.approx(1 / 5) and caso["metricas"]["5"]["exhaustividad"] == 1.0
+
+
+def test_28_una_pregunta_demasiado_larga_se_rechaza_antes_de_gastar(tmp_path, monkeypatch, capsys, embeddings):
+    maximo = recuperacion.MAX_LONGITUD_PREGUNTA
+    directorio = _preparar(tmp_path, monkeypatch, embeddings, [{**CASOS[0], "pregunta": "a" * (maximo + 1)}])
+    assert evaluar.main(_argv(tmp_path, directorio)) == 1
+    assert "Error:" in capsys.readouterr().err
+    assert embeddings.llamadas_consulta == 0 and not (tmp_path / "salida.json").exists()
+    _escribir(tmp_path / "casos.json", [{**CASOS[0], "pregunta": "a" * maximo}])
+    assert evaluar.main(_argv(tmp_path, directorio, "--repeticiones", "1")) == 0
+
+
+def test_29_un_indice_con_el_mismo_conteo_pero_otros_ids_se_rechaza(tmp_path, monkeypatch, capsys, embeddings):
+    directorio = _preparar(tmp_path, monkeypatch, embeddings, indexar=False)
+    indexacion.indexar([{**d, "id": f"{d['id']}2"} for d in CORPUS], embeddings, str(directorio))
+    embeddings.llamadas_consulta = 0
+    assert evaluar.main(_argv(tmp_path, directorio)) == 1
+    err = capsys.readouterr().err
+    assert "Error:" in err and "reindexa" in err
+    assert embeddings.llamadas_consulta == 0 and not (tmp_path / "salida.json").exists()
 
 
 def test_16_el_script_no_importa_nada_de_claude(tmp_path, monkeypatch, embeddings):

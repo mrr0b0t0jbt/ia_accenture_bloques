@@ -170,6 +170,23 @@ def test_15_k_invalido_falla_sin_llamar_a_recuperar_ids(k):
     assert llamadas == []
 
 
+def test_15b_ids_relevantes_sale_ordenado():
+    rankings = {"pregunta c": ["a_1", "b_1", "x_0", "y_0", "z_0"]}
+    resultado = evaluar_recuperacion(_funcion_falsa(rankings), [_caso("c", ["b_1", "a_1"])], k=3)
+    assert resultado["por_caso"][0]["ids_relevantes"] == ["a_1", "b_1"]
+
+
+def test_17b_la_nota_debe_ser_texto():
+    problema = validar_casos_evaluacion([{**CASO_VALIDO, "nota": 5}])
+    assert isinstance(problema, str) and "nota" in problema
+    assert validar_casos_evaluacion([{**CASO_VALIDO, "nota": "texto"}]) is None
+
+
+def test_17c_un_id_relevante_en_blanco_se_rechaza_aunque_la_lista_no_este_vacia():
+    problema = validar_casos_evaluacion([{**CASO_VALIDO, "ids_relevantes": ["doc0_0", "   "]}])
+    assert isinstance(problema, str) and "ids_relevantes" in problema
+
+
 def test_16_el_json_real_es_valido():
     assert validar_casos_evaluacion(_casos_reales()) is None
 
