@@ -420,7 +420,7 @@ python scripts/consultar_corpus.py --confirmar-api-real --max-tokens 512 --tope-
 | q8_sin_respuesta_moviles | 401 / 21 | 0.00101 | - | sí | - |
 
 - Claude respondió con datos exactos y citas válidas en las preguntas con respuesta, y admitió la falta de contexto en las dos que el corpus no cubre, incluida una de tema cercano (el plazo de parcheo de teléfonos móviles). No inventó ningún dato.
-- **La métrica por documento es demasiado generosa**: en `q5_agente_sin_respuesta` el documento correcto sí se recuperó, pero no el fragmento que contiene la respuesta (la frase "si nadie responde en 60 segundos… no aprobado" quedó en el fragmento 1 y se recuperaron el 0 y el 2 más un fragmento de otro documento). Claude respondió, correctamente, que el contexto no alcanzaba: fue una falla de recuperación y no una alucinación. En `q1_plazo_critico_cola` la política de parcheo no llegó, pero el propio aviso repite el plazo. Con `k=3` los fragmentos vecinos y solapados ocupan los puestos. La medición útil es por chunk (los ids `<documento>_<n>` ya lo permiten) y es lo que evalúa el Bloque 27; el corpus y el tamaño de chunk no se tocaron para partir de esta línea base.
+- **La métrica por documento es demasiado generosa**: en `q5_agente_sin_respuesta` el documento correcto sí se recuperó, pero no el fragmento que contiene la respuesta (la frase "si nadie responde en 60 segundos… no aprobado" quedó en el fragmento 1 y se recuperaron el 0 y el 2 más un fragmento de otro documento). Claude respondió, correctamente, que el contexto no alcanzaba: fue una falla de recuperación y no una alucinación. En `q1_plazo_critico_cola` la política de parcheo no llegó, pero el propio aviso repite el plazo. Con `k=3` los fragmentos vecinos y solapados ocupan los puestos. La medición útil es por chunk (los ids `<documento>_<n>` ya lo permiten) y es lo que mide el Bloque 27 (sección siguiente); el corpus y el tamaño de chunk no se tocaron para partir de esta línea base.
 - El costo es una estimación con los precios del proyecto, no contrastada con la consola.
 
 **Límites conocidos de la recuperación** (verificados con servidores locales falsos del cliente real de Gemini y de Claude, más la corrida real de arriba):
@@ -432,7 +432,52 @@ python scripts/consultar_corpus.py --confirmar-api-real --max-tokens 512 --tope-
 - La pregunta del archivo de casos se usa tal cual (es un archivo propio); lo que se neutraliza son las etiquetas de los chunks recuperados. No se cubren los homoglifos de otros alfabetos (`</соntехtо>` con letras cirílicas), las entidades HTML ni acentos (`</CONTEXTÓ>`). Aun así, la validación de citas solo comprueba que el número **existe** en el mapa: cualquier `[n]` con n ≤ k es "válido" aunque ese fragmento no respalde la frase, así que "citas verificables" significa "la fuente existe", no "respalda la afirmación" (y un chunk hostil con un modelo real no se ha probado: la instrucción de tratar el contexto como datos es la única barrera adicional).
 - El guardián de las pruebas del índice compara solo la fecha del directorio `vectorstore/` y no detecta escrituras sobre un índice existente que no lo cambien.
 - Hallazgos menores de la QA que se documentan y no se corrigen: el índice y las rutas relativas se resuelven contra el directorio actual (los valores por defecto cuelgan de la raíz del repo); si el índice se creó con otro modelo de embeddings, la consulta hace una petición por pregunta y falla con un mensaje rotulado "API" (indexar sí da el aviso de dimensión); abrir una colección inexistente en un índice ya creado la crea vacía antes de fallar; los errores locales (permisos de disco) se rotulan como error de la API; reindexar vuelve a calcular los embeddings de todo el corpus, sin caché; una pregunta de solo caracteres de control se acepta; los reintentos del SDK dejan un traceback por caso en stderr.
-- Sin verificar: la calidad de la recuperación con otras preguntas distintas de las 8 de la corrida, y la comparación de tamaños de chunk con embeddings reales.
+- Sin verificar: la calidad de la recuperación con otras preguntas distintas de las 8 de la corrida, y la comparación de tamaños de chunk con embeddings reales (la evaluación por chunk de la sección siguiente mide 14 preguntas con un solo tamaño).
+
+## RAG: evaluación de la recuperación por chunk (Bloque 27)
+
+Mide si la recuperación trae los chunks correctos, sin llamar a Claude: `src/metricas_recuperacion.py` (Python puro) calcula precisión, exhaustividad y F1 en el top-k sobre **ids de chunk** (`<documento>_<n>`, por ejemplo `politica_parcheo_0`), y `scripts/evaluar_recuperacion.py` lo ejecuta contra el índice real. Los nombres del proyecto van en español (`precision_en_k`, `exhaustividad_en_k`; la clase dice `recall_at_k`).
+
+**Conjunto de evaluación** (`JSON/evaluacion_recuperacion.json`): 14 casos, 11 con respuesta en el corpus y 3 sin ella. Los 8 primeros son los de `casos_recuperacion.json` (mismo id y misma pregunta) con el chunk que contiene la respuesta; los 6 nuevos (q9 a q14) cubren otras zonas del corpus. Las etiquetas se hicieron leyendo el corpus y no el retriever, y una prueba comprueba que cada id etiquetado exista en el corpus. Una pregunta puede tener dos chunks relevantes (q1) o ninguno.
+
+**Desvío respecto de la clase**: los promedios de precisión, exhaustividad y F1 se calculan **solo sobre los casos con respuesta**. En una pregunta sin respuesta la exhaustividad no está definida (`None`) y la precisión sería siempre 0 si se recupera algo, lo que arrastraría el promedio; esos casos se informan aparte (ids recuperados y distancia mínima).
+
+**Cómo se ejecuta** (con costo solo en embeddings de las consultas; no estima dólares porque el proyecto no conoce el precio de `gemini-embedding-001`):
+
+```
+python scripts/evaluar_recuperacion.py --confirmar-api-real
+python scripts/evaluar_recuperacion.py --confirmar-api-real --k 5 --repeticiones 1
+```
+
+- Sin `--confirmar-api-real` sale con código 2 sin leer ni importar nada. Topes en el código: 20 casos, 2 repeticiones y 40 consultas de embedding, que se comprueban antes de empezar y también en cada petición (los reintentos de un 429 cuentan).
+- Cada pregunta se embebe una vez y recupera 5 chunks; las métricas de `k` = 1 a 5 salen de ese mismo ranking. El id del chunk se construye desde la metadata (`documento` y `fragmento`), no desde `Document.id`.
+- Valida antes de gastar: estructura de los casos, ids etiquetados contra el corpus, preguntas largas, `--salida` (no pisa archivos ajenos ni cae dentro del índice) y que el índice exista y tenga los mismos 29 chunks e ids que el corpus.
+- Con 2 repeticiones comprueba si la recuperación es determinista. Guarda el JSON de forma atómica tras cada caso de la primera pasada. Mientras no termina todo, el archivo lleva `incompleto: true`; si aborta por un error (no Ctrl-C) guarda lo hecho con `error` (el mismo texto de stderr) y sale con 1; con Ctrl-C sale con 130. Si falla el primer caso no escribe ningún archivo.
+
+**Primera corrida real** (2026-11-14, 14 casos x 2 repeticiones = 28 consultas de embedding, sin llamadas a Claude; registro en [docs/resultados_evaluacion_recuperacion.json](docs/resultados_evaluacion_recuperacion.json)). Índice de 29 chunks (`chunk_size` 200, solapamiento 30). La segunda pasada dio los mismos ids en el mismo orden con diferencia de distancia 0. Promedios de los 11 casos con respuesta (recalculados a mano a partir de los rankings del JSON):
+
+| k | Precisión | Exhaustividad | F1 |
+|---|---|---|---|
+| 1 | 0,82 | 0,82 | 0,82 |
+| 2 | 0,45 | 0,86 | 0,59 |
+| 3 | 0,30 | 0,86 | 0,45 |
+| 4 | 0,25 | 0,95 | 0,39 |
+| 5 | 0,20 | 0,95 | 0,33 |
+
+- **El mejor F1 está en `k=1`**: en 9 de los 11 casos el chunk etiquetado es el primero. Subir `k` agrega ruido (los fragmentos vecinos y solapados ocupan puestos), el trade-off de la clase.
+- **`q5_agente_sin_respuesta`**: el chunk con la respuesta (`agente_aprobacion_humana_1`) queda en el rango 4; los puestos 1 y 3 son sus fragmentos vecinos y el 2 es de otro documento. Con `k=3` falla (precisión 0, exhaustividad 0). La métrica por documento de la sección anterior lo marcaba como acierto.
+- **`q1_plazo_critico_cola`**: `aviso_cve_2099_10002_2` queda en el rango 2, pero `politica_parcheo_0` no entra en los 5 primeros: exhaustividad 0,5. Es el único caso con relevantes parciales. Con la etiqueta actual la exhaustividad de q1 se penaliza aunque el aviso solo ya permitiría responder (el aviso repite el plazo); es una decisión de etiquetado, no una falla comprobada de la recuperación.
+- **Preguntas sin respuesta** (q7, q8, q14): recuperan chunks con distancia mínima de 0,49 a 0,50, parecida a la de aciertos reales de otros casos (0,43 en q1, 0,57 en q5 para el chunk correcto). Con solo 3 casos, la distancia por sí sola no separa "hay respuesta" de "no hay"; en la corrida anterior fue Claude, al leer el contexto, quien lo admitió.
+
+**Límites conocidos de la evaluación** (de método, salvo los dos últimos, que vienen de la verificación del script con un servidor local falso del cliente real de Gemini):
+
+- 14 casos (11 con respuesta) son pocos: la clase recomienda 15 a 30 para un conjunto realista, y el corpus de 29 chunks hace que `k=5` ya recupere el 17 % del índice. Una diferencia de un caso mueve los promedios cerca de 9 puntos.
+- El etiquetado lo hizo una sola persona con ayuda de Antares, y al etiquetar q1 y q5 ya se conocía su resultado por documento (README, sección anterior): no son una prueba ciega. Las etiquetas de q9 a q14 sí se hicieron sin ver el retriever.
+- La métrica ignora el orden dentro del top-k y trata igual a todos los chunks etiquetados; la comparación de ids es exacta.
+- Solo se mide la recuperación: que el chunk correcto llegue al contexto no garantiza que Claude lo use bien, y viceversa (q1 se responde con el aviso solo).
+- No se compararon tamaños de chunk ni otros `k` de indexación; el índice y la configuración son los de la corrida de citas.
+- El determinismo se comprobó con dos pasadas seguidas sobre el mismo índice, no entre días ni tras reindexar.
+- Si el guardado de un resultado falla (`OSError`) dentro del manejador de error, esa excepción sustituye al error original y no se avisa del parcial. Dos huecos de pruebas conocidos y aceptados: el texto exacto del mensaje del tope de consultas (sin esa rama el mensaje sale genérico, pero legible) y la validación de preguntas largas en un caso posterior al primero (`recuperar` ya las rechaza; el chequeo previo solo evita gastar consultas antes de fallar).
 
 ## Ensayo real de rate limit
 
@@ -514,6 +559,7 @@ src/
   embeddings_gemini.py     crea los embeddings de Gemini a pedido y clasifica los errores de la API (límite, clave u otro)
   indexacion.py            carga y valida el corpus, lo parte en chunks con ids deterministas e indexa en Chroma de forma idempotente
   recuperacion.py          recuperación con distancia, contexto numerado, prompt que trata el contexto como datos y verificación de citas
+  metricas_recuperacion.py precisión, exhaustividad y F1 de la recuperación por chunk y validación de los casos de evaluación
 scripts/
   ensayo_rate_limit_simulado.py  ensayo de rate limit simulado con mocks
   ejecutar_pipeline.py           pipeline de texto sobre respuestas reales de Claude (con costo)
@@ -524,6 +570,7 @@ scripts/
   revisar_trazas.py              revisa las trazas del agente y marca candidatos a revisar (sin costo)
   indexar_corpus.py              revisa (sin API) o indexa el corpus en Chroma con embeddings de Gemini
   consultar_corpus.py            recuperación semántica con embeddings de Gemini y respuestas de Claude con citas verificadas (con costo)
+  evaluar_recuperacion.py        evalúa la recuperación por chunk con embeddings de Gemini, sin llamar a Claude (con costo en embeddings)
 test/
   unit/test_api_claude_refactor.py     pruebas unitarias con mocks
   unit/test_api_gemini.py              pruebas minimas del manejo de errores del cliente Gemini, con mocks
@@ -547,14 +594,16 @@ test/
   unit/test_trazas.py                  pruebas de las trazas, su lectura validada y su revisión
   unit/test_limites_autonomia.py       pruebas que cruzan el documento de límites con el código
   unit/test_conftest_guardian.py       prueba del guardián que impide que la suite escriba en las trazas reales
-  unit/conftest.py                     guardianes automáticos: fallan una prueba que escriba en trazas/trazas_agente.jsonl o en vectorstore/
+  unit/conftest.py                     guardianes automáticos: fallan una prueba que escriba en trazas/trazas_agente.jsonl, en vectorstore/ o en docs/resultados_evaluacion_recuperacion.json
   unit/test_conftest_guardian.py       pruebas de las funciones que miden el estado de trazas/ y vectorstore/
-  unit/test_guardianes.py              prueba, en un pytest aparte, que los dos guardianes fallan de verdad
+  unit/test_guardianes.py              prueba, en un pytest aparte, que los tres guardianes fallan de verdad
   unit/embeddings_falsos.py            embeddings falsos por tema para probar el orden de recuperación (sin pruebas propias)
   unit/test_indexacion.py              pruebas de la indexación con Chroma real y embeddings falsos
   unit/test_indexar_corpus.py          pruebas del script de indexación (modo revisión, errores de la API)
   unit/test_recuperacion.py            pruebas de la recuperación, el contexto numerado, el prompt y las citas
   unit/test_consultar_corpus.py        pruebas del script de consulta, con un modelo falso
+  unit/test_metricas_recuperacion.py   pruebas de las métricas por chunk, los casos de evaluación y su coherencia con el corpus
+  unit/test_evaluar_recuperacion.py    pruebas del script de evaluación (Chroma real, embeddings falsos, topes, fallos y resultados parciales)
   test_consistencia.py         prueba de consistencia con Claude
   test_consistencia_gemini.py  misma prueba con Gemini (comparativa)
 JSON/
@@ -568,6 +617,7 @@ JSON/
   casos_agente.json                10 turnos de la corrida real del agente (8 de herramientas y memoria, 2 de aislamiento)
   corpus_miniapp.json              10 documentos ficticios de Taller Aurora para el RAG
   casos_recuperacion.json          8 preguntas del RAG (6 con respuesta en el corpus y 2 sin ella)
+  evaluacion_recuperacion.json     14 casos de evaluación con los chunks relevantes etiquetados (11 con respuesta y 3 sin ella)
 docs/                      decisión de arquitectura, diagrama y evidencias
   registro_rate_limit.md   registro del ensayo de rate limit (simulado)
   registro_pipeline.md     registro del pipeline de texto (se genera al correr el script)
@@ -578,6 +628,7 @@ docs/                      decisión de arquitectura, diagrama y evidencias
   resultados_agente.json   resultados de la primera corrida real del agente, 8 turnos (se genera al correr ejecutar_agente.py)
   resultados_agente_v2.json  resultados de la segunda corrida real, 10 turnos y una aprobación interactiva
   resultados_recuperacion.json  resultados de la primera corrida real de la recuperación con citas
+  resultados_evaluacion_recuperacion.json  resultados de la primera evaluación real de la recuperación por chunk (se genera al correr evaluar_recuperacion.py)
   limites_autonomia_agente.md  límites de autonomía del agente: riesgo por herramienta, aprobación, trazas y límites conocidos
   revision_manual.json     revisión manual de 10 casos con la rúbrica de tres preguntas
   limites_metrica.md       límites conocidos de la métrica y recomendación de uso

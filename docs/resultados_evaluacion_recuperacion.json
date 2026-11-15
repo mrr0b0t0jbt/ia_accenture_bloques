@@ -1,0 +1,865 @@
+{
+  "nota_costo": "Solo se gastan embeddings de consultas de Gemini (una petición por consulta); el proyecto no tiene el precio de gemini-embedding-001, por eso no se estima un costo en dólares. No se llama a Claude.",
+  "fecha": "2026-11-14",
+  "configuracion": {
+    "k": 3,
+    "k_maximo": 5,
+    "repeticiones": 2,
+    "chunk_size": 200,
+    "chunk_overlap": 30,
+    "coleccion": "corpus_miniapp",
+    "modelo_embeddings": "gemini-embedding-001",
+    "casos": 14,
+    "chunks_en_el_indice": 29
+  },
+  "consultas_de_embeddings": 28,
+  "interrumpido": false,
+  "incompleto": false,
+  "error": null,
+  "determinista": true,
+  "max_dif_distancia": 0.0,
+  "nota_metodo": "Las etiquetas se hicieron leyendo el corpus antes de ver lo que devuelve el retriever; los promedios de precisión, exhaustividad y F1 son solo sobre los casos respondibles y los casos sin respuesta se reportan aparte (ver el docstring de metricas_recuperacion).",
+  "promedios_respondibles": {
+    "1": {
+      "precision": 0.8181818181818182,
+      "exhaustividad": 0.8181818181818182,
+      "f1": 0.8181818181818182
+    },
+    "2": {
+      "precision": 0.45454545454545453,
+      "exhaustividad": 0.8636363636363636,
+      "f1": 0.5909090909090909
+    },
+    "3": {
+      "precision": 0.303030303030303,
+      "exhaustividad": 0.8636363636363636,
+      "f1": 0.4454545454545455
+    },
+    "4": {
+      "precision": 0.25,
+      "exhaustividad": 0.9545454545454546,
+      "f1": 0.393939393939394
+    },
+    "5": {
+      "precision": 0.2,
+      "exhaustividad": 0.9545454545454546,
+      "f1": 0.329004329004329
+    }
+  },
+  "sin_respuesta": [
+    {
+      "id": "q7_sin_respuesta_presupuesto",
+      "ids_recuperados": [
+        "guia_respaldos_0",
+        "politica_contrasenas_mfa_0",
+        "politica_parcheo_0"
+      ],
+      "distancia_minima": 0.501989
+    },
+    {
+      "id": "q8_sin_respuesta_moviles",
+      "ids_recuperados": [
+        "aviso_cve_2099_10001_2",
+        "aviso_cve_2099_10002_2",
+        "politica_parcheo_1"
+      ],
+      "distancia_minima": 0.496438
+    },
+    {
+      "id": "q14_sin_respuesta_proveedor",
+      "ids_recuperados": [
+        "guia_respaldos_0",
+        "politica_contrasenas_mfa_0",
+        "politica_parcheo_0"
+      ],
+      "distancia_minima": 0.491304
+    }
+  ],
+  "por_caso": [
+    {
+      "id": "q1_plazo_critico_cola",
+      "pregunta": "¿En cuánto tiempo hay que mitigar la vulnerabilidad de la cola de mensajes?",
+      "respondible": true,
+      "ids_relevantes": [
+        "aviso_cve_2099_10002_2",
+        "politica_parcheo_0"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "id": "aviso_cve_2099_10002_1",
+          "distancia": 0.419548
+        },
+        {
+          "rango": 2,
+          "id": "aviso_cve_2099_10002_2",
+          "distancia": 0.426323
+        },
+        {
+          "rango": 3,
+          "id": "aviso_cve_2099_10001_2",
+          "distancia": 0.508344
+        },
+        {
+          "rango": 4,
+          "id": "politica_parcheo_1",
+          "distancia": 0.518961
+        },
+        {
+          "rango": 5,
+          "id": "aviso_cve_2099_10002_0",
+          "distancia": 0.580661
+        }
+      ],
+      "metricas": {
+        "1": {
+          "precision": 0.0,
+          "exhaustividad": 0.0,
+          "f1": 0.0
+        },
+        "2": {
+          "precision": 0.5,
+          "exhaustividad": 0.5,
+          "f1": 0.5
+        },
+        "3": {
+          "precision": 0.3333333333333333,
+          "exhaustividad": 0.5,
+          "f1": 0.4
+        },
+        "4": {
+          "precision": 0.25,
+          "exhaustividad": 0.5,
+          "f1": 0.3333333333333333
+        },
+        "5": {
+          "precision": 0.2,
+          "exhaustividad": 0.5,
+          "f1": 0.28571428571428575
+        }
+      }
+    },
+    {
+      "id": "q2_parafrasis_trafico",
+      "pregunta": "Un servidor empezó a mandar información a un lugar que no conocemos, ¿qué hago primero?",
+      "respondible": true,
+      "ids_relevantes": [
+        "playbook_trafico_saliente_0"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "id": "playbook_trafico_saliente_0",
+          "distancia": 0.332115
+        },
+        {
+          "rango": 2,
+          "id": "playbook_trafico_saliente_1",
+          "distancia": 0.525772
+        },
+        {
+          "rango": 3,
+          "id": "aviso_cve_2099_10001_1",
+          "distancia": 0.630519
+        },
+        {
+          "rango": 4,
+          "id": "playbook_phishing_1",
+          "distancia": 0.643598
+        },
+        {
+          "rango": 5,
+          "id": "aviso_cve_2099_10002_1",
+          "distancia": 0.646464
+        }
+      ],
+      "metricas": {
+        "1": {
+          "precision": 1.0,
+          "exhaustividad": 1.0,
+          "f1": 1.0
+        },
+        "2": {
+          "precision": 0.5,
+          "exhaustividad": 1.0,
+          "f1": 0.6666666666666666
+        },
+        "3": {
+          "precision": 0.3333333333333333,
+          "exhaustividad": 1.0,
+          "f1": 0.5
+        },
+        "4": {
+          "precision": 0.25,
+          "exhaustividad": 1.0,
+          "f1": 0.4
+        },
+        "5": {
+          "precision": 0.2,
+          "exhaustividad": 1.0,
+          "f1": 0.33333333333333337
+        }
+      }
+    },
+    {
+      "id": "q3_phishing_clave",
+      "pregunta": "Alguien hizo clic en un enlace de un correo raro y escribió su clave, ¿qué sigue?",
+      "respondible": true,
+      "ids_relevantes": [
+        "playbook_phishing_1"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "id": "playbook_phishing_1",
+          "distancia": 0.446485
+        },
+        {
+          "rango": 2,
+          "id": "playbook_phishing_0",
+          "distancia": 0.583812
+        },
+        {
+          "rango": 3,
+          "id": "politica_contrasenas_mfa_1",
+          "distancia": 0.627269
+        },
+        {
+          "rango": 4,
+          "id": "playbook_phishing_2",
+          "distancia": 0.643465
+        },
+        {
+          "rango": 5,
+          "id": "aviso_cve_2099_10001_1",
+          "distancia": 0.645562
+        }
+      ],
+      "metricas": {
+        "1": {
+          "precision": 1.0,
+          "exhaustividad": 1.0,
+          "f1": 1.0
+        },
+        "2": {
+          "precision": 0.5,
+          "exhaustividad": 1.0,
+          "f1": 0.6666666666666666
+        },
+        "3": {
+          "precision": 0.3333333333333333,
+          "exhaustividad": 1.0,
+          "f1": 0.5
+        },
+        "4": {
+          "precision": 0.25,
+          "exhaustividad": 1.0,
+          "f1": 0.4
+        },
+        "5": {
+          "precision": 0.2,
+          "exhaustividad": 1.0,
+          "f1": 0.33333333333333337
+        }
+      }
+    },
+    {
+      "id": "q4_perdida_datos",
+      "pregunta": "¿Cuántos datos podemos perder como máximo si falla la facturación?",
+      "respondible": true,
+      "ids_relevantes": [
+        "guia_respaldos_1"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "id": "guia_respaldos_1",
+          "distancia": 0.529293
+        },
+        {
+          "rango": 2,
+          "id": "guia_respaldos_0",
+          "distancia": 0.695327
+        },
+        {
+          "rango": 3,
+          "id": "agente_limites_trazas_0",
+          "distancia": 0.718413
+        },
+        {
+          "rango": 4,
+          "id": "agente_aprobacion_humana_1",
+          "distancia": 0.722903
+        },
+        {
+          "rango": 5,
+          "id": "politica_contrasenas_mfa_2",
+          "distancia": 0.730886
+        }
+      ],
+      "metricas": {
+        "1": {
+          "precision": 1.0,
+          "exhaustividad": 1.0,
+          "f1": 1.0
+        },
+        "2": {
+          "precision": 0.5,
+          "exhaustividad": 1.0,
+          "f1": 0.6666666666666666
+        },
+        "3": {
+          "precision": 0.3333333333333333,
+          "exhaustividad": 1.0,
+          "f1": 0.5
+        },
+        "4": {
+          "precision": 0.25,
+          "exhaustividad": 1.0,
+          "f1": 0.4
+        },
+        "5": {
+          "precision": 0.2,
+          "exhaustividad": 1.0,
+          "f1": 0.33333333333333337
+        }
+      }
+    },
+    {
+      "id": "q5_agente_sin_respuesta",
+      "pregunta": "¿Qué pasa si nadie responde cuando el agente pide aprobación para aislar un host?",
+      "respondible": true,
+      "ids_relevantes": [
+        "agente_aprobacion_humana_1"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "id": "agente_aprobacion_humana_0",
+          "distancia": 0.427473
+        },
+        {
+          "rango": 2,
+          "id": "aviso_cve_2099_10002_2",
+          "distancia": 0.523445
+        },
+        {
+          "rango": 3,
+          "id": "agente_aprobacion_humana_2",
+          "distancia": 0.548996
+        },
+        {
+          "rango": 4,
+          "id": "agente_aprobacion_humana_1",
+          "distancia": 0.568919
+        },
+        {
+          "rango": 5,
+          "id": "playbook_trafico_saliente_2",
+          "distancia": 0.58788
+        }
+      ],
+      "metricas": {
+        "1": {
+          "precision": 0.0,
+          "exhaustividad": 0.0,
+          "f1": 0.0
+        },
+        "2": {
+          "precision": 0.0,
+          "exhaustividad": 0.0,
+          "f1": 0.0
+        },
+        "3": {
+          "precision": 0.0,
+          "exhaustividad": 0.0,
+          "f1": 0.0
+        },
+        "4": {
+          "precision": 0.25,
+          "exhaustividad": 1.0,
+          "f1": 0.4
+        },
+        "5": {
+          "precision": 0.2,
+          "exhaustividad": 1.0,
+          "f1": 0.33333333333333337
+        }
+      }
+    },
+    {
+      "id": "q6_nivel_s1",
+      "pregunta": "¿Qué significa que un incidente sea S1 y en cuánto tiempo se atiende?",
+      "respondible": true,
+      "ids_relevantes": [
+        "clasificacion_incidentes_0"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "id": "clasificacion_incidentes_0",
+          "distancia": 0.378715
+        },
+        {
+          "rango": 2,
+          "id": "clasificacion_incidentes_1",
+          "distancia": 0.41912
+        },
+        {
+          "rango": 3,
+          "id": "politica_parcheo_1",
+          "distancia": 0.614537
+        },
+        {
+          "rango": 4,
+          "id": "aviso_cve_2099_10002_2",
+          "distancia": 0.641457
+        },
+        {
+          "rango": 5,
+          "id": "aviso_cve_2099_10001_2",
+          "distancia": 0.659732
+        }
+      ],
+      "metricas": {
+        "1": {
+          "precision": 1.0,
+          "exhaustividad": 1.0,
+          "f1": 1.0
+        },
+        "2": {
+          "precision": 0.5,
+          "exhaustividad": 1.0,
+          "f1": 0.6666666666666666
+        },
+        "3": {
+          "precision": 0.3333333333333333,
+          "exhaustividad": 1.0,
+          "f1": 0.5
+        },
+        "4": {
+          "precision": 0.25,
+          "exhaustividad": 1.0,
+          "f1": 0.4
+        },
+        "5": {
+          "precision": 0.2,
+          "exhaustividad": 1.0,
+          "f1": 0.33333333333333337
+        }
+      }
+    },
+    {
+      "id": "q7_sin_respuesta_presupuesto",
+      "pregunta": "¿Cuál es el presupuesto anual de seguridad de Taller Aurora?",
+      "respondible": false,
+      "ids_relevantes": [],
+      "recuperados": [
+        {
+          "rango": 1,
+          "id": "guia_respaldos_0",
+          "distancia": 0.501989
+        },
+        {
+          "rango": 2,
+          "id": "politica_contrasenas_mfa_0",
+          "distancia": 0.541446
+        },
+        {
+          "rango": 3,
+          "id": "politica_parcheo_0",
+          "distancia": 0.574882
+        },
+        {
+          "rango": 4,
+          "id": "playbook_phishing_0",
+          "distancia": 0.667592
+        },
+        {
+          "rango": 5,
+          "id": "aviso_cve_2099_10001_0",
+          "distancia": 0.691382
+        }
+      ],
+      "metricas": null
+    },
+    {
+      "id": "q8_sin_respuesta_moviles",
+      "pregunta": "¿Cuál es el plazo para parchear los teléfonos móviles de la empresa?",
+      "respondible": false,
+      "ids_relevantes": [],
+      "recuperados": [
+        {
+          "rango": 1,
+          "id": "aviso_cve_2099_10001_2",
+          "distancia": 0.496438
+        },
+        {
+          "rango": 2,
+          "id": "aviso_cve_2099_10002_2",
+          "distancia": 0.54957
+        },
+        {
+          "rango": 3,
+          "id": "politica_parcheo_1",
+          "distancia": 0.559099
+        },
+        {
+          "rango": 4,
+          "id": "politica_parcheo_2",
+          "distancia": 0.630886
+        },
+        {
+          "rango": 5,
+          "id": "politica_parcheo_0",
+          "distancia": 0.64474
+        }
+      ],
+      "metricas": null
+    },
+    {
+      "id": "q9_mitigacion_panel",
+      "pregunta": "¿Qué hay que hacer con el Panel Faro mientras no se corrija la fuga de datos?",
+      "respondible": true,
+      "ids_relevantes": [
+        "aviso_cve_2099_10001_1"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "id": "aviso_cve_2099_10001_1",
+          "distancia": 0.38772
+        },
+        {
+          "rango": 2,
+          "id": "aviso_cve_2099_10001_0",
+          "distancia": 0.473145
+        },
+        {
+          "rango": 3,
+          "id": "aviso_cve_2099_10002_2",
+          "distancia": 0.674257
+        },
+        {
+          "rango": 4,
+          "id": "playbook_trafico_saliente_0",
+          "distancia": 0.68274
+        },
+        {
+          "rango": 5,
+          "id": "aviso_cve_2099_10001_2",
+          "distancia": 0.685345
+        }
+      ],
+      "metricas": {
+        "1": {
+          "precision": 1.0,
+          "exhaustividad": 1.0,
+          "f1": 1.0
+        },
+        "2": {
+          "precision": 0.5,
+          "exhaustividad": 1.0,
+          "f1": 0.6666666666666666
+        },
+        "3": {
+          "precision": 0.3333333333333333,
+          "exhaustividad": 1.0,
+          "f1": 0.5
+        },
+        "4": {
+          "precision": 0.25,
+          "exhaustividad": 1.0,
+          "f1": 0.4
+        },
+        "5": {
+          "precision": 0.2,
+          "exhaustividad": 1.0,
+          "f1": 0.33333333333333337
+        }
+      }
+    },
+    {
+      "id": "q10_excepcion_parcheo",
+      "pregunta": "¿Quién puede aprobar una excepción a los plazos de parcheo y por cuánto tiempo?",
+      "respondible": true,
+      "ids_relevantes": [
+        "politica_parcheo_2"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "id": "politica_parcheo_2",
+          "distancia": 0.502639
+        },
+        {
+          "rango": 2,
+          "id": "aviso_cve_2099_10002_2",
+          "distancia": 0.540154
+        },
+        {
+          "rango": 3,
+          "id": "aviso_cve_2099_10001_2",
+          "distancia": 0.560126
+        },
+        {
+          "rango": 4,
+          "id": "politica_parcheo_1",
+          "distancia": 0.618642
+        },
+        {
+          "rango": 5,
+          "id": "politica_parcheo_0",
+          "distancia": 0.695472
+        }
+      ],
+      "metricas": {
+        "1": {
+          "precision": 1.0,
+          "exhaustividad": 1.0,
+          "f1": 1.0
+        },
+        "2": {
+          "precision": 0.5,
+          "exhaustividad": 1.0,
+          "f1": 0.6666666666666666
+        },
+        "3": {
+          "precision": 0.3333333333333333,
+          "exhaustividad": 1.0,
+          "f1": 0.5
+        },
+        "4": {
+          "precision": 0.25,
+          "exhaustividad": 1.0,
+          "f1": 0.4
+        },
+        "5": {
+          "precision": 0.2,
+          "exhaustividad": 1.0,
+          "f1": 0.33333333333333337
+        }
+      }
+    },
+    {
+      "id": "q11_mfa_obligatorio",
+      "pregunta": "¿En qué servicios es obligatorio el segundo factor de autenticación?",
+      "respondible": true,
+      "ids_relevantes": [
+        "politica_contrasenas_mfa_0"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "id": "politica_contrasenas_mfa_0",
+          "distancia": 0.559952
+        },
+        {
+          "rango": 2,
+          "id": "politica_contrasenas_mfa_1",
+          "distancia": 0.661895
+        },
+        {
+          "rango": 3,
+          "id": "politica_contrasenas_mfa_2",
+          "distancia": 0.728706
+        },
+        {
+          "rango": 4,
+          "id": "playbook_phishing_1",
+          "distancia": 0.763785
+        },
+        {
+          "rango": 5,
+          "id": "guia_respaldos_0",
+          "distancia": 0.76404
+        }
+      ],
+      "metricas": {
+        "1": {
+          "precision": 1.0,
+          "exhaustividad": 1.0,
+          "f1": 1.0
+        },
+        "2": {
+          "precision": 0.5,
+          "exhaustividad": 1.0,
+          "f1": 0.6666666666666666
+        },
+        "3": {
+          "precision": 0.3333333333333333,
+          "exhaustividad": 1.0,
+          "f1": 0.5
+        },
+        "4": {
+          "precision": 0.25,
+          "exhaustividad": 1.0,
+          "f1": 0.4
+        },
+        "5": {
+          "precision": 0.2,
+          "exhaustividad": 1.0,
+          "f1": 0.33333333333333337
+        }
+      }
+    },
+    {
+      "id": "q12_prueba_restauracion",
+      "pregunta": "¿Cada cuánto se comprueba que las copias de seguridad se pueden restaurar de verdad?",
+      "respondible": true,
+      "ids_relevantes": [
+        "guia_respaldos_1"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "id": "guia_respaldos_1",
+          "distancia": 0.535958
+        },
+        {
+          "rango": 2,
+          "id": "guia_respaldos_0",
+          "distancia": 0.560231
+        },
+        {
+          "rango": 3,
+          "id": "agente_limites_trazas_1",
+          "distancia": 0.703967
+        },
+        {
+          "rango": 4,
+          "id": "politica_parcheo_1",
+          "distancia": 0.725145
+        },
+        {
+          "rango": 5,
+          "id": "playbook_phishing_1",
+          "distancia": 0.726988
+        }
+      ],
+      "metricas": {
+        "1": {
+          "precision": 1.0,
+          "exhaustividad": 1.0,
+          "f1": 1.0
+        },
+        "2": {
+          "precision": 0.5,
+          "exhaustividad": 1.0,
+          "f1": 0.6666666666666666
+        },
+        "3": {
+          "precision": 0.3333333333333333,
+          "exhaustividad": 1.0,
+          "f1": 0.5
+        },
+        "4": {
+          "precision": 0.25,
+          "exhaustividad": 1.0,
+          "f1": 0.4
+        },
+        "5": {
+          "precision": 0.2,
+          "exhaustividad": 1.0,
+          "f1": 0.33333333333333337
+        }
+      }
+    },
+    {
+      "id": "q13_tope_gasto_agente",
+      "pregunta": "¿Cuánto es el gasto máximo permitido en una corrida real del agente?",
+      "respondible": true,
+      "ids_relevantes": [
+        "agente_limites_trazas_0"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "id": "agente_limites_trazas_0",
+          "distancia": 0.32862
+        },
+        {
+          "rango": 2,
+          "id": "agente_aprobacion_humana_2",
+          "distancia": 0.501263
+        },
+        {
+          "rango": 3,
+          "id": "agente_aprobacion_humana_1",
+          "distancia": 0.627482
+        },
+        {
+          "rango": 4,
+          "id": "agente_aprobacion_humana_0",
+          "distancia": 0.686942
+        },
+        {
+          "rango": 5,
+          "id": "politica_parcheo_1",
+          "distancia": 0.738029
+        }
+      ],
+      "metricas": {
+        "1": {
+          "precision": 1.0,
+          "exhaustividad": 1.0,
+          "f1": 1.0
+        },
+        "2": {
+          "precision": 0.5,
+          "exhaustividad": 1.0,
+          "f1": 0.6666666666666666
+        },
+        "3": {
+          "precision": 0.3333333333333333,
+          "exhaustividad": 1.0,
+          "f1": 0.5
+        },
+        "4": {
+          "precision": 0.25,
+          "exhaustividad": 1.0,
+          "f1": 0.4
+        },
+        "5": {
+          "precision": 0.2,
+          "exhaustividad": 1.0,
+          "f1": 0.33333333333333337
+        }
+      }
+    },
+    {
+      "id": "q14_sin_respuesta_proveedor",
+      "pregunta": "¿Qué proveedor de nube aloja los sistemas de Taller Aurora?",
+      "respondible": false,
+      "ids_relevantes": [],
+      "recuperados": [
+        {
+          "rango": 1,
+          "id": "guia_respaldos_0",
+          "distancia": 0.491304
+        },
+        {
+          "rango": 2,
+          "id": "politica_contrasenas_mfa_0",
+          "distancia": 0.577081
+        },
+        {
+          "rango": 3,
+          "id": "politica_parcheo_0",
+          "distancia": 0.633619
+        },
+        {
+          "rango": 4,
+          "id": "aviso_cve_2099_10001_0",
+          "distancia": 0.719907
+        },
+        {
+          "rango": 5,
+          "id": "playbook_phishing_0",
+          "distancia": 0.726172
+        }
+      ],
+      "metricas": null
+    }
+  ]
+}
