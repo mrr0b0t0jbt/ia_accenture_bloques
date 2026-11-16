@@ -1,0 +1,22 @@
+[
+  {
+    "id": "q1_plazo_critico_cola",
+    "pregunta": "¿En cuánto tiempo hay que mitigar la vulnerabilidad de la cola de mensajes?"
+  },
+  {
+    "id": "q2_parafrasis_trafico",
+    "pregunta": "Un servidor empezó a mandar información a un lugar que no conocemos, ¿qué hago primero?"
+  },
+  {
+    "id": "q4_perdida_datos",
+    "pregunta": "¿Cuántos datos podemos perder como máximo si falla la facturación?"
+  },
+  {
+    "id": "q5_agente_sin_respuesta",
+    "pregunta": "¿Qué pasa si nadie responde cuando el agente pide aprobación para aislar un host?"
+  },
+  {
+    "id": "q6_nivel_s1",
+    "pregunta": "¿Qué significa que un incidente sea S1 y en cuánto tiempo se atiende?"
+  }
+]

@@ -25,6 +25,12 @@ def test_escribe_los_resultados_de_evaluacion():
         archivo.write("{}\\n")
 
 
+def test_escribe_los_registros_de_latencia():
+    os.makedirs("docs", exist_ok=True)
+    with open("docs/registros_latencia_costo.jsonl", "a") as archivo:
+        archivo.write("{}\\n")
+
+
 def test_inocua():
     assert True
 '''
@@ -49,5 +55,7 @@ def test_los_dos_guardianes_autouse_fallan_cuando_una_prueba_escribe_donde_no_de
     assert "La prueba escribió en trazas/trazas_agente.jsonl" in salida
     assert "ERROR test_ajenas.py::test_escribe_los_resultados_de_evaluacion" in salida
     assert "La prueba escribió en docs/resultados_evaluacion_recuperacion.json" in salida
+    assert "ERROR test_ajenas.py::test_escribe_los_registros_de_latencia" in salida
+    assert "La prueba escribió en docs/registros_latencia_costo.jsonl" in salida
     assert "PASSED test_ajenas.py::test_inocua" in salida
     assert "ERROR test_ajenas.py::test_inocua" not in salida
