@@ -51,6 +51,7 @@ CLAVES_REGISTRO = [
 HORA_1 = datetime.datetime(2026, 11, 16, 19, 30, 0, tzinfo=datetime.timezone.utc)
 HORA_2 = datetime.datetime(2026, 11, 16, 20, 15, 5, tzinfo=datetime.timezone.utc)
 TEXTO_LIMITE = embeddings_gemini.describir_error_api(RuntimeError("429 RESOURCE_EXHAUSTED"))[1]
+AHORA_REAL = medir._ahora
 
 
 @pytest.fixture(autouse=True)
@@ -283,6 +284,16 @@ def test_s7_flujo_feliz(tmp_path, monkeypatch, capsys, embeddings):
     assert list(tmp_path.glob("*.tmp")) == [] and list(tmp_path.glob("**/*.tmp")) == []
 
 
+def test_s7b_el_timestamp_es_utc_con_zona_sin_parchear_la_hora(tmp_path, monkeypatch, embeddings):
+    # mutante: datetime.now() sin zona
+    ahora = AHORA_REAL()
+    assert ahora.tzinfo is not None and ahora.utcoffset() == datetime.timedelta(0)
+    entorno = _preparar(tmp_path, monkeypatch, embeddings)
+    monkeypatch.setattr(medir, "_ahora", AHORA_REAL)
+    assert medir.main(_argv(entorno, "--ks", "3")) == 0
+    assert all(r["timestamp"].endswith("+00:00") for r in _lineas(entorno.salida))
+
+
 # S8
 def test_s8_una_segunda_corrida_anexa(tmp_path, monkeypatch, embeddings):
     entorno = _preparar(tmp_path, monkeypatch, embeddings)
@@ -323,6 +334,25 @@ def test_s10_el_tope_de_consultas_se_fuerza_en_ejecucion(tmp_path, monkeypatch, 
     assert len(peticiones) == 4 and len(_lineas(entorno.salida)) == 1
     assert "c1 k=3" in captura.out and "Consultas de embedding (incluidos reintentos): 4" in captura.out
     assert entorno.dormidas == [5, 10, 5]
+
+
+def test_s10b_el_mensaje_del_tope_es_el_texto_de_la_excepcion_y_no_el_generico(tmp_path, monkeypatch, capsys, embeddings):
+    # mutante: pasar el error por describir_error_api
+    monkeypatch.setattr(medir, "MAX_CONSULTAS_EMBEDDING", 4)
+    entorno = _preparar(tmp_path, monkeypatch, embeddings)
+    por_pregunta = {}
+
+    def falla(n, texto, original):
+        por_pregunta[texto] = por_pregunta.get(texto, 0) + 1
+        if por_pregunta[texto] <= 2:
+            raise RuntimeError("429 RESOURCE_EXHAUSTED")
+        return original(texto)
+
+    _guion_embedding(monkeypatch, embeddings, falla)
+    assert medir.main(_argv(entorno, "--ks", "3")) == 1
+    err = capsys.readouterr().err
+    assert err == "Error: se alcanzó el tope de 4 consultas de embedding; no se hicieron más peticiones.\n"
+    assert TEXTO_LIMITE not in err
 
 
 # S11

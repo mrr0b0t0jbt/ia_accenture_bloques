@@ -94,10 +94,10 @@ def _mensaje(contenido="Respuesta [1].", uso=None, metadata=None, con_uso=True, 
     return SimpleNamespace(**campos)
 
 
-def _registrar(vectorstore, embeddings, modelo, pregunta=PREGUNTA, k=3, contador=None, max_consultas=10, reloj=None):
+def _registrar(vectorstore, embeddings, modelo, pregunta=PREGUNTA, k=3, contador=None, max_consultas=10, reloj=None, max_tokens=512):
     return medicion_rag.registrar_consulta(
         "caso1", pregunta, k, vectorstore, embeddings, modelo, {"consultas": 0} if contador is None else contador,
-        max_consultas, PRECIOS, "20261116T193000Z", 512, reloj=reloj or _reloj_lineal(), ahora=lambda: FECHA, dormir=lambda s: None,
+        max_consultas, PRECIOS, "20261116T193000Z", max_tokens, reloj=reloj or _reloj_lineal(), ahora=lambda: FECHA, dormir=lambda s: None,
     )
 
 
@@ -205,6 +205,23 @@ def test_m8_registro_feliz_con_k3(vectorstore, embeddings):
 
 
 # M9
+def test_m8b_el_registro_guarda_el_max_tokens_recibido(vectorstore, embeddings):
+    # mutante: max_tokens fijo en 512
+    assert _registrar(vectorstore, embeddings, ModeloFalso(_mensaje()), max_tokens=256)["max_tokens"] == 256
+
+
+def test_m8c_reintentos_embed_cuenta_los_reintentos(vectorstore, embeddings):
+    # mutante: reintentos_embed siempre 0
+    def una_falla(n):
+        if n == 1:
+            raise RuntimeError("429 RESOURCE_EXHAUSTED")
+        return embeddings.embed_query(PREGUNTA)
+
+    con_falla = _registrar(vectorstore, EmbeddingGuionado(una_falla), ModeloFalso(_mensaje()))
+    sin_falla = _registrar(vectorstore, EmbeddingGuionado(lambda n: embeddings.embed_query(PREGUNTA)), ModeloFalso(_mensaje()))
+    assert con_falla["reintentos_embed"] == 1 and sin_falla["reintentos_embed"] == 0
+
+
 def test_m9_el_prompt_es_igual_al_de_construir_prompt(vectorstore, embeddings):
     modelo = ModeloFalso(_mensaje())
     _registrar(vectorstore, embeddings, modelo, k=4)
@@ -240,6 +257,13 @@ def test_m12_un_error_del_modelo_queda_en_el_registro(vectorstore, embeddings):
     assert registro["tiempos_ms"]["embed_query"] is not None and registro["tiempos_ms"]["busqueda_vectorial"] is not None
     assert registro["tiempo_total_ms"] == pytest.approx(registro["tiempos_ms"]["embed_query"] + registro["tiempos_ms"]["busqueda_vectorial"])
     assert registro["sin_datos_de_uso"] is False and registro["respuesta"] == ""
+
+
+def test_m12b_el_error_del_modelo_se_recorta_a_300_caracteres(vectorstore, embeddings):
+    # mutante: sin recorte
+    registro = _registrar(vectorstore, embeddings, ModeloFalso(error=RuntimeError("x" * 500)))
+    prefijo = "RuntimeError: "
+    assert registro["error"].startswith(prefijo) and len(registro["error"]) == len(prefijo) + 300
 
 
 # M13
@@ -364,6 +388,18 @@ def test_m20_resumir_ignora_errores_y_registros_sin_tokens():
     assert resumen["por_k"][3]["promedio_ms"]["embed_query"] == 100.0
     assert resumen["tokens_crecen_con_k"] == {"si": True, "casos_que_no_crecen": []}
     assert resumen["generacion_mas_lenta"] == {"si": 2, "total": 2}
+
+
+def test_m20c_un_empate_de_input_tokens_entre_dos_k_no_cuenta_como_crecimiento():
+    # mutante: >= en vez de >
+    empate = [_reg("E", 3, (1, 1, 1), 700, 10, 0.001), _reg("E", 6, (1, 1, 1), 700, 10, 0.001)]
+    assert medicion_rag.resumir(empate)["tokens_crecen_con_k"] == {"si": False, "casos_que_no_crecen": ["E"]}
+
+
+def test_m20d_los_promedios_se_redondean_a_2_decimales():
+    # mutante: round a 3 decimales
+    registros = [_reg(f"F{n}", 3, (t, 1, 1), 500, 100, 0.001) for n, t in enumerate((1.0, 1.0, 2.0))]
+    assert medicion_rag.resumir(registros)["por_k"][3]["promedio_ms"]["embed_query"] == 1.33
 
 
 def test_m20b_lista_vacia_y_un_solo_k():
