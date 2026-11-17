@@ -152,7 +152,7 @@ def test_p8_main_con_problemas_limpia_el_nombre_hostil(tmp_path, embeddings, cap
 
 
 # P9
-def test_p9_sin_apis_ni_env_y_sin_tocar_el_indice(tmp_path, embeddings, monkeypatch):
+def test_p9_sin_apis_ni_env_y_sin_crear_ni_borrar_archivos(tmp_path, embeddings, monkeypatch):
     directorio, args = _montar(tmp_path, embeddings)
     monkeypatch.setitem(sys.modules, "embeddings_gemini", None)
     monkeypatch.setitem(sys.modules, "langchain_google_genai", None)
@@ -167,3 +167,23 @@ def test_p9_sin_apis_ni_env_y_sin_tocar_el_indice(tmp_path, embeddings, monkeypa
     antes, archivos = _foto(directorio), sorted(p.name for p in tmp_path.iterdir())
     assert nuevo.main(["--directorio", args[0], "--corpus", args[2], "--gitignore", args[3]]) == 0
     assert _foto(directorio) == antes and sorted(p.name for p in tmp_path.iterdir()) == archivos
+
+
+def _chunks(directorio: Path) -> list[tuple[str, str]]:
+    """(id, documento) de todos los chunks, leídos con la misma biblioteca y colección que usa preflight_rag."""
+    cliente = preflight.chromadb.PersistentClient(
+        path=str(directorio), settings=preflight.Settings(anonymized_telemetry=False, is_persistent=True, persist_directory=str(directorio))
+    )
+    datos = cliente.get_collection(indexacion.COLECCION_POR_DEFECTO).get(include=["documents"])
+    return sorted(zip(datos["ids"], datos["documents"]))
+
+
+# P9b
+def test_p9b_el_preflight_no_cambia_los_ids_ni_los_documentos_del_indice(tmp_path, embeddings):
+    # mutante: un preflight que agregue o borre un chunk (no se compara el sha256 de chroma.sqlite3: Chroma reescribe bytes al abrirlo)
+    directorio, args = _montar(tmp_path, embeddings)
+    antes = _chunks(directorio)
+    assert len(antes) == len(CORPUS)
+    assert preflight.main(["--directorio", args[0], "--corpus", args[2], "--gitignore", args[3]]) == 0
+    despues = _chunks(directorio)
+    assert despues == antes and len(despues) == len(antes)

@@ -1,4 +1,5 @@
-"""Chequeo previo del flujo RAG SIN ninguna API: no usa embeddings ni claves, no lee .env y no modifica nada.
+"""Chequeo previo del flujo RAG SIN ninguna API: no usa embeddings ni claves, no lee .env, no crea ni borra archivos y no cambia los datos ni el conteo del índice.
+(Abrir la colección con Chroma reescribe unos bytes de chroma.sqlite3 y las fechas de modificación, igual que cualquier script que abre el índice.)
 
 Comprueba, en este orden: que el directorio del índice exista, que el corpus se cargue y se parta, que la colección
 de Chroma exista, no esté vacía y tenga EXACTAMENTE los chunks (conteo e ids) que produce el corpus, y que el .gitignore
@@ -73,7 +74,7 @@ def _esta_ignorado(directorio: str, lineas: list[str]) -> bool:
 
 
 def preflight_check(directorio: str, coleccion: str, corpus: str, gitignore: str) -> list[str]:
-    """Devuelve la lista de problemas (vacía si todo está en orden); no crea ni modifica nada."""
+    """Devuelve los problemas (vacía si todo está en orden): sin APIs ni .env, sin crear ni borrar archivos y sin cambiar los datos ni el conteo del índice; abrir Chroma reescribe unos bytes de chroma.sqlite3 y las fechas de modificación."""
     problemas = []
     ruta = indexacion.ruta_absoluta(directorio)
     hay_indice = os.path.isdir(ruta)

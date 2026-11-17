@@ -283,6 +283,8 @@ def main(argv: list[str] | None = None) -> int:
     informar(registros, contador["consultas"], sum(r["costo_estimado"] or 0.0 for r in registros))
     if codigo == 130:
         print("Interrumpido por la persona. Lo ya anexado se conserva.", file=sys.stderr)
+    if codigo == 0 and registros and all(r["error"] for r in registros):
+        return _error("todas las llamadas a Claude fallaron (ver el campo error de cada registro).")
     return codigo
 
 

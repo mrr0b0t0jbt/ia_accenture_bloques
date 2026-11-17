@@ -399,6 +399,31 @@ def test_s13_una_falla_del_modelo_no_detiene_la_corrida(tmp_path, monkeypatch, c
     assert "k=3 (3 registros)" in out and "k=6 (2 registros)" in out
 
 
+# S19
+def test_s19_si_todas_las_llamadas_a_claude_fallan_devuelve_1(tmp_path, monkeypatch, capsys, embeddings):
+    def siempre(n, prompt):
+        raise RuntimeError("fallo")
+
+    entorno = _preparar(tmp_path, monkeypatch, embeddings, guion=siempre)
+    assert medir.main(_argv(entorno, "--ks", "3")) == 1
+    captura = capsys.readouterr()
+    assert captura.err == "Error: todas las llamadas a Claude fallaron (ver el campo error de cada registro).\n"
+    assert captura.out.count("ERROR: RuntimeError: fallo") == 3 and "Llamadas a Claude: 3" in captura.out
+    assert [r["error"] for r in _lineas(entorno.salida)] == ["RuntimeError: fallo"] * 3
+
+
+def test_s19b_si_falla_solo_una_parte_sigue_devolviendo_0(tmp_path, monkeypatch, capsys, embeddings):
+    # variante de s13: 2 fallas de 3 (mutante: any en vez de all)
+    def guion(n, prompt):
+        if n != 2:
+            raise RuntimeError("fallo")
+        return _mensaje(len(prompt) // 4)
+
+    entorno = _preparar(tmp_path, monkeypatch, embeddings, guion=guion)
+    assert medir.main(_argv(entorno, "--ks", "3")) == 0
+    assert "todas las llamadas" not in capsys.readouterr().err
+
+
 # S14
 def test_s14_sin_datos_de_uso_detiene_la_corrida(tmp_path, monkeypatch, capsys, embeddings):
     entorno = _preparar(tmp_path, monkeypatch, embeddings, guion=lambda n, prompt: _mensaje(0 if n == 2 else 100, 0 if n == 2 else 10))
