@@ -479,6 +479,57 @@ python scripts/evaluar_recuperacion.py --confirmar-api-real --k 5 --repeticiones
 - El determinismo se comprobó con dos pasadas seguidas sobre el mismo índice, no entre días ni tras reindexar.
 - Si el guardado de un resultado falla (`OSError`) dentro del manejador de error, esa excepción sustituye al error original y no se avisa del parcial. Dos huecos de pruebas conocidos y aceptados: el texto exacto del mensaje del tope de consultas (sin esa rama el mensaje sale genérico, pero legible) y la validación de preguntas largas en un caso posterior al primero (`recuperar` ya las rechaza; el chequeo previo solo evita gastar consultas antes de fallar).
 
+## RAG: latencia y costo reales del flujo completo (Bloque 28)
+
+Mide cuánto tarda y cuánto cuesta una consulta RAG de punta a punta, por etapa: `src/medicion_rag.py` instrumenta `embed_query` (red, Gemini), `busqueda_vectorial` (local, Chroma) y `generacion` (red, Claude) con `time.perf_counter`, y `scripts/medir_latencia_costo.py` corre las consultas reales y anexa un registro por llamada a `docs/registros_latencia_costo.jsonl` (JSON Lines, archivo de solo anexar). Se embebe **una sola vez** por consulta y el vector se reutiliza en la búsqueda por vector (con `recuperar` el embed ocurre dentro de la búsqueda y no se podría separar); una prueba y una verificación con el cliente real contra un servidor falso comprueban que da los mismos ids que `recuperar`.
+
+**Desvíos respecto de la clase** (declarados): la generación es Claude y no Gemini; los precios del proyecto son USD **por token** (`api_claude_refactor`: USD 2 de entrada y 10 de salida por millón) y no por 1000 tokens; el costo de los embeddings no se estima (no se conoce el precio de `gemini-embedding-001`: se cuentan peticiones); el registro agrega `ids_recuperados`, `truncado`, `reintentos_embed`, `admite_falta_de_contexto` y la respuesta recortada a 1000 caracteres.
+
+**Cómo se ejecuta** (con costo en embeddings y en Claude):
+
+```
+python scripts/preflight_rag.py
+python scripts/medir_latencia_costo.py --confirmar-api-real
+python scripts/medir_latencia_costo.py --confirmar-api-real --ks 3,6 --max-tokens 512 --tope-usd 0.08
+```
+
+- Sin `--confirmar-api-real` sale con código 2 sin importar los clientes ni leer archivos. Topes en el código: 6 casos, 2 valores de k (cada uno de 1 a 6), 12 llamadas, 20 consultas de embedding forzadas en ejecución (los reintentos de un 429 cuentan) y tope de gasto de USD 0,08 que se comprueba antes de cada llamada a Claude (el gasto puede pasarse como máximo en lo que cuesta una llamada).
+- `--salida` es un archivo de solo anexar: si existe debe estar vacío o ser un JSONL de registros de este script; cualquier otro archivo se rechaza antes de gastar. Cada registro se anexa al instante, con una sola escritura.
+- Un error del embedding (límite, clave, tope) detiene la corrida con `Error:` y no deja línea para esa llamada. Un error de Claude queda en el campo `error` del registro y la corrida sigue. Si Claude devuelve el uso en cero (el cliente real no lo deja vacío) se anexa la línea con `sin_datos_de_uso`, la corrida se detiene y sale con 1 (sin uso no se controla el gasto). Con Ctrl-C lo ya anexado se conserva y sale con 130.
+- `scripts/preflight_rag.py` revisa sin API que el índice exista, que su conteo y sus ids coincidan con los chunks del corpus y que el directorio esté ignorado por git (lee el `.gitignore` por líneas: gana la última coincidencia y una negación la anula; la búsqueda de subcadena de la clase daría por bueno `vectorstore_viejo/`).
+
+**Primera corrida real** (2026-11-16, 5 preguntas de `JSON/casos_latencia_costo.json` x k = 3 y 6 = 10 llamadas, `--max-tokens 512`, tope USD 0,08; registro en [docs/registros_latencia_costo.jsonl](docs/registros_latencia_costo.jsonl)): 10 consultas de embedding y 10 llamadas a Claude, sin errores, sin uso faltante y sin respuestas cortadas. Costo estimado total USD 0,02409 (recalculado con los tokens del registro; se estimó entre 0,025 y 0,03 en el caso típico y 0,069 en el peor).
+
+| Pregunta | k | Embed (ms) | Búsqueda (ms) | Generación (ms) | Tokens (entrada / salida) | USD |
+|---|---|---|---|---|---|---|
+| q1_plazo_critico_cola | 3 | 1360,1 | 1,6 | 4508,7 | 395 / 428 | 0,00507 |
+| q1_plazo_critico_cola | 6 | 1222,8 | 1,5 | 1842,2 | 689 / 218 | 0,00356 |
+| q2_parafrasis_trafico | 3 | 409,0 | 1,3 | 9213,7 | 466 / 145 | 0,00238 |
+| q2_parafrasis_trafico | 6 | 1229,4 | 1,4 | 1943,8 | 706 / 183 | 0,00324 |
+| q4_perdida_datos | 3 | 1024,2 | 1,6 | 1021,4 | 474 / 41 | 0,00136 |
+| q4_perdida_datos | 6 | 386,2 | 1,5 | 1727,7 | 678 / 41 | 0,00177 |
+| q5_agente_sin_respuesta | 3 | 349,9 | 1,4 | 1424,0 | 412 / 21 | 0,00103 |
+| q5_agente_sin_respuesta | 6 | 409,8 | 1,3 | 1636,2 | 632 / 108 | 0,00234 |
+| q6_nivel_s1 | 3 | 325,9 | 1,7 | 1515,8 | 480 / 54 | 0,00150 |
+| q6_nivel_s1 | 6 | 410,1 | 1,4 | 1226,3 | 650 / 54 | 0,00184 |
+
+Promedios por k (5 registros cada uno): con k=3, embed 693,8 ms, búsqueda 1,5 ms, generación 3536,7 ms, 445,4 tokens de entrada y 137,8 de salida, USD 0,01134; con k=6, embed 731,7 ms, búsqueda 1,4 ms, generación 1675,3 ms, 671,0 de entrada y 120,8 de salida, USD 0,01275.
+
+- **`input_tokens` crece con k** en los 5 casos (en promedio un 51 %), pero el costo total sube solo un 12 %: en esta muestra la salida pesa más que la entrada (con k=3 la salida es el 61 % del costo; con k=6, el 47 %). Es la propiedad que pide la clase, y confirma que no se debe juzgar el costo por el tamaño del prompt.
+- **La generación fue la etapa más lenta en 9 de 10 registros**; la excepción es `q4` con k=3 (embed 1024,2 ms contra generación 1021,4 ms). La búsqueda local (1,3 a 1,7 ms) es de dos a tres órdenes de magnitud menor que las dos etapas de red. El embed real tarda entre 326 y 1360 ms, no los milisegundos del ejemplo de la clase; el más lento (1360,1 ms) fue el primero de la corrida, que incluye el establecimiento de la conexión.
+- **No se puede concluir que k cambie la latencia.** Con k=6 la generación promedió menos que con k=3 (1675 contra 3537 ms), pero es ruido: `q2` con k=3 tardó 9,2 s con solo 145 tokens de salida, y el tiempo de generación depende sobre todo de los tokens de salida y de la red (21 a 428 tokens de salida entre registros). Hay una sola medición por combinación.
+- **`q5_agente_sin_respuesta` es el caso más claro.** Con k=3 el chunk con la respuesta (`agente_aprobacion_humana_1`) no entra y Claude responde "El contexto no alcanza para responder esa pregunta." (21 tokens de salida, USD 0,00103); con k=6 entra y responde correctamente con cita (108 tokens, USD 0,00234). La respuesta barata era la equivocada: menor costo no significa mejor resultado. Es la falla por chunk que midió el Bloque 27 vista en una respuesta real. En `q1` con k=6 entran los dos chunks etiquetados, incluido `politica_parcheo_0`, que no entraba con k=5 en la evaluación.
+- **La heurística `len // 4` de la clase subestima los tokens**: el conteo real fue entre 1,62 y 1,77 veces el aproximado en las 10 llamadas (por ejemplo 395 reales contra 237 aproximados en `q1` con k=3), es decir, unos 2,4 caracteres por token con texto en español y Claude. Sirve para estimar el orden de magnitud, no el costo; para el costo se usa el conteo de la API.
+
+**Límites conocidos de la medición** (de método, salvo los marcados como verificación):
+
+- Una sola medición por (pregunta, k): la latencia de red varía entre corridas y los valores son un orden de magnitud, no estadística. La primera llamada de la corrida incluye el establecimiento de la conexión.
+- El tiempo de generación incluye los reintentos del SDK de Anthropic (`max_retries=2`) si los hubo, sin marcarlo en el registro (no hubo ninguno en la corrida real). Con un 500 persistente cada llamada del script son 3 peticiones HTTP; el tope de llamadas no las cuenta.
+- El costo de Claude es una estimación con los precios del proyecto, no contrastada con la consola de Anthropic; el costo de los embeddings no se estima. La muestra son 5 preguntas del corpus propio, con respuestas de entre 21 y 428 tokens.
+- Si todas las llamadas a Claude fallan, el script deja las líneas con `error` pero **termina con código 0** (verificado con un servidor falso con 500): conviene mirar el campo `error` o el informe antes de dar la corrida por buena.
+- `preflight_rag.py` no modifica datos ni el conteo del índice, pero **no es de solo lectura**: abrir la colección con Chroma reescribe unos bytes de `chroma.sqlite3` (cambia su hash; verificado en una copia y en el índice real) y las fechas de los `.bin`, igual que hace cualquier script que abre el índice. La prueba que lo cubre solo compara nombres y tamaños de archivos.
+- Huecos de pruebas conocidos y aceptados (mutantes vivos de la verificación): la zona horaria del `timestamp` (se parchea la hora en las pruebas), `max_tokens` y `reintentos_embed` dentro del registro, el recorte a 300 caracteres del error del modelo, el texto exacto del mensaje del tope de consultas, el empate de `input_tokens` entre dos k y los decimales de los promedios.
+
 ## Ensayo real de rate limit
 
 Envía N peticiones seguidas a Claude pidiendo una respuesta de una sola palabra, para intentar provocar un 429 real del proveedor. Registra la petición del primer 429, las esperas del backoff, las llamadas HTTP y el costo:
@@ -560,6 +611,7 @@ src/
   indexacion.py            carga y valida el corpus, lo parte en chunks con ids deterministas e indexa en Chroma de forma idempotente
   recuperacion.py          recuperación con distancia, contexto numerado, prompt que trata el contexto como datos y verificación de citas
   metricas_recuperacion.py precisión, exhaustividad y F1 de la recuperación por chunk y validación de los casos de evaluación
+  medicion_rag.py          mide la latencia por etapa (embed, búsqueda, generación) y el costo de una consulta RAG y resume los registros
 scripts/
   ensayo_rate_limit_simulado.py  ensayo de rate limit simulado con mocks
   ejecutar_pipeline.py           pipeline de texto sobre respuestas reales de Claude (con costo)
@@ -571,6 +623,8 @@ scripts/
   indexar_corpus.py              revisa (sin API) o indexa el corpus en Chroma con embeddings de Gemini
   consultar_corpus.py            recuperación semántica con embeddings de Gemini y respuestas de Claude con citas verificadas (con costo)
   evaluar_recuperacion.py        evalúa la recuperación por chunk con embeddings de Gemini, sin llamar a Claude (con costo en embeddings)
+  medir_latencia_costo.py        mide la latencia por etapa y el costo del flujo RAG con Gemini y Claude y anexa un registro por llamada (con costo)
+  preflight_rag.py               revisa sin API el índice (conteo e ids contra el corpus) y que el directorio esté ignorado por git
 test/
   unit/test_api_claude_refactor.py     pruebas unitarias con mocks
   unit/test_api_gemini.py              pruebas minimas del manejo de errores del cliente Gemini, con mocks
@@ -594,9 +648,9 @@ test/
   unit/test_trazas.py                  pruebas de las trazas, su lectura validada y su revisión
   unit/test_limites_autonomia.py       pruebas que cruzan el documento de límites con el código
   unit/test_conftest_guardian.py       prueba del guardián que impide que la suite escriba en las trazas reales
-  unit/conftest.py                     guardianes automáticos: fallan una prueba que escriba en trazas/trazas_agente.jsonl, en vectorstore/ o en docs/resultados_evaluacion_recuperacion.json
+  unit/conftest.py                     guardianes automáticos: fallan una prueba que escriba en trazas/trazas_agente.jsonl, en vectorstore/, en docs/resultados_evaluacion_recuperacion.json o en docs/registros_latencia_costo.jsonl
   unit/test_conftest_guardian.py       pruebas de las funciones que miden el estado de trazas/ y vectorstore/
-  unit/test_guardianes.py              prueba, en un pytest aparte, que los tres guardianes fallan de verdad
+  unit/test_guardianes.py              prueba, en un pytest aparte, que los cuatro guardianes fallan de verdad
   unit/embeddings_falsos.py            embeddings falsos por tema para probar el orden de recuperación (sin pruebas propias)
   unit/test_indexacion.py              pruebas de la indexación con Chroma real y embeddings falsos
   unit/test_indexar_corpus.py          pruebas del script de indexación (modo revisión, errores de la API)
@@ -604,6 +658,9 @@ test/
   unit/test_consultar_corpus.py        pruebas del script de consulta, con un modelo falso
   unit/test_metricas_recuperacion.py   pruebas de las métricas por chunk, los casos de evaluación y su coherencia con el corpus
   unit/test_evaluar_recuperacion.py    pruebas del script de evaluación (Chroma real, embeddings falsos, topes, fallos y resultados parciales)
+  unit/test_medicion_rag.py            pruebas de la medición por etapa, los registros, el costo, el uso faltante y el resumen
+  unit/test_medir_latencia_costo.py    pruebas del script de medición (Chroma real, embeddings y modelo falsos, topes, fallos y archivo de solo anexar)
+  unit/test_preflight_rag.py           pruebas del chequeo previo del flujo RAG, sin API
   test_consistencia.py         prueba de consistencia con Claude
   test_consistencia_gemini.py  misma prueba con Gemini (comparativa)
 JSON/
@@ -618,6 +675,7 @@ JSON/
   corpus_miniapp.json              10 documentos ficticios de Taller Aurora para el RAG
   casos_recuperacion.json          8 preguntas del RAG (6 con respuesta en el corpus y 2 sin ella)
   evaluacion_recuperacion.json     14 casos de evaluación con los chunks relevantes etiquetados (11 con respuesta y 3 sin ella)
+  casos_latencia_costo.json        5 preguntas de la medición de latencia y costo del RAG
 docs/                      decisión de arquitectura, diagrama y evidencias
   registro_rate_limit.md   registro del ensayo de rate limit (simulado)
   registro_pipeline.md     registro del pipeline de texto (se genera al correr el script)
@@ -629,6 +687,7 @@ docs/                      decisión de arquitectura, diagrama y evidencias
   resultados_agente_v2.json  resultados de la segunda corrida real, 10 turnos y una aprobación interactiva
   resultados_recuperacion.json  resultados de la primera corrida real de la recuperación con citas
   resultados_evaluacion_recuperacion.json  resultados de la primera evaluación real de la recuperación por chunk (se genera al correr evaluar_recuperacion.py)
+  registros_latencia_costo.jsonl  registros de latencia y costo del flujo RAG, una línea por llamada (se anexa al correr medir_latencia_costo.py)
   limites_autonomia_agente.md  límites de autonomía del agente: riesgo por herramienta, aprobación, trazas y límites conocidos
   revision_manual.json     revisión manual de 10 casos con la rúbrica de tres preguntas
   limites_metrica.md       límites conocidos de la métrica y recomendación de uso
