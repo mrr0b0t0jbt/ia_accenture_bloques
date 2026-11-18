@@ -128,3 +128,46 @@ def test_p9_no_escribe_nada(tmp_path, monkeypatch):
     assert preparar.main(["--demostrar-validador"]) == 0
     assert list(tmp_path.iterdir()) == []
     assert RUTA_DATASET.read_text(encoding="utf-8") == antes
+
+
+# I2
+def _reasignar(datos, clave, asignacion):
+    """Pone en cada ejemplo i el valor asignacion(i) de la clave de salida."""
+    for i, ejemplo in enumerate(datos["ejemplos"]):
+        ejemplo["salida"][clave] = asignacion(i)
+
+
+def _sin_vulnerabilidad(datos):
+    for ejemplo in datos["ejemplos"]:
+        if ejemplo["salida"]["categoria"] == "vulnerabilidad":
+            ejemplo["salida"]["categoria"] = "consulta"
+
+
+def test_i2_g8_imprime_los_avisos(tmp_path, capsys):
+    def cambiar(datos):  # 21 incidente, 2 consulta, 1 vulnerabilidad: razon 21/1
+        _reasignar(datos, "categoria", lambda i: "vulnerabilidad" if i == 21 else "consulta" if i > 21 else "incidente")
+
+    assert preparar.main(["--dataset", _escribir_dataset(tmp_path, cambiar)]) == 0
+    salida = capsys.readouterr().out
+    assert "  razon max/min: 21.0x" in salida
+    assert "aviso: la razon max/min de categoria es 21.0x (mayor que 2.0)" in salida
+
+
+def test_i2_g9_categoria_sin_ejemplos(tmp_path, capsys):
+    preparar.main(["--dataset", _escribir_dataset(tmp_path, _sin_vulnerabilidad)])
+    lineas = capsys.readouterr().out.splitlines()
+    assert "  razon max/min: n/d" in lineas
+    assert "aviso: categoria no tiene ejemplos de: vulnerabilidad" in lineas
+
+
+def test_i2_g10_no_acepta_abreviaturas():
+    with pytest.raises(SystemExit) as salida:
+        preparar.main(["--datas", "x"])
+    assert salida.value.code == 2
+
+
+def test_i2_g11_problemas_de_forma(tmp_path, capsys):
+    assert preparar.main(["--dataset", _escribir_dataset(tmp_path, lambda d: d.update(claves=["categoria"]))]) == 1
+    salida = capsys.readouterr()
+    assert " - claves del archivo distintas de CLAVES" in salida.out
+    assert "Error: el dataset tiene 1 problemas; no esta listo para enviarse a entrenar." in salida.err

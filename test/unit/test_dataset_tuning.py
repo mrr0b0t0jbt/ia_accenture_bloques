@@ -14,6 +14,7 @@ import enrutamiento
 from dataset_tuning import (
     CLAVES,
     MAX_BYTES_ARCHIVO,
+    MAX_EJEMPLOS,
     MIN_EJEMPLOS,
     VALORES_PERMITIDOS,
     avisos_de_balance,
@@ -459,3 +460,57 @@ def test_d22_valores_permitidos_del_archivo_distintos():
 
 def test_d22_ejemplo_que_no_es_objeto():
     assert validar_datos(_datos(["texto suelto"])) == ["ejemplos[0] no es un objeto"]
+
+
+# I2
+_CLAVES_NOTA = ("categoria", "nota")
+
+
+def _con_nota(valor_crudo: str) -> list:
+    """9 ejemplos válidos con claves (categoria, nota) más uno cuyo output es el texto crudo dado (índice 9)."""
+    validos = [_ej(f"mensaje valido numero {i}", json.dumps({"categoria": "a", "nota": "x"})) for i in range(MIN_EJEMPLOS - 1)]
+    return validos + [_ej("texto nuevo", valor_crudo)]
+
+
+def test_i2_g1_exactamente_el_maximo_de_ejemplos():
+    assert validar_dataset(_validos(MAX_EJEMPLOS)) == []
+
+
+def test_i2_g2_archivo_de_exactamente_el_maximo_de_bytes(tmp_path):
+    ruta = tmp_path / "justo.json"
+    ruta.write_bytes(b"{}" + b" " * (MAX_BYTES_ARCHIVO - 2))
+    assert ruta.stat().st_size == MAX_BYTES_ARCHIVO == 1000000
+    assert cargar_dataset(ruta) == {}
+
+
+def test_i2_g3_tres_textos_iguales_se_comparan_con_el_primero():
+    ejemplos = [_ej("hola mundo"), _ej("HOLA   mundo"), _ej(" hola\nmundo")] + _validos(7)
+    assert validar_dataset(ejemplos) == [
+        "ejemplo 1: text_input duplicado del ejemplo 0",
+        "ejemplo 2: text_input duplicado del ejemplo 0",
+    ]
+
+
+@pytest.mark.parametrize(
+    "crudo, esperado",
+    [
+        ('{"categoria": "a", "nota": "\\u00e1"}', [CANONICO]),
+        (json.dumps({"categoria": "a", "nota": "á"}, ensure_ascii=False), []),
+    ],
+)
+def test_i2_g4_acentos_en_el_formato_canonico(crudo, esperado):
+    assert validar_dataset(_con_nota(crudo), claves=_CLAVES_NOTA, valores_permitidos=None) == esperado
+
+
+def test_i2_g5_razon_con_un_decimal():
+    assert resumir_balance(Counter(a=5, b=3))["razon"] == 1.7
+
+
+def test_i2_g6_json_demasiado_anidado_no_levanta_recursionerror():
+    crudo = '{"categoria": "a", "nota": ' + "[" * 100000 + "]" * 100000 + "}"
+    assert validar_dataset(_con_nota(crudo), claves=_CLAVES_NOTA, valores_permitidos=None) == ["ejemplo 9: output no es JSON valido"]
+
+
+def test_i2_g7_texto_del_aviso_de_valores_ausentes():
+    resumen = {"razon": None, "ausentes": ["media", "baja"]}
+    assert avisos_de_balance({"prioridad": resumen}) == ["aviso: prioridad no tiene ejemplos de: media, baja"]
