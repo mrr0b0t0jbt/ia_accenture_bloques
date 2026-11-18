@@ -160,6 +160,46 @@ def test_i2_g9_categoria_sin_ejemplos(tmp_path, capsys):
     assert "aviso: categoria no tiene ejemplos de: vulnerabilidad" in lineas
 
 
+def test_i2_c1d_surrogate_suelto_en_el_texto_sale_con_1(tmp_path, capsys):
+    def cambiar(datos):  # json.dumps escapa el surrogate como \ud800
+        datos["ejemplos"][5]["texto"] += chr(0xD800)
+
+    assert preparar.main(["--dataset", _escribir_dataset(tmp_path, cambiar)]) == 1
+    assert " - ejemplo 5: text_input no se puede codificar en UTF-8" in capsys.readouterr().out
+
+
+def test_i2_c2a_categoria_sin_ejemplos_sale_con_1(tmp_path, capsys):
+    assert preparar.main(["--dataset", _escribir_dataset(tmp_path, _sin_vulnerabilidad)]) == 1
+    salida = capsys.readouterr()
+    assert "Error: categoria no tiene ejemplos de: vulnerabilidad; no esta listo para enviarse a entrenar." in salida.err
+    assert "aviso: categoria no tiene ejemplos de: vulnerabilidad" in salida.out
+
+
+def test_i2_c2b_faltan_valores_en_las_dos_claves(tmp_path, capsys):
+    def cambiar(datos):
+        _sin_vulnerabilidad(datos)
+        for ejemplo in datos["ejemplos"]:
+            if ejemplo["salida"]["prioridad"] == "baja":
+                ejemplo["salida"]["prioridad"] = "media"
+
+    assert preparar.main(["--dataset", _escribir_dataset(tmp_path, cambiar)]) == 1
+    error = capsys.readouterr().err
+    de_categoria = "Error: categoria no tiene ejemplos de: vulnerabilidad; no esta listo para enviarse a entrenar."
+    de_prioridad = "Error: prioridad no tiene ejemplos de: baja; no esta listo para enviarse a entrenar."
+    assert de_categoria in error and de_prioridad in error
+    assert error.index(de_categoria) < error.index(de_prioridad)
+
+
+def test_i2_c2c_desbalance_sin_ausentes_solo_avisa(tmp_path, capsys):
+    def cambiar(datos):  # 12 incidente, 8 consulta, 4 vulnerabilidad: razon 3.0
+        _reasignar(datos, "categoria", lambda i: "incidente" if i < 12 else "consulta" if i < 20 else "vulnerabilidad")
+
+    assert preparar.main(["--dataset", _escribir_dataset(tmp_path, cambiar)]) == 0
+    salida = capsys.readouterr()
+    assert "aviso: la razon max/min de categoria es 3.0x (mayor que 2.0)" in salida.out
+    assert salida.err == ""
+
+
 def test_i2_g10_no_acepta_abreviaturas():
     with pytest.raises(SystemExit) as salida:
         preparar.main(["--datas", "x"])

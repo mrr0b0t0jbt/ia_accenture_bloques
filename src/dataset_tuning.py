@@ -119,7 +119,18 @@ def _problemas_del_texto(texto) -> list[str]:
         problemas.append(f"text_input supera los {MAX_CARACTERES_TEXTO} caracteres")
     if any(unicodedata.category(c) == "Cc" and c not in "\n\t" for c in texto):
         problemas.append("text_input tiene caracteres de control")
+    if not _es_utf8(texto):
+        problemas.append("text_input no se puede codificar en UTF-8")
     return problemas
+
+
+def _es_utf8(texto: str) -> bool:
+    """False si el texto trae un surrogate suelto (el SDK falla al serializarlo)."""
+    try:
+        texto.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _problemas_del_json(salida: str, claves, valores_permitidos) -> list[str]:
@@ -163,7 +174,9 @@ def validar_dataset(examples, claves=CLAVES, valores_permitidos=VALORES_PERMITID
         if not salida.strip():
             problemas.append(prefijo + "output vacio")
             continue
-        normalizado = normalizar_texto(texto) if isinstance(texto, str) else ""
+        if not _es_utf8(salida):
+            problemas.append(prefijo + "output no se puede codificar en UTF-8")
+        normalizado =normalizar_texto(texto) if isinstance(texto, str) else ""
         if normalizado:
             j = vistos.setdefault(normalizado, i)
             if j != i:

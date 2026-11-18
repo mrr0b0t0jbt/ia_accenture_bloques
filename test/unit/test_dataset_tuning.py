@@ -511,6 +511,23 @@ def test_i2_g6_json_demasiado_anidado_no_levanta_recursionerror():
     assert validar_dataset(_con_nota(crudo), claves=_CLAVES_NOTA, valores_permitidos=None) == ["ejemplo 9: output no es JSON valido"]
 
 
+@pytest.mark.parametrize("texto", ["a" + chr(0xD800) + "b", chr(0xDFFF) + "x"])
+def test_i2_c1a_text_input_con_surrogate_suelto(texto):
+    assert _problemas_del_ultimo(_ej(texto)) == ["ejemplo 9: text_input no se puede codificar en UTF-8"]
+
+
+def test_i2_c1b_text_input_con_emoji_valido():
+    assert _problemas_del_ultimo(_ej("hola " + chr(0x1F600))) == []
+
+
+def test_i2_c1c_output_con_surrogate_suelto_sigue_evaluando_las_demas_reglas():
+    crudo = '{"nota": "' + chr(0xD800) + '", "categoria": "a"}'  # además fuera de orden: no es canónico
+    assert validar_dataset(_con_nota(crudo), claves=_CLAVES_NOTA, valores_permitidos=None) == [
+        "ejemplo 9: output no se puede codificar en UTF-8",
+        CANONICO,
+    ]
+
+
 def test_i2_g7_texto_del_aviso_de_valores_ausentes():
     resumen = {"razon": None, "ausentes": ["media", "baja"]}
     assert avisos_de_balance({"prioridad": resumen}) == ["aviso: prioridad no tiene ejemplos de: media, baja"]

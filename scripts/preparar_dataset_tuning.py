@@ -1,7 +1,7 @@
 """Prepara y valida el dataset de tuning (Bloque 29, Unidad 2.6) SIN ninguna API: no usa claves ni red, no lee .env y no escribe ningún archivo.
 
 Carga JSON/dataset_tuning_clasificacion.json, lo valida de forma estricta y muestra el balance por categoría y prioridad.
-Sale con 1 si el dataset tiene problemas (no está listo para enviarse a entrenar); los avisos de balance no cambian el código.
+Sale con 1 si el dataset tiene problemas o si falta algún valor permitido (categoría o prioridad sin ejemplos); un desbalance sin ausentes es solo un aviso.
 El contenido del archivo es dato: todo lo que viene de él se limpia de caracteres de control antes de llegar a la consola.
 
 --demostrar-validador arma en memoria los ejemplos del dataset más DOS ejemplos rotos y comprueba que el validador
@@ -96,9 +96,13 @@ def main(argv: list[str] | None = None) -> int:
         _imprimir(f"  razon max/min: {resumen['razon']}x" if resumen["razon"] is not None else "  razon max/min: n/d")
     for aviso in dataset_tuning.avisos_de_balance(resumenes):
         _imprimir(aviso)
+    codigo = 0
     if problemas:
-        return _error(f"el dataset tiene {len(problemas)} problemas; no esta listo para enviarse a entrenar.")
-    return 0
+        codigo = _error(f"el dataset tiene {len(problemas)} problemas; no esta listo para enviarse a entrenar.")
+    for clave, resumen in resumenes.items():
+        if resumen["ausentes"]:
+            codigo = _error(f"{clave} no tiene ejemplos de: {', '.join(resumen['ausentes'])}; no esta listo para enviarse a entrenar.")
+    return codigo
 
 
 if __name__ == "__main__":
