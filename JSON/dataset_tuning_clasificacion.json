@@ -1,0 +1,39 @@
+{
+  "descripcion": "Dataset de ejemplo para personalizar con PEFT la clasificación de mensajes de seguridad: categoria y prioridad en JSON con formato fijo. Todos los textos son ficticios (dominios .test, IP de documentación, CVE-2099-*).",
+  "claves": ["categoria", "prioridad"],
+  "valores_permitidos": {
+    "categoria": ["incidente", "vulnerabilidad", "consulta"],
+    "prioridad": ["alta", "media", "baja"]
+  },
+  "criterios_prioridad": {
+    "alta": "hay impacto activo o explotación en curso, o un hallazgo crítico fácil de explotar, o alguien necesita una respuesta inmediata",
+    "media": "afectación acotada, hallazgo sin explotación conocida o una necesidad con plazo corto",
+    "baja": "sin urgencia: hallazgo de bajo impacto o pregunta informativa"
+  },
+  "ejemplos": [
+    {"id": "ej_01", "texto": "La cuenta del administrador de dominio inició sesión a las 3:12 desde 198.51.100.44, una IP que nunca habíamos visto, y acaba de crear tres cuentas nuevas.", "salida": {"categoria": "incidente", "prioridad": "alta"}},
+    {"id": "ej_02", "texto": "¿En qué se distingue un pentest de caja negra de uno de caja gris?", "salida": {"categoria": "consulta", "prioridad": "baja"}},
+    {"id": "ej_03", "texto": "El escaneo semanal encontró que portal.ejemplo.test usa una biblioteca con CVE-2099-20417 que permite ejecución remota sin autenticación, y el exploit ya es público.", "salida": {"categoria": "vulnerabilidad", "prioridad": "alta"}},
+    {"id": "ej_04", "texto": "Tres usuarios de contabilidad recibieron un correo con un enlace raro; dos hicieron clic pero el proxy lo bloqueó y no ingresaron datos.", "salida": {"categoria": "incidente", "prioridad": "media"}},
+    {"id": "ej_05", "texto": "Mañana tengo la auditoría interna: ¿qué evidencias suelen pedir para demostrar que los parches se aplican a tiempo?", "salida": {"categoria": "consulta", "prioridad": "media"}},
+    {"id": "ej_06", "texto": "El servidor de pruebas test-web.ejemplo.test acepta TLS 1.0 y 1.1; solo es accesible desde la red interna del laboratorio.", "salida": {"categoria": "vulnerabilidad", "prioridad": "media"}},
+    {"id": "ej_07", "texto": "Detectamos que el bucket respaldos-demo está público y en los registros de acceso ya hay descargas desde direcciones externas.", "salida": {"categoria": "incidente", "prioridad": "alta"}},
+    {"id": "ej_08", "texto": "¿Cada cuánto conviene rotar las claves de las cuentas de servicio?", "salida": {"categoria": "consulta", "prioridad": "baja"}},
+    {"id": "ej_09", "texto": "En la revisión de código apareció una clave de API de producción escrita en un repositorio público, con permisos de escritura sobre la base de datos.", "salida": {"categoria": "vulnerabilidad", "prioridad": "alta"}},
+    {"id": "ej_10", "texto": "El antivirus puso en cuarentena un instalador descargado por una practicante; ya se eliminó y el equipo no mostró otra actividad.", "salida": {"categoria": "incidente", "prioridad": "baja"}},
+    {"id": "ej_11", "texto": "Estamos en reunión con el cliente y necesito saber ahora si podemos enviar el informe de pentest por correo sin cifrar; ¿qué respondo?", "salida": {"categoria": "consulta", "prioridad": "alta"}},
+    {"id": "ej_12", "texto": "La auditoría reporta que el formulario de contacto no sanea la entrada y permite inyectar HTML, aunque el mensaje no se guarda ni se muestra a otros usuarios.", "salida": {"categoria": "vulnerabilidad", "prioridad": "media"}},
+    {"id": "ej_13", "texto": "Un empleado cuenta que escribió su contraseña en un sitio idéntico al portal interno y ahora ve inicios de sesión suyos desde otro país.", "salida": {"categoria": "incidente", "prioridad": "alta"}},
+    {"id": "ej_14", "texto": "Estoy armando una charla para el equipo: ¿qué ejemplos sencillos hay de ingeniería social?", "salida": {"categoria": "consulta", "prioridad": "baja"}},
+    {"id": "ej_15", "texto": "El sitio de documentación interna no envía la cabecera X-Frame-Options; no tiene formularios ni sesiones.", "salida": {"categoria": "vulnerabilidad", "prioridad": "baja"}},
+    {"id": "ej_16", "texto": "El EDR bloqueó un binario desconocido en caja-03.ejemplo.test y hay conexiones salientes a 203.0.113.9 cada 60 segundos.", "salida": {"categoria": "incidente", "prioridad": "alta"}},
+    {"id": "ej_17", "texto": "¿Qué pasos sigo para pedir acceso de solo lectura a los registros del SIEM? Lo necesito para el informe del viernes.", "salida": {"categoria": "consulta", "prioridad": "media"}},
+    {"id": "ej_18", "texto": "La política de contraseñas de la intranet solo exige 6 caracteres y no bloquea intentos repetidos.", "salida": {"categoria": "vulnerabilidad", "prioridad": "media"}},
+    {"id": "ej_19", "texto": "Se perdió un portátil de ventas en el aeropuerto; tiene el disco cifrado, pero hay que revocar sus accesos y registrar el evento.", "salida": {"categoria": "incidente", "prioridad": "media"}},
+    {"id": "ej_20", "texto": "¿Qué significa que un puerto aparezca como filtered en un escaneo de nmap?", "salida": {"categoria": "consulta", "prioridad": "baja"}},
+    {"id": "ej_21", "texto": "Las impresoras de la oficina 2 usan la contraseña de fábrica y están en la VLAN de usuarios, sin salida a Internet.", "salida": {"categoria": "vulnerabilidad", "prioridad": "media"}},
+    {"id": "ej_22", "texto": "El buzón de la gerente envió 4.000 correos en una hora con un adjunto sospechoso y varios clientes ya reclaman por spam.", "salida": {"categoria": "incidente", "prioridad": "alta"}},
+    {"id": "ej_23", "texto": "Para mi laboratorio personal, ¿recomiendan segmentar la red doméstica en VLAN o basta con el modo invitado del router?", "salida": {"categoria": "consulta", "prioridad": "baja"}},
+    {"id": "ej_24", "texto": "Hay una versión antigua de LibEjemplo 2.1 en un servidor apagado y sin red que aún aparece en el escaneo del inventario.", "salida": {"categoria": "vulnerabilidad", "prioridad": "baja"}}
+  ]
+}
