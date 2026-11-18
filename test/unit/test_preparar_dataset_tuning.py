@@ -1,0 +1,130 @@
+import copy
+import importlib.util
+import json
+import socket
+import sys
+from pathlib import Path
+
+import pytest
+
+import dataset_tuning
+
+RAIZ = Path(__file__).resolve().parent.parent.parent
+RUTA_SCRIPT = RAIZ / "scripts" / "preparar_dataset_tuning.py"
+RUTA_DATASET = RAIZ / "JSON" / "dataset_tuning_clasificacion.json"
+
+
+def _cargar_script():
+    spec = importlib.util.spec_from_file_location("preparar_dataset_tuning", RUTA_SCRIPT)
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo
+
+
+preparar = _cargar_script()
+
+
+def _escribir_dataset(tmp_path, cambiar) -> str:
+    """Copia el dataset real, le aplica cambiar(datos) y lo escribe en tmp_path; devuelve la ruta."""
+    datos = copy.deepcopy(json.loads(RUTA_DATASET.read_text(encoding="utf-8")))
+    cambiar(datos)
+    ruta = tmp_path / "dataset.json"
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+    return str(ruta)
+
+
+# P1
+def test_p1_flujo_feliz_con_el_dataset_real(capsys):
+    assert preparar.main([]) == 0
+    salida = capsys.readouterr().out
+    assert "24 ejemplos, 0 problemas encontrados" in salida
+    assert "categoria:" in salida and "prioridad:" in salida
+    assert salida.count("razon max/min: 1.0x") == 2
+    assert "aviso" not in salida
+
+
+# P2
+def test_p2_un_problema_sale_con_1(tmp_path, capsys):
+    def cambiar(datos):
+        datos["ejemplos"][3]["salida"]["prioridad"] = "urgente"
+
+    assert preparar.main(["--dataset", _escribir_dataset(tmp_path, cambiar)]) == 1
+    salida = capsys.readouterr()
+    assert ' - ejemplo 3: output tiene un valor no permitido para "prioridad"' in salida.out
+    assert "Error: el dataset tiene 1 problemas; no esta listo para enviarse a entrenar." in salida.err
+
+
+# P3
+@pytest.mark.parametrize("contenido", [None, "{roto", "[1, 2]"])
+def test_p3_dataset_ilegible_sale_con_1_sin_traceback(tmp_path, capsys, contenido):
+    ruta = tmp_path / "d.json"
+    if contenido is not None:
+        ruta.write_text(contenido, encoding="utf-8")
+    assert preparar.main(["--dataset", str(ruta)]) == 1
+    error = capsys.readouterr().err
+    assert error.startswith("Error:") and "Traceback" not in error
+
+
+# P4
+def test_p4_el_defecto_es_relativo_a_la_raiz_del_repo(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert preparar.main([]) == 0
+
+
+# P5
+def test_p5_argumento_desconocido():
+    with pytest.raises(SystemExit) as salida:
+        preparar.main(["--no-existe"])
+    assert salida.value.code == 2
+
+
+# P6
+def test_p6_demostrar_validador_detecta_los_cuatro_problemas(capsys):
+    assert preparar.main(["--demostrar-validador"]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "26 ejemplos, 4 problemas encontrados",
+        " - ejemplo 24: text_input vacio",
+        ' - ejemplo 24: output no tiene la clave "prioridad"',
+        " - ejemplo 25: text_input duplicado del ejemplo 0 con otra salida",
+        " - ejemplo 25: output no es JSON valido",
+    ]
+
+
+def test_p6_validador_ciego_sale_con_1(monkeypatch, capsys):
+    monkeypatch.setattr(dataset_tuning, "validar_dataset", lambda *a, **k: [])
+    assert preparar.main(["--demostrar-validador"]) == 1
+    assert "Error: el validador no detecto lo esperado." in capsys.readouterr().err
+
+
+# P7
+def test_p7_texto_hostil_no_llega_en_crudo_a_la_consola(tmp_path, capsys):
+    def cambiar(datos):
+        datos["ejemplos"][0]["salida"]["categoria"] = "\x1b[31mX"
+
+    assert preparar.main(["--dataset", _escribir_dataset(tmp_path, cambiar)]) == 1
+    salida = capsys.readouterr()
+    assert "[31mX" in salida.out
+    assert chr(27) not in salida.out and chr(27) not in salida.err
+
+
+# P8
+def test_p8_hermetica(monkeypatch, capsys):
+    for nombre in ("dotenv", "chromadb", "langchain_google_genai", "anthropic"):
+        monkeypatch.setitem(sys.modules, nombre, None)
+
+    def sin_red(*a, **k):
+        raise AssertionError("el script no debe abrir red")
+
+    monkeypatch.setattr(socket.socket, "connect", sin_red)
+    assert _cargar_script().main([]) == 0
+    assert "0 problemas encontrados" in capsys.readouterr().out
+
+
+# P9
+def test_p9_no_escribe_nada(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    antes = RUTA_DATASET.read_text(encoding="utf-8")
+    assert preparar.main([]) == 0
+    assert preparar.main(["--demostrar-validador"]) == 0
+    assert list(tmp_path.iterdir()) == []
+    assert RUTA_DATASET.read_text(encoding="utf-8") == antes
