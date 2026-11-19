@@ -530,6 +530,92 @@ Promedios por k (5 registros cada uno): con k=3, embed 693,8 ms, búsqueda 1,5 m
 - `preflight_rag.py` no modifica datos ni el conteo del índice, pero **no es de solo lectura**: abrir la colección con Chroma reescribe unos bytes de `chroma.sqlite3` (cambia su hash; verificado en una copia y en el índice real) y las fechas de los `.bin`, igual que hace cualquier script que abre el índice. Las pruebas comparan nombres y tamaños de archivos y, desde H2, los ids y los documentos de todos los chunks antes y después; no comparan el hash del sqlite, porque cambia.
 - Huecos de pruebas conocidos y aceptados (mutantes vivos de la verificación de la pasada H2): con un solo registro que falla el script sigue saliendo con 0 (la prueba usa 2 o más), el código 130 de Ctrl-C con todos los registros en error no tiene prueba propia y el informe impreso una sola vez se comprueba con un texto que un informe duplicado no altera. Los huecos de la pasada H (zona horaria del `timestamp`, `max_tokens`, `reintentos_embed`, recorte del error, mensaje del tope, empate de tokens y decimales) se cerraron en H2. Además, el `except Exception` de `_correr` es más ancho que el error de embedding: un fallo de la búsqueda local saldría con el mensaje genérico de `describir_error_api`.
 
+## Personalización de modelos: dataset de tuning para PEFT (Bloque 29)
+
+La clase ubica RAG junto a otras tres técnicas y pide preparar y validar un dataset de tuning sin lanzar ningún entrenamiento. Regla de decisión que se aplicó: si al modelo **le falta información** (y esa información cambia), la técnica es RAG, y es lo que construyó la Unidad 2.5; si lo que falla es el **comportamiento** (formato, estilo, clasificación fija) con muchos ejemplos disponibles, la técnica es PEFT; el fine-tuning completo hace lo mismo a mayor costo, y el soft-prompting no está en la API gestionada de Gemini (solo existen `TUNING_MODE_FULL` y `TUNING_MODE_PEFT_ADAPTER`, verificado en el SDK). Enseñarle hechos nuevos con tuning es el error típico que advierte la clase.
+
+**La tarea elegida** es clasificar mensajes de seguridad como un JSON de formato fijo, `{"categoria": ..., "prioridad": ...}`. Las categorías son las del router de `src/enrutamiento.py` (`incidente`, `vulnerabilidad`, `consulta`) y la prioridad es `alta`, `media` o `baja`. Es un problema de comportamiento y no de información: el router de hoy le pide al modelo una palabra y debe normalizar lo que devuelve (`_normalizar_categoria`), que es la inconsistencia de formato que un modelo afinado resolvería. El dataset no se usa todavía para entrenar nada.
+
+**El dataset** (`JSON/dataset_tuning_clasificacion.json`) tiene 24 ejemplos ficticios (dominios `.ejemplo.test`, IP de documentación y `CVE-2099-*`), 8 por categoría y 8 por prioridad, sin ningún texto igual a los casos de evaluación de los otros bloques (lo comprueba una prueba). La prioridad se decide por la urgencia del mensaje y no por su categoría: alta es impacto activo, explotación en curso o una respuesta inmediata; media, afectación acotada o plazo corto; baja, sin urgencia.
+
+| Categoría | Alta | Media | Baja |
+|---|---|---|---|
+| incidente | 5 | 2 | 1 |
+| vulnerabilidad | 2 | 4 | 2 |
+| consulta | 1 | 2 | 5 |
+
+Cuatro etiquetas son discutibles y el dataset las deja como están: `ej_07` (un bucket público con descargas ya registradas: incidente, podría ser vulnerabilidad), `ej_09` (una clave de producción en un repositorio público: vulnerabilidad alta, podría ser incidente si ya se usó), `ej_11` (la única consulta con prioridad alta, porque pide una respuesta en plena reunión) y `ej_19` (un portátil perdido con el disco cifrado: incidente de prioridad media). Que las etiquetas sean las correctas es un juicio humano que el validador no puede comprobar.
+
+**Cómo se ejecuta** (sin API, sin claves, sin red, no lee `.env` y no escribe ningún archivo):
+
+```
+python scripts/preparar_dataset_tuning.py
+python scripts/preparar_dataset_tuning.py --dataset ruta/al/dataset.json
+python scripts/preparar_dataset_tuning.py --demostrar-validador
+```
+
+Imprime `24 ejemplos, 0 problemas encontrados` y el balance por categoría y por prioridad con su razón máx/mín. Sale con 0 si el dataset está listo, 1 si tiene problemas, no se pudo leer o le falta algún valor permitido (una categoría o una prioridad sin ningún ejemplo, con un `Error:` por clave), y 2 con argumentos inválidos; un desbalance sin valores ausentes (razón máx/mín mayor que 2,0) es solo un aviso y no cambia el código. `--demostrar-validador` es el paso de la clase que comprueba que el validador detecta errores: agrega dos ejemplos rotos en memoria y exige que salgan exactamente cuatro problemas (`ejemplo 24: text_input vacio`, `ejemplo 24: output no tiene la clave "prioridad"`, `ejemplo 25: text_input duplicado del ejemplo 0 con otra salida` y `ejemplo 25: output no es JSON valido`).
+
+**El validador** (`src/dataset_tuning.py`) devuelve todos los problemas, no solo el primero, con mensajes que no repiten el contenido del archivo (es dato, nunca instrucciones: todo lo que llega a la consola se limpia de caracteres de control). Revisa el texto (vacío, no textual, de más de 1000 caracteres, con caracteres de control o con un surrogate suelto que no se puede codificar en UTF-8, caso en que el SDK falla al serializar la petición con `PydanticSerializationError`), los duplicados normalizados (con aviso extra si la etiqueta contradice a la del primero), y la salida: texto codificable en UTF-8, JSON válido, objeto, sin claves repetidas, faltantes ni sobrantes, con valores dentro del conjunto permitido y en el formato canónico de `json.dumps` (claves en orden, separadores por defecto y acentos sin escapar, porque el modelo aprende el formato tal cual está escrito). Exige entre 10 y 500 ejemplos y que las claves y los valores permitidos del archivo coincidan con las constantes del código.
+
+**Desvíos respecto de la clase** (declarados): el entregable único `dataset_tuning.py` se separa en un módulo, un script y un JSON, como el resto del proyecto, con nombres en español; el validador es más estricto que el de la clase, que tiene dos defectos reproducidos (con una salida que es JSON válido pero no un objeto, como `5`, se cae con `TypeError`, y una lista pasa por válida; y el balance de la actividad se calcula antes de validar y falla con `KeyError` si falta la clave) y no valida que los valores sean de un conjunto cerrado.
+
+**Restricción de la plataforma (verificada, no se intentó ningún tuning real).** El bloque demostrativo de la clase, con `tuning_mode=TUNING_MODE_PEFT_ADAPTER` y `adapter_size=ADAPTER_SIZE_FOUR`, **falla con una `GEMINI_API_KEY`**: el SDK (`google-genai` 3.0.0) lanza `ValueError` ("adapter_size parameter is only supported in Gemini Enterprise Agent Platform mode, not in Gemini Developer API mode") antes de salir a la red, e igual con `tuning_mode`; también `batch_size` es solo para modelos de código abierto en esa plataforma. Es decir, PEFT con tamaño de adapter solo existe en el modo Vertex, no con la clave que usa este curso. Una prueba lo fija con un cliente de clave falsa y el socket bloqueado, así que si una versión futura del SDK cambia esto la prueba lo avisa. El `base_model` de la clase (`models/gemini-2.0-flash`) no se contrastó con la API: el SDK no lo valida y no se hizo ninguna llamada.
+
+**Límites conocidos:**
+
+- Un dataset muy desbalanceado (razón máx/mín mayor que 2,0) sale con código 0 y solo un aviso; una categoría o prioridad sin ningún ejemplo sale con código 1 desde la pasada I2 (la regla vive en el script, no en `validar_dataset`, que sigue dando solo los problemas de los ejemplos).
+- Con 24 ejemplos no se sabe si alcanza para entrenar: la clase dice que la documentación oficial no fija un número verificado y hay que consultarla antes de enviar un dataset real. El mínimo de 10 del validador es el de la actividad, no el de la API.
+- Las claves repetidas se detectan solo en el objeto de nivel superior de la salida, y un ejemplo con salida vacía no cuenta como "visto" para la regla de duplicados.
+- Huecos de pruebas conocidos y aceptados (mutantes vivos de la verificación de la pasada I2; los de la pasada I se cerraron): el separador de coma y espacio del mensaje `Error:` cuando faltan dos valores de la misma clave, el caso en que hay a la vez problemas de los ejemplos y valores ausentes (no se prueba que ambos mensajes salgan) y el orden entre el mensaje de caracteres de control y el de UTF-8 cuando un texto tiene los dos. Cosmético sin efecto: `normalizado =normalizar_texto(...)` sin espacio en `src/dataset_tuning.py`.
+
+## Personalización de modelos: costo y decisión (Bloque 30)
+
+La clase cierra la unidad con tres piezas: cuánto cuesta preparar los datos de una personalización, un método de decisión por puntos entre RAG, fine-tuning completo y PEFT, y la redacción de un documento que fundamente la técnica elegida. No usa la API en el método; la única parte con costo es la medición del clasificador, que se pide aparte.
+
+**Las cifras de la clase se reprodujeron por código**: 8 ejemplos a 5 minutos y USD 25 por hora son 0,67 h y USD 16,67; 200 ejemplos son 16,67 h y USD 416,67; el mini-ejercicio de 500 ejemplos con una segunda revisión del 20 % da 36,67 h, USD 733,33 y 4,6 jornadas de 8 horas. El método da 0/3/3 (empate entre fine-tuning completo y PEFT) para el caso 2 y 5/1/3 (RAG) para el caso 1, con las mismas cinco variantes de sensibilidad que la clase.
+
+**El método endurecido** (`src/decision_personalizacion.py`, Python puro) corrige tres defectos del de la clase, reproducidos antes de escribirlo: un valor que no es booleano cuenta como verdadero (con las cinco respuestas en `"no"` da 5/3/6 y gana PEFT), una clave faltante lanza `KeyError`, y con las cinco respuestas en `False` reporta un empate de tres técnicas con 0 puntos cuando en realidad significa que ninguna técnica está justificada. Aquí solo valen `True` o `False`, las cinco claves deben estar exactas, y con máximo 0 el resultado es `sin_necesidad`. Los pesos son los de la clase. También valida los costos (rechaza negativos, NaN, infinitos y booleanos) y genera el esqueleto del documento sin escribir archivos.
+
+**Cómo se ejecuta** (sin API, sin claves, sin red; `scripts/decidir_personalizacion.py`):
+
+```
+python scripts/decidir_personalizacion.py --respuestas ruta/respuestas.json
+python scripts/decidir_personalizacion.py --respuestas ruta/respuestas.json --salida docs/decision_personalizacion.md
+python scripts/decidir_personalizacion.py --estimar-etiquetado 200 5 25
+python scripts/decidir_personalizacion.py --estimar-etiquetado 500 4 20 --revision 0.2 2
+```
+
+El JSON de respuestas trae el problema, las cinco respuestas booleanas y una evidencia de texto por cada una (la clase exige justificarlas). El script imprime los puntajes, la recomendación o el empate, la sensibilidad de invertir una respuesta a la vez y la evidencia, y sale con 1 con un `Error:` por cada problema del archivo. Con `--salida` crea el esqueleto en modo exclusivo: **nunca pisa un archivo existente** (la clase lo hacía en silencio) y falla antes de imprimir si no puede crearlo.
+
+**Medición del clasificador del router** (`src/medicion_clasificador.py` y `scripts/medir_clasificador_router.py`, con costo). La regla de la clase para `problema_de_formato_o_tono` es que, en una muestra de respuestas reales, el 15 % o más incumple el formato. El router pide a Claude una sola palabra y normaliza lo que vuelve, así que se midió con los 24 ejemplos del dataset de tuning y solo la plantilla de clasificación. Se reportan dos proporciones: **estricta** (la respuesta cruda no es exactamente una categoría) y **efectiva** (no queda válida tras la normalización del router). El umbral se compara con enteros, no con flotantes.
+
+```
+python scripts/medir_clasificador_router.py --confirmar-api-real --max-tokens 256 --tope-usd 0.05
+```
+
+Sin `--confirmar-api-real` sale con 2 sin importar el cliente ni leer el dataset. Los topes están en el código: 75 llamadas, de 1 a 3 repeticiones, de 1 a 256 tokens y como máximo USD 0,05; el gasto se controla antes de cada llamada y un uso de tokens faltante o en cero detiene la corrida. El JSON de `--salida` se reemplaza de forma atómica y queda marcado `incompleto` si la corrida terminó antes (tope, uso faltante o Ctrl-C).
+
+**Corrida real (2026-11-19, `claude-sonnet-5-5`, 24 llamadas, una pasada):**
+
+| Corrida | Fallos estrictos | Fallos efectivos | Exactitud | Costo estimado |
+|---|---|---|---|---|
+| `--max-tokens 64` | 4 de 24 (16,7 %) | 2 de 24 (8,3 %) | 22 de 24 | USD 0,00831 |
+| `--max-tokens 256` | 2 de 24 (8,3 %) | 0 de 24 (0,0 %) | 23 de 24 | USD 0,00904 |
+
+La primera corrida superó el umbral en estricto, pero **dos de sus fallos eran respuestas vacías con 64 de 64 tokens de salida**: el tope de la propia medición se agotó antes de que saliera la categoría (el router real usa 2048). Con 256 desaparecieron. Los dos fallos estrictos que quedan son "Incidente" con mayúscula, que el router normaliza. El único error de categoría es `ej_09` (una clave de producción en un repositorio público: el dataset dice vulnerabilidad, el modelo dijo incidente), uno de los cuatro casos de etiqueta discutible del Bloque 29, y usó 196 tokens de salida frente a los 5 a 10 de los demás. Los costos se recalcularon por token desde el JSON y coinciden con el total. El resultado de la primera corrida no se versiona; el de la segunda es `docs/resultados_clasificador_router.json`.
+
+**La decisión** (`docs/decision_personalizacion.md`): con las cinco respuestas en `False` el método da "ninguna técnica", y la medición la respalda: no hay información que cambie, el formato falla por debajo del umbral, el dataset es de 24 ejemplos y no hay variantes. El documento lo redactó Antares con el método corrido primero y queda como borrador pendiente de revisión del autor; la respuesta de presupuesto está marcada como "a confirmar". Dice además que con una sola respuesta cambiada a `True` el método recomienda una técnica distinta cada vez (por ejemplo RAG por presupuesto en una tarea sin información externa): es una heurística con pesos fijos, no una prueba.
+
+**Desvíos respecto de la clase** (declarados): el script de la actividad se separa en módulo y scripts con nombres en español, y el esqueleto no pisa archivos; la muestra de la medición son 24 ejemplos y no 20, porque el dataset es de 24 y balanceado; la prioridad no se mide porque el router no la predice.
+
+**Límites conocidos:**
+
+- La muestra son ejemplos que escribió la orquestadora, no mensajes reales, y es una sola pasada: sirve como indicio, no como estadística. El router del SDK puede reintentar, y el costo es una estimación con los precios del proyecto.
+- `decidir_personalizacion.py --salida` con un texto de problema que trae un carácter surrogate suelto (`\ud800`) termina con `UnicodeEncodeError` y deja el archivo creado y vacío; `--estimar-etiquetado` con un número de ejemplos de cientos de dígitos da `OverflowError` con traceback, y con `1e308` imprime `inf`. Ambos son de gravedad baja y no están corregidos.
+- Con una `GEMINI_API_KEY`, el SDK (`google-genai` 3.0.0) solo llena las estadísticas facturables del tuning (`tuning_data_stats`) para Vertex: el bloque de costo de cómputo de la clase diría siempre "sin estadísticas". Y, como en el Bloque 29, el tuning con adapter no corre con esa clave.
+- Huecos de pruebas conocidos y aceptados (mutantes vivos de la verificación): bordes de tamaño del archivo de respuestas y longitud de la evidencia, tope de llamadas del script de medición, claves de más en orden, `truncado` sin prueba que lo exija, limpieza de caracteres no imprimibles que no son de control, atomicidad de la escritura y las abreviaturas de opciones.
+
 ## Ensayo real de rate limit
 
 Envía N peticiones seguidas a Claude pidiendo una respuesta de una sola palabra, para intentar provocar un 429 real del proveedor. Registra la petición del primer 429, las esperas del backoff, las llamadas HTTP y el costo:
@@ -612,6 +698,9 @@ src/
   recuperacion.py          recuperación con distancia, contexto numerado, prompt que trata el contexto como datos y verificación de citas
   metricas_recuperacion.py precisión, exhaustividad y F1 de la recuperación por chunk y validación de los casos de evaluación
   medicion_rag.py          mide la latencia por etapa (embed, búsqueda, generación) y el costo de una consulta RAG y resume los registros
+  dataset_tuning.py        valida de forma estricta el dataset de tuning (texto, salida JSON, formato canónico, duplicados) y calcula su balance, sin API
+  decision_personalizacion.py  método de decisión entre RAG, fine-tuning y PEFT con booleanos estrictos, costo de etiquetado y esqueleto del documento, sin API
+  medicion_clasificador.py     clasifica la respuesta cruda del router (exacta, válida, correcta) y resume el formato contra el umbral de la clase
 scripts/
   ensayo_rate_limit_simulado.py  ensayo de rate limit simulado con mocks
   ejecutar_pipeline.py           pipeline de texto sobre respuestas reales de Claude (con costo)
@@ -625,6 +714,9 @@ scripts/
   evaluar_recuperacion.py        evalúa la recuperación por chunk con embeddings de Gemini, sin llamar a Claude (con costo en embeddings)
   medir_latencia_costo.py        mide la latencia por etapa y el costo del flujo RAG con Gemini y Claude y anexa un registro por llamada (con costo)
   preflight_rag.py               revisa sin API el índice (conteo e ids contra el corpus) y que el directorio esté ignorado por git
+  preparar_dataset_tuning.py     prepara y valida el dataset de tuning y muestra su balance, sin API ni claves
+  decidir_personalizacion.py     aplica el método de decisión a un JSON de respuestas o estima el costo de etiquetar, sin API ni claves
+  medir_clasificador_router.py   mide el formato y la exactitud del clasificador del router sobre el dataset de tuning (con costo)
 test/
   unit/test_api_claude_refactor.py     pruebas unitarias con mocks
   unit/test_api_gemini.py              pruebas minimas del manejo de errores del cliente Gemini, con mocks
@@ -648,9 +740,9 @@ test/
   unit/test_trazas.py                  pruebas de las trazas, su lectura validada y su revisión
   unit/test_limites_autonomia.py       pruebas que cruzan el documento de límites con el código
   unit/test_conftest_guardian.py       prueba del guardián que impide que la suite escriba en las trazas reales
-  unit/conftest.py                     guardianes automáticos: fallan una prueba que escriba en trazas/trazas_agente.jsonl, en vectorstore/, en docs/resultados_evaluacion_recuperacion.json o en docs/registros_latencia_costo.jsonl
+  unit/conftest.py                     guardianes automáticos: fallan una prueba que escriba en trazas/trazas_agente.jsonl, en vectorstore/, en docs/resultados_evaluacion_recuperacion.json, en docs/registros_latencia_costo.jsonl o en docs/resultados_clasificador_router.json
   unit/test_conftest_guardian.py       pruebas de las funciones que miden el estado de trazas/ y vectorstore/
-  unit/test_guardianes.py              prueba, en un pytest aparte, que los cuatro guardianes fallan de verdad
+  unit/test_guardianes.py              prueba, en un pytest aparte, que los cinco guardianes fallan de verdad
   unit/embeddings_falsos.py            embeddings falsos por tema para probar el orden de recuperación (sin pruebas propias)
   unit/test_indexacion.py              pruebas de la indexación con Chroma real y embeddings falsos
   unit/test_indexar_corpus.py          pruebas del script de indexación (modo revisión, errores de la API)
@@ -661,6 +753,12 @@ test/
   unit/test_medicion_rag.py            pruebas de la medición por etapa, los registros, el costo, el uso faltante y el resumen
   unit/test_medir_latencia_costo.py    pruebas del script de medición (Chroma real, embeddings y modelo falsos, topes, fallos y archivo de solo anexar)
   unit/test_preflight_rag.py           pruebas del chequeo previo del flujo RAG, sin API
+  unit/test_dataset_tuning.py          pruebas del validador y del balance del dataset de tuning, con la restricción de la API de desarrolladores fijada sin red
+  unit/test_preparar_dataset_tuning.py pruebas del script del dataset de tuning (salidas, códigos de salida, texto hostil y que no usa API)
+  unit/test_decision_personalizacion.py  pruebas del método de decisión endurecido, la sensibilidad, los costos y el esqueleto del documento
+  unit/test_decidir_personalizacion.py   pruebas del script de decisión (archivo de respuestas, salida exclusiva, costos, texto hostil y que no usa API)
+  unit/test_medicion_clasificador.py     pruebas de la clasificación de la respuesta cruda, el resumen, el umbral y el costo
+  unit/test_medir_clasificador_router.py pruebas del script de medición (bandera, topes, uso faltante, Ctrl-C, salida atómica y modelo falso)
   test_consistencia.py         prueba de consistencia con Claude
   test_consistencia_gemini.py  misma prueba con Gemini (comparativa)
 JSON/
@@ -676,6 +774,7 @@ JSON/
   casos_recuperacion.json          8 preguntas del RAG (6 con respuesta en el corpus y 2 sin ella)
   evaluacion_recuperacion.json     14 casos de evaluación con los chunks relevantes etiquetados (11 con respuesta y 3 sin ella)
   casos_latencia_costo.json        5 preguntas de la medición de latencia y costo del RAG
+  dataset_tuning_clasificacion.json  24 ejemplos ficticios para PEFT: mensajes de seguridad con su categoría y prioridad en JSON (8 por categoría y por prioridad)
 docs/                      decisión de arquitectura, diagrama y evidencias
   registro_rate_limit.md   registro del ensayo de rate limit (simulado)
   registro_pipeline.md     registro del pipeline de texto (se genera al correr el script)
@@ -691,6 +790,8 @@ docs/                      decisión de arquitectura, diagrama y evidencias
   limites_autonomia_agente.md  límites de autonomía del agente: riesgo por herramienta, aprobación, trazas y límites conocidos
   revision_manual.json     revisión manual de 10 casos con la rúbrica de tres preguntas
   limites_metrica.md       límites conocidos de la métrica y recomendación de uso
+  resultados_clasificador_router.json  resultados de la medición real del clasificador del router, 24 llamadas con 256 tokens (se genera al correr medir_clasificador_router.py)
+  decision_personalizacion.md  decisión de personalización del clasificador del router (borrador pendiente de revisión del autor)
 ```
 
 ## Problemas comunes

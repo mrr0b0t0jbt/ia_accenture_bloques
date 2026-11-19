@@ -1,0 +1,520 @@
+{
+  "fecha": "2026-11-19T03:43:13.153319+00:00",
+  "modelo": "claude-sonnet-5-5",
+  "parametros": {
+    "repeticiones": 1,
+    "max_tokens": 256,
+    "tope_usd": 0.05,
+    "dataset": "JSON/dataset_tuning_clasificacion.json"
+  },
+  "incompleto": false,
+  "error": null,
+  "resultados": [
+    {
+      "id": "ej_01",
+      "repeticion": 1,
+      "categoria_esperada": "incidente",
+      "prioridad_esperada": "alta",
+      "respuesta": "incidente",
+      "exacta": true,
+      "normalizada": "incidente",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 135,
+        "output_tokens": 5,
+        "total_tokens": 140
+      },
+      "costo_estimado": 0.00032,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_02",
+      "repeticion": 1,
+      "categoria_esperada": "consulta",
+      "prioridad_esperada": "baja",
+      "respuesta": "consulta",
+      "exacta": true,
+      "normalizada": "consulta",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 94,
+        "output_tokens": 5,
+        "total_tokens": 99
+      },
+      "costo_estimado": 0.00023799999999999998,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_03",
+      "repeticion": 1,
+      "categoria_esperada": "vulnerabilidad",
+      "prioridad_esperada": "alta",
+      "respuesta": "vulnerabilidad",
+      "exacta": true,
+      "normalizada": "vulnerabilidad",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 134,
+        "output_tokens": 10,
+        "total_tokens": 144
+      },
+      "costo_estimado": 0.000368,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_04",
+      "repeticion": 1,
+      "categoria_esperada": "incidente",
+      "prioridad_esperada": "media",
+      "respuesta": "incidente",
+      "exacta": true,
+      "normalizada": "incidente",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 126,
+        "output_tokens": 5,
+        "total_tokens": 131
+      },
+      "costo_estimado": 0.000302,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_05",
+      "repeticion": 1,
+      "categoria_esperada": "consulta",
+      "prioridad_esperada": "media",
+      "respuesta": "consulta",
+      "exacta": true,
+      "normalizada": "consulta",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 116,
+        "output_tokens": 5,
+        "total_tokens": 121
+      },
+      "costo_estimado": 0.000282,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_06",
+      "repeticion": 1,
+      "categoria_esperada": "vulnerabilidad",
+      "prioridad_esperada": "media",
+      "respuesta": "vulnerabilidad",
+      "exacta": true,
+      "normalizada": "vulnerabilidad",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 123,
+        "output_tokens": 10,
+        "total_tokens": 133
+      },
+      "costo_estimado": 0.00034599999999999995,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_07",
+      "repeticion": 1,
+      "categoria_esperada": "incidente",
+      "prioridad_esperada": "alta",
+      "respuesta": "incidente",
+      "exacta": true,
+      "normalizada": "incidente",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 111,
+        "output_tokens": 5,
+        "total_tokens": 116
+      },
+      "costo_estimado": 0.000272,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_08",
+      "repeticion": 1,
+      "categoria_esperada": "consulta",
+      "prioridad_esperada": "baja",
+      "respuesta": "consulta",
+      "exacta": true,
+      "normalizada": "consulta",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 96,
+        "output_tokens": 5,
+        "total_tokens": 101
+      },
+      "costo_estimado": 0.000242,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_09",
+      "repeticion": 1,
+      "categoria_esperada": "vulnerabilidad",
+      "prioridad_esperada": "alta",
+      "respuesta": "incidente",
+      "exacta": true,
+      "normalizada": "incidente",
+      "valida": true,
+      "correcta": false,
+      "tokens": {
+        "input_tokens": 113,
+        "output_tokens": 196,
+        "total_tokens": 309
+      },
+      "costo_estimado": 0.0021860000000000004,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_10",
+      "repeticion": 1,
+      "categoria_esperada": "incidente",
+      "prioridad_esperada": "baja",
+      "respuesta": "incidente",
+      "exacta": true,
+      "normalizada": "incidente",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 115,
+        "output_tokens": 5,
+        "total_tokens": 120
+      },
+      "costo_estimado": 0.00028,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_11",
+      "repeticion": 1,
+      "categoria_esperada": "consulta",
+      "prioridad_esperada": "alta",
+      "respuesta": "consulta",
+      "exacta": true,
+      "normalizada": "consulta",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 122,
+        "output_tokens": 5,
+        "total_tokens": 127
+      },
+      "costo_estimado": 0.000294,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_12",
+      "repeticion": 1,
+      "categoria_esperada": "vulnerabilidad",
+      "prioridad_esperada": "media",
+      "respuesta": "vulnerabilidad",
+      "exacta": true,
+      "normalizada": "vulnerabilidad",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 130,
+        "output_tokens": 10,
+        "total_tokens": 140
+      },
+      "costo_estimado": 0.00035999999999999997,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_13",
+      "repeticion": 1,
+      "categoria_esperada": "incidente",
+      "prioridad_esperada": "alta",
+      "respuesta": "Incidente",
+      "exacta": false,
+      "normalizada": "incidente",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 121,
+        "output_tokens": 6,
+        "total_tokens": 127
+      },
+      "costo_estimado": 0.000302,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_14",
+      "repeticion": 1,
+      "categoria_esperada": "consulta",
+      "prioridad_esperada": "baja",
+      "respuesta": "consulta",
+      "exacta": true,
+      "normalizada": "consulta",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 106,
+        "output_tokens": 5,
+        "total_tokens": 111
+      },
+      "costo_estimado": 0.000262,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_15",
+      "repeticion": 1,
+      "categoria_esperada": "vulnerabilidad",
+      "prioridad_esperada": "baja",
+      "respuesta": "vulnerabilidad",
+      "exacta": true,
+      "normalizada": "vulnerabilidad",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 108,
+        "output_tokens": 10,
+        "total_tokens": 118
+      },
+      "costo_estimado": 0.000316,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_16",
+      "repeticion": 1,
+      "categoria_esperada": "incidente",
+      "prioridad_esperada": "alta",
+      "respuesta": "incidente",
+      "exacta": true,
+      "normalizada": "incidente",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 125,
+        "output_tokens": 5,
+        "total_tokens": 130
+      },
+      "costo_estimado": 0.00030000000000000003,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_17",
+      "repeticion": 1,
+      "categoria_esperada": "consulta",
+      "prioridad_esperada": "media",
+      "respuesta": "consulta",
+      "exacta": true,
+      "normalizada": "consulta",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 116,
+        "output_tokens": 5,
+        "total_tokens": 121
+      },
+      "costo_estimado": 0.000282,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_18",
+      "repeticion": 1,
+      "categoria_esperada": "vulnerabilidad",
+      "prioridad_esperada": "media",
+      "respuesta": "vulnerabilidad",
+      "exacta": true,
+      "normalizada": "vulnerabilidad",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 105,
+        "output_tokens": 10,
+        "total_tokens": 115
+      },
+      "costo_estimado": 0.00031,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_19",
+      "repeticion": 1,
+      "categoria_esperada": "incidente",
+      "prioridad_esperada": "media",
+      "respuesta": "incidente",
+      "exacta": true,
+      "normalizada": "incidente",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 121,
+        "output_tokens": 5,
+        "total_tokens": 126
+      },
+      "costo_estimado": 0.000292,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_20",
+      "repeticion": 1,
+      "categoria_esperada": "consulta",
+      "prioridad_esperada": "baja",
+      "respuesta": "consulta",
+      "exacta": true,
+      "normalizada": "consulta",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 98,
+        "output_tokens": 5,
+        "total_tokens": 103
+      },
+      "costo_estimado": 0.000246,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_21",
+      "repeticion": 1,
+      "categoria_esperada": "vulnerabilidad",
+      "prioridad_esperada": "media",
+      "respuesta": "vulnerabilidad",
+      "exacta": true,
+      "normalizada": "vulnerabilidad",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 116,
+        "output_tokens": 10,
+        "total_tokens": 126
+      },
+      "costo_estimado": 0.000332,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_22",
+      "repeticion": 1,
+      "categoria_esperada": "incidente",
+      "prioridad_esperada": "alta",
+      "respuesta": "Incidente",
+      "exacta": false,
+      "normalizada": "incidente",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 116,
+        "output_tokens": 6,
+        "total_tokens": 122
+      },
+      "costo_estimado": 0.000292,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_23",
+      "repeticion": 1,
+      "categoria_esperada": "consulta",
+      "prioridad_esperada": "baja",
+      "respuesta": "consulta",
+      "exacta": true,
+      "normalizada": "consulta",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 115,
+        "output_tokens": 5,
+        "total_tokens": 120
+      },
+      "costo_estimado": 0.00028,
+      "truncado": false,
+      "error": null
+    },
+    {
+      "id": "ej_24",
+      "repeticion": 1,
+      "categoria_esperada": "vulnerabilidad",
+      "prioridad_esperada": "baja",
+      "respuesta": "vulnerabilidad",
+      "exacta": true,
+      "normalizada": "vulnerabilidad",
+      "valida": true,
+      "correcta": true,
+      "tokens": {
+        "input_tokens": 118,
+        "output_tokens": 10,
+        "total_tokens": 128
+      },
+      "costo_estimado": 0.000336,
+      "truncado": false,
+      "error": null
+    }
+  ],
+  "resumen": {
+    "llamadas": 24,
+    "con_error": 0,
+    "evaluadas": 24,
+    "exactas": 22,
+    "validas": 24,
+    "fallos_formato_estricto": 2,
+    "fallos_formato_efectivo": 0,
+    "proporcion_estricta": 0.0833,
+    "proporcion_efectiva": 0.0,
+    "umbral": 0.15,
+    "supera_umbral_estricto": false,
+    "supera_umbral_efectivo": false,
+    "aciertos": 23,
+    "exactitud": 0.9583,
+    "por_categoria": {
+      "incidente": {
+        "esperadas": 8,
+        "aciertos": 8,
+        "predichas": {
+          "incidente": 8,
+          "vulnerabilidad": 0,
+          "consulta": 0,
+          "otra": 0
+        }
+      },
+      "vulnerabilidad": {
+        "esperadas": 8,
+        "aciertos": 7,
+        "predichas": {
+          "incidente": 1,
+          "vulnerabilidad": 7,
+          "consulta": 0,
+          "otra": 0
+        }
+      },
+      "consulta": {
+        "esperadas": 8,
+        "aciertos": 8,
+        "predichas": {
+          "incidente": 0,
+          "vulnerabilidad": 0,
+          "consulta": 8,
+          "otra": 0
+        }
+      }
+    }
+  },
+  "costo_total": 0.009040000000000001,
+  "nota": "El costo es una estimacion con los precios del proyecto, no el cobro real. Una sola pasada es una muestra y no estadistica. El router del SDK puede reintentar. La muestra son los ejemplos del dataset de tuning, que escribio la orquestadora y no mensajes reales de un usuario."
+}
