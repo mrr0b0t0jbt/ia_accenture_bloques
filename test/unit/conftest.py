@@ -8,6 +8,7 @@ RUTA_INDICE_REAL = "vectorstore"
 
 RUTA_RESULTADOS_EVALUACION_REALES = "docs/resultados_evaluacion_recuperacion.json"
 RUTA_REGISTROS_LATENCIA_REALES = "docs/registros_latencia_costo.jsonl"
+RUTA_RESULTADOS_CLASIFICADOR_REALES = "docs/resultados_clasificador_router.json"
 
 
 def _estado(ruta: str) -> tuple | None:
@@ -59,6 +60,15 @@ def _no_escribe_en_los_registros_de_latencia_reales():
     yield
     if _estado(os.path.abspath(RUTA_REGISTROS_LATENCIA_REALES)) != antes:
         pytest.fail(f"La prueba escribió en {RUTA_REGISTROS_LATENCIA_REALES}: debe pasar --salida en tmp_path.")
+
+
+@pytest.fixture(autouse=True)
+def _no_escribe_en_los_resultados_del_clasificador_reales():
+    """Falla la prueba que cree o modifique docs/resultados_clasificador_router.json respecto del directorio actual."""
+    antes = _estado(os.path.abspath(RUTA_RESULTADOS_CLASIFICADOR_REALES))
+    yield
+    if _estado(os.path.abspath(RUTA_RESULTADOS_CLASIFICADOR_REALES)) != antes:
+        pytest.fail(f"La prueba escribió en {RUTA_RESULTADOS_CLASIFICADOR_REALES}: debe pasar --salida en tmp_path.")
 
 
 @pytest.fixture(autouse=True)
