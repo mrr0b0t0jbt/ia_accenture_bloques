@@ -211,3 +211,34 @@ def test_i2_g11_problemas_de_forma(tmp_path, capsys):
     salida = capsys.readouterr()
     assert " - claves del archivo distintas de CLAVES" in salida.out
     assert "Error: el dataset tiene 1 problemas; no esta listo para enviarse a entrenar." in salida.err
+
+
+# J2
+def _diez_de_incidente(datos, prioridad_del_ultimo=None):
+    """Deja 10 ejemplos válidos, todos de la categoría incidente, con las prioridades alta, media y baja repetidas."""
+    prioridades = ("alta", "media", "baja")
+    datos["ejemplos"] = [
+        {"id": f"ej_{i:02d}", "texto": f"mensaje distinto numero {i}", "salida": {"categoria": "incidente", "prioridad": prioridades[i % 3]}}
+        for i in range(10)
+    ]
+    if prioridad_del_ultimo:
+        datos["ejemplos"][9]["texto"] = datos["ejemplos"][0]["texto"]
+        datos["ejemplos"][9]["salida"]["prioridad"] = prioridad_del_ultimo
+
+
+def test_j2_h17_categorias_ausentes_en_el_orden_de_valores_permitidos(tmp_path, capsys):
+    assert preparar.main(["--dataset", _escribir_dataset(tmp_path, _diez_de_incidente)]) == 1
+    lineas = capsys.readouterr().err.splitlines()
+    assert lineas == ["Error: categoria no tiene ejemplos de: vulnerabilidad, consulta; no esta listo para enviarse a entrenar."]
+
+
+def test_j2_h18_problemas_y_ausentes_se_reportan_los_dos_en_orden(tmp_path, capsys):
+    def cambiar(datos):  # el ejemplo 9 repite el texto del 0 con otra salida: 1 problema
+        _diez_de_incidente(datos, prioridad_del_ultimo="baja")
+
+    assert preparar.main(["--dataset", _escribir_dataset(tmp_path, cambiar)]) == 1
+    lineas = capsys.readouterr().err.splitlines()
+    assert lineas == [
+        "Error: el dataset tiene 1 problemas; no esta listo para enviarse a entrenar.",
+        "Error: categoria no tiene ejemplos de: vulnerabilidad, consulta; no esta listo para enviarse a entrenar.",
+    ]

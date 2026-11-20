@@ -2,6 +2,7 @@ import copy
 import datetime
 import importlib.util
 import json
+import os
 import socket
 import sys
 from pathlib import Path
@@ -313,3 +314,77 @@ def test_k17_escritura_atomica(tmp_path, monkeypatch):
 # K18
 def test_k18_la_salida_por_defecto():
     assert medir._crear_parser().parse_args([]).salida == str(RAIZ / "docs" / "resultados_clasificador_router.json")
+
+
+# J2
+def _dataset_de(tmp_path, total: int) -> str:
+    """Dataset válido de total ejemplos (24 reales más variantes con id y texto distintos de los primeros)."""
+    def agrandar(datos):
+        for i, ejemplo in enumerate(datos["ejemplos"][: total - 24]):
+            datos["ejemplos"].append({**copy.deepcopy(ejemplo), "id": f"extra_{i}", "texto": f"{ejemplo['texto']} (variante {i})"})
+
+    ruta = _dataset(tmp_path, agrandar)
+    assert len(json.loads(Path(ruta).read_text(encoding="utf-8"))["ejemplos"]) == total
+    return ruta
+
+
+def test_j2_h12a_exactamente_el_tope_de_llamadas(tmp_path, monkeypatch):
+    entorno = _preparar(tmp_path, monkeypatch)
+    assert medir.main(_argv(entorno, "--repeticiones", "3", dataset=_dataset_de(tmp_path, 25))) == 0  # 75 llamadas
+    assert len(entorno.modelo.prompts) == 75
+
+
+def test_j2_h12b_una_llamada_sobre_el_tope(tmp_path, monkeypatch, capsys):
+    entorno = _preparar(tmp_path, monkeypatch)
+    assert medir.main(_argv(entorno, "--repeticiones", "3", dataset=_dataset_de(tmp_path, 26))) == 1  # 78 llamadas
+    assert "Error:" in capsys.readouterr().err and _sin_llamadas(entorno)
+
+
+def test_j2_h13_solo_la_respuesta_cortada_por_max_tokens_es_truncada(tmp_path, monkeypatch):
+    def guion(n, prompt):
+        mensaje = _mensaje(ESPERADAS[n - 1])
+        mensaje.response_metadata = {"stop_reason": "max_tokens" if n == 3 else "end_turn"}
+        return mensaje
+
+    entorno = _preparar(tmp_path, monkeypatch, guion)
+    assert medir.main(_argv(entorno)) == 0
+    assert [r["truncado"] for r in _json(entorno)["resultados"]] == [n == 3 for n in range(1, 25)]
+
+
+def test_j2_h14_la_salida_se_reemplaza_con_os_replace_desde_un_tmp_de_la_misma_carpeta(tmp_path, monkeypatch):
+    llamadas = []
+    real = os.replace
+
+    def espia(origen, destino):
+        llamadas.append((Path(origen), Path(destino), Path(origen).exists()))
+        return real(origen, destino)
+
+    monkeypatch.setattr(os, "replace", espia)
+    entorno = _preparar(tmp_path, monkeypatch)
+    assert medir.main(_argv(entorno)) == 0
+    assert len(llamadas) == 1
+    origen, destino, existia = llamadas[0]
+    assert destino == entorno.salida and origen.parent == tmp_path and origen.name.endswith(".tmp")
+    assert existia and not origen.exists()
+
+
+def test_j2_h15_ctrl_c_tras_errores_sale_con_130(tmp_path, monkeypatch):
+    def guion(n, prompt):
+        if n == 3:
+            raise KeyboardInterrupt
+        raise RuntimeError("fallo")
+
+    entorno = _preparar(tmp_path, monkeypatch, guion)
+    assert medir.main(_argv(entorno)) == 130
+    datos = _json(entorno)
+    assert len(datos["resultados"]) == 2 and all(r["error"] for r in datos["resultados"]) and datos["incompleto"] is True
+
+
+def test_j2_h16_el_tope_de_gasto_se_alcanza_justo_en_la_segunda_llamada(tmp_path, monkeypatch, capsys):
+    entrada = round(0.002 / INPUT_PRICING)  # con el precio de 0.000002 son 1000 tokens: 0.002 por llamada, 0.004 en dos
+    assert entrada * INPUT_PRICING == pytest.approx(0.002)
+    entorno = _preparar(tmp_path, monkeypatch, lambda n, prompt: _mensaje(ESPERADAS[n - 1], entrada, 0))
+    assert medir.main(_argv(entorno, "--tope-usd", "0.004")) == 0
+    datos = _json(entorno)
+    assert len(entorno.modelo.prompts) == 2 and len(datos["resultados"]) == 2 and datos["incompleto"] is True
+    assert "tope de gasto" in capsys.readouterr().out

@@ -204,3 +204,94 @@ def test_x11_sin_salida_no_escribe_nada(tmp_path, monkeypatch):
     monkeypatch.chdir(vacio)
     assert decidir.main(["--respuestas", ruta]) == 0
     assert list(vacio.iterdir()) == [] and Path(ruta).read_bytes() == antes
+
+
+# J2
+def _archivo_de_bytes(tmp_path, contenido: bytes) -> str:
+    ruta = tmp_path / "respuestas.json"
+    ruta.write_bytes(contenido)
+    return str(ruta)
+
+
+def _relleno(datos: dict, tamano: int) -> bytes:
+    """JSON válido de los datos rellenado con espacios al final hasta pesar exactamente tamano bytes."""
+    base = json.dumps(datos).encode("utf-8")
+    assert len(base) <= tamano
+    return base + b" " * (tamano - len(base))
+
+
+def test_j2_h3_fila_sin_ganadoras_dice_ninguna(tmp_path, capsys):
+    respuestas = dict(zip(dp.PREGUNTAS, [True, False, False, False, False]))
+    assert decidir.main(["--respuestas", _archivo(tmp_path, _datos(respuestas))]) == 0
+    assert "  informacion_cambia_seguido -> False: ninguna  [CAMBIA]" in capsys.readouterr().out.splitlines()
+
+
+def test_j2_h4_evidencia_que_es_una_lista(tmp_path, capsys):
+    assert decidir.main(["--respuestas", _archivo(tmp_path, _datos(evidencia=[]))]) == 1
+    assert "Error: la clave evidencia no es un objeto\n" in capsys.readouterr().err
+
+
+def test_j2_h5_cien_mil_corchetes_no_es_un_json_valido(tmp_path, capsys):
+    ruta = _archivo_de_bytes(tmp_path, b"[" * 100000)
+    assert Path(ruta).stat().st_size == 100000
+    assert decidir.main(["--respuestas", ruta]) == 1
+    err = capsys.readouterr().err
+    assert "Error: el archivo de respuestas no es un JSON valido\n" in err and "Traceback" not in err
+
+
+def test_j2_h6a_archivo_de_exactamente_el_maximo_de_bytes(tmp_path):
+    ruta = _archivo_de_bytes(tmp_path, _relleno(_datos(), 100000))
+    assert Path(ruta).stat().st_size == 100000
+    assert decidir.main(["--respuestas", ruta]) == 0
+
+
+def test_j2_h6b_un_byte_mas_que_el_maximo(tmp_path, capsys):
+    ruta = _archivo_de_bytes(tmp_path, _relleno(_datos(), 100001))
+    assert decidir.main(["--respuestas", ruta]) == 1
+    assert "Error: el archivo de respuestas pesa mas de 100000 bytes\n" in capsys.readouterr().err
+
+
+def test_j2_h7_utf8_real_con_tildes_y_enie(tmp_path, capsys):
+    problema = "análisis de niños con tildes: análisis, cañón"
+    ruta = tmp_path / "respuestas.json"
+    ruta.write_text(json.dumps(_datos(problema=problema), ensure_ascii=False), encoding="utf-8")
+    assert decidir.main(["--respuestas", str(ruta)]) == 0
+    assert f"Problema: {problema}" in capsys.readouterr().out.splitlines()
+
+
+def _con_evidencia_de(largo: int) -> dict:
+    return _datos(evidencia={**_datos()["evidencia"], "informacion_cambia_seguido": "a" * largo})
+
+
+def test_j2_h8a_evidencia_de_exactamente_500_caracteres(tmp_path):
+    assert decidir.main(["--respuestas", _archivo(tmp_path, _con_evidencia_de(500))]) == 0
+
+
+def test_j2_h8b_evidencia_de_501_caracteres(tmp_path, capsys):
+    assert decidir.main(["--respuestas", _archivo(tmp_path, _con_evidencia_de(501))]) == 1
+    assert 'Error: la evidencia de "informacion_cambia_seguido" supera los 500 caracteres\n' in capsys.readouterr().err
+
+
+def test_j2_h9_no_acepta_abreviaturas(tmp_path):
+    with pytest.raises(SystemExit) as salida:
+        decidir.main(["--resp", _archivo(tmp_path, _datos())])
+    assert salida.value.code == 2
+
+
+def test_j2_h10a_salida_sin_respuestas(capsys):
+    with pytest.raises(SystemExit) as salida:
+        decidir.main(["--estimar-etiquetado", "10", "5", "25", "--salida", "x"])
+    assert salida.value.code == 2 and "--salida solo se usa con --respuestas" in capsys.readouterr().err
+
+
+def test_j2_h10b_revision_sin_estimar_etiquetado(tmp_path, capsys):
+    with pytest.raises(SystemExit) as salida:
+        decidir.main(["--respuestas", _archivo(tmp_path, _datos()), "--revision", "0.1", "2"])
+    assert salida.value.code == 2 and "--revision solo se usa con --estimar-etiquetado" in capsys.readouterr().err
+
+
+def test_j2_h11_separador_de_linea_no_llega_a_la_consola(tmp_path, capsys):
+    evidencia = {**_datos()["evidencia"], "informacion_cambia_seguido": "a" + chr(0x2028) + "b"}  # categoría Zl, no es de control
+    assert decidir.main(["--respuestas", _archivo(tmp_path, _datos(evidencia=evidencia))]) == 0
+    out = capsys.readouterr().out
+    assert chr(0x2028) not in out and "  informacion_cambia_seguido: False -- a b" in out.splitlines()

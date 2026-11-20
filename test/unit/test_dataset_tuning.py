@@ -531,3 +531,11 @@ def test_i2_c1c_output_con_surrogate_suelto_sigue_evaluando_las_demas_reglas():
 def test_i2_g7_texto_del_aviso_de_valores_ausentes():
     resumen = {"razon": None, "ausentes": ["media", "baja"]}
     assert avisos_de_balance({"prioridad": resumen}) == ["aviso: prioridad no tiene ejemplos de: media, baja"]
+
+
+# J2
+def test_j2_h19_control_y_surrogate_en_el_mismo_texto_salen_en_orden():
+    assert _problemas_del_ultimo(_ej("a" + chr(1) + "\ud800" + "b")) == [
+        "ejemplo 9: text_input tiene caracteres de control",
+        "ejemplo 9: text_input no se puede codificar en UTF-8",
+    ]

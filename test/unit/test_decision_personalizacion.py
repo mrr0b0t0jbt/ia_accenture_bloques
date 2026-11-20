@@ -290,3 +290,17 @@ def test_e1i_resultado_invalido():
     for resultado in ("texto", {"ganadoras": [], "empate": False, "sin_necesidad": True}):
         with pytest.raises(ValueError, match="^resultado no es el que devuelve recomendar_estrategia$"):
             dp.generar_esqueleto_decision(PROBLEMA, resultado)
+
+
+# J2
+def test_j2_h1_claves_de_mas_salen_ordenadas_con_repr():
+    respuestas = {**CASO_1, "zeta": True, "alfa": True}  # zeta se inserta antes que alfa
+    esperado = "respuestas tiene claves de mas: " + ", ".join(repr(k) for k in ("alfa", "zeta"))
+    assert dp.validar_respuestas(respuestas) == [esperado]
+
+
+def test_j2_h2_caso_1_cambia_y_ganadoras_por_fila():
+    filas = dp.analizar_sensibilidad(CASO_1)
+    assert [f["pregunta"] for f in filas] == list(dp.PREGUNTAS)
+    assert [f["cambia"] for f in filas] == [True, False, False, False, True]
+    assert [f["ganadoras"] for f in filas] == [["PEFT"], ["RAG"], ["RAG"], ["RAG"], ["RAG", "PEFT"]]
