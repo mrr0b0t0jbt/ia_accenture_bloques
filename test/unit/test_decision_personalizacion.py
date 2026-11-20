@@ -330,3 +330,9 @@ def test_j2_t1b_esqueleto_con_surrogate_suelto_levanta():
 def test_j2_t3_numeros_demasiado_grandes(llamada):
     with pytest.raises(ValueError, match="^los numeros son demasiado grandes$"):
         llamada()
+
+
+def test_k_el_desborde_ocurre_solo_en_la_revision():
+    # el calculo base da 0 (minutos 0); 10**400 * 0.2 solo desborda en la revision
+    with pytest.raises(ValueError, match="^los numeros son demasiado grandes$"):
+        dp.estimar_costo_con_revision(10**400, 0, 25, 0.2, 2)
