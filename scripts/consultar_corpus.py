@@ -32,7 +32,7 @@ _spec = importlib.util.spec_from_file_location("ejecutar_cadenas", RAIZ / "scrip
 ejecutar_cadenas = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ejecutar_cadenas)
 
-logger = logging.getLogger(__name__)
+logger_del_modulo = logging.getLogger(__name__)  # consultar_casos recibe un parámetro `logger` (el JSON) que lo taparía
 
 TOPE_USD_MAXIMO = 0.05
 MAX_TOKENS_MAXIMO = 1024
@@ -83,14 +83,21 @@ def _es_entero(valor) -> bool:
     return isinstance(valor, int) and not isinstance(valor, bool)
 
 
-def consultar_casos(casos: list[dict], vectorstore, modelo, k: int, tope_usd: float, ruta_salida: str) -> dict:
-    """Recupera, pregunta a Claude y verifica las citas de cada caso; corta entre casos por tope, por falta de datos de uso o por Ctrl-C (que se guarda, no se relanza)."""
+def consultar_casos(casos: list[dict], vectorstore, modelo, k: int, tope_usd: float, ruta_salida: str, logger=None) -> dict:
+    """Recupera, pregunta a Claude y verifica las citas de cada caso; corta entre casos por tope, por falta de datos de uso o por Ctrl-C (que se guarda, no se relanza).
+
+    Cada caso corre bajo su propio trace_id; con logger (JSON, sin contenido) además registra la consulta y el consumo.
+    """
+    import consulta_rag
     import indexacion
     import recuperacion
+    import registro_estructurado
     from api_claude_refactor import INPUT_PRICING, OUTPUT_PRICING
+    from defensa_inyeccion import HUELLA_PROMPT
 
     salida = {
         "nota_costo": NOTA_COSTO,
+        "huella_prompt": HUELLA_PROMPT,
         "k": k,
         "preguntas_procesadas": 0,
         "consultas_de_embeddings": 0,
@@ -121,60 +128,80 @@ def consultar_casos(casos: list[dict], vectorstore, modelo, k: int, tope_usd: fl
             "tokens_salida": 0,
             "costo_estimado": 0.0,
             "truncado": False,
+            "trace_id": None,
+            "descartados": [],
+            "requiere_revision": False,
         }
 
         def buscar():
             salida["consultas_de_embeddings"] += 1
-            return recuperacion.construir_prompt(caso["pregunta"], vectorstore, k)
+            return consulta_rag.preparar_consulta(caso["pregunta"], vectorstore, k, logger)
 
-        try:
+        # un trace_id por caso: la recuperación, la llamada al modelo y el consumo comparten el mismo id
+        with registro_estructurado.con_trace_id() as trace_id:
+            resultado["trace_id"] = trace_id
             try:
-                prompt, mapa_citas, encontrados = indexacion.con_reintentos(buscar)
-            except Exception as error:
-                resultado["error"] = embeddings_gemini.describir_error_api(error)[1]
-            else:
-                resultado["recuperados"] = [
-                    {
-                        "rango": rango,
-                        "documento": documento.metadata.get("documento"),
-                        "fragmento": documento.metadata.get("fragmento"),
-                        "fuente": documento.metadata.get("fuente"),
-                        "distancia": distancia,
-                    }
-                    for rango, (documento, distancia) in enumerate(encontrados, start=1)
-                ]
-                if caso["respondible"]:
-                    recuperados = {r["documento"] for r in resultado["recuperados"]}
-                    resultado["acierto_recuperacion"] = set(caso["fuentes_esperadas"]) <= recuperados
-                resultado["llamadas_modelo"] = 1
                 try:
-                    mensaje = modelo.invoke(prompt)
+                    preparacion = indexacion.con_reintentos(buscar)
                 except Exception as error:
-                    # un caso fallido no corta los siguientes
-                    logger.exception("Error consultando al modelo")
-                    resultado["error"] = f"{type(error).__name__}: {str(error)[:300]}"
+                    resultado["error"] = embeddings_gemini.describir_error_api(error)[1]
                 else:
-                    uso = getattr(mensaje, "usage_metadata", None) or {}
-                    entrada, salida_tokens = uso.get("input_tokens"), uso.get("output_tokens")
-                    if not _es_entero(entrada) or entrada == 0:
-                        # falta el uso si input_tokens no es entero o es 0: el cliente real (ChatAnthropic) no lo deja vacío
-                        # sino en ceros, y una llamada real siempre consume tokens de entrada; sin uso el tope no se controla
-                        # (si falta solo output_tokens no se corta y queda en 0)
-                        logger.warning("Caso sin datos de uso: el costo no se puede controlar")
-                        resultado["sin_datos_de_uso"] = True
-                        salida["cortado_por_falta_de_uso"] = True
+                    mapa_citas, encontrados = preparacion["citas"], preparacion["resultados"]
+                    resultado["descartados"] = preparacion["descartados"]
+                    resultado["requiere_revision"] = preparacion["requiere_revision"]
+                    resultado["recuperados"] = [
+                        {
+                            "rango": rango,
+                            "documento": documento.metadata.get("documento"),
+                            "fragmento": documento.metadata.get("fragmento"),
+                            "fuente": documento.metadata.get("fuente"),
+                            "distancia": distancia,
+                        }
+                        for rango, (documento, distancia) in enumerate(encontrados, start=1)
+                    ]
+                    if caso["respondible"]:
+                        recuperados = {r["documento"] for r in resultado["recuperados"]}
+                        resultado["acierto_recuperacion"] = set(caso["fuentes_esperadas"]) <= recuperados
+                    resultado["llamadas_modelo"] = 1
+                    try:
+                        mensaje = modelo.invoke(preparacion["mensajes"])
+                    except Exception as error:
+                        # un caso fallido no corta los siguientes
+                        logger_del_modulo.exception("Error consultando al modelo")
+                        resultado["error"] = f"{type(error).__name__}: {str(error)[:300]}"
                     else:
-                        resultado["tokens_entrada"] = entrada
-                        resultado["tokens_salida"] = salida_tokens if _es_entero(salida_tokens) else 0
-                        resultado["costo_estimado"] = resultado["tokens_entrada"] * INPUT_PRICING + resultado["tokens_salida"] * OUTPUT_PRICING
-                    resultado["truncado"] = getattr(mensaje, "response_metadata", {}).get("stop_reason") == "max_tokens"
-                    resultado["respuesta"] = recuperacion.texto_de_respuesta(mensaje)
-                    resultado["citas"] = recuperacion.extraer_citas(resultado["respuesta"], mapa_citas)
-                    resultado["admite_falta_de_contexto"] = recuperacion.admite_falta_de_contexto(resultado["respuesta"])
-        except KeyboardInterrupt:
-            # Ctrl-C: el caso en vuelo queda registrado (llamadas_modelo dice si ya se pidió la respuesta) y se guarda lo ya pagado
-            resultado["error"] = "interrumpido por la persona"
-            salida["interrumpido"] = True
+                        if logger is not None:  # solo para el log: no decide nada
+                            registro_estructurado.registrar_consumo(logger, mensaje, (INPUT_PRICING, OUTPUT_PRICING))
+                        uso = getattr(mensaje, "usage_metadata", None) or {}
+                        entrada, salida_tokens = uso.get("input_tokens"), uso.get("output_tokens")
+                        if not _es_entero(entrada) or entrada == 0:
+                            # falta el uso si input_tokens no es entero o es 0: el cliente real (ChatAnthropic) no lo deja vacío
+                            # sino en ceros, y una llamada real siempre consume tokens de entrada; sin uso el tope no se controla
+                            # (si falta solo output_tokens no se corta y queda en 0)
+                            logger_del_modulo.warning("Caso sin datos de uso: el costo no se puede controlar")
+                            resultado["sin_datos_de_uso"] = True
+                            salida["cortado_por_falta_de_uso"] = True
+                        else:
+                            resultado["tokens_entrada"] = entrada
+                            resultado["tokens_salida"] = salida_tokens if _es_entero(salida_tokens) else 0
+                            resultado["costo_estimado"] = resultado["tokens_entrada"] * INPUT_PRICING + resultado["tokens_salida"] * OUTPUT_PRICING
+                        resultado["truncado"] = getattr(mensaje, "response_metadata", {}).get("stop_reason") == "max_tokens"
+                        resultado["respuesta"] = recuperacion.texto_de_respuesta(mensaje)
+                        resultado["citas"] = recuperacion.extraer_citas(resultado["respuesta"], mapa_citas)
+                        resultado["admite_falta_de_contexto"] = recuperacion.admite_falta_de_contexto(resultado["respuesta"])
+                        registro_estructurado.registrar_evento(
+                            logger, logging.INFO, "respuesta_generada",
+                            respuesta=registro_estructurado.resumen_de_texto(resultado["respuesta"]),
+                            n_citas_validas=len(resultado["citas"]["validas"]),
+                            n_citas_invalidas=len(resultado["citas"]["invalidas"]),
+                            sin_citas=resultado["citas"]["sin_citas"],
+                            admite_falta_de_contexto=resultado["admite_falta_de_contexto"],
+                            truncado=resultado["truncado"],
+                        )
+            except KeyboardInterrupt:
+                # Ctrl-C: el caso en vuelo queda registrado (llamadas_modelo dice si ya se pidió la respuesta) y se guarda lo ya pagado
+                resultado["error"] = "interrumpido por la persona"
+                salida["interrumpido"] = True
         salida["resultados"].append(resultado)
         salida["preguntas_procesadas"] += 1
         salida["llamadas_a_claude"] += resultado["llamadas_modelo"]
@@ -209,6 +236,11 @@ def informar(salida: dict) -> None:
             print(f"  Cita INVALIDA [{numero}]")
         if citas["sin_citas"] and "error" not in resultado:
             print("  SIN CITAS")
+        if resultado.get("requiere_revision"):
+            descartados = resultado["descartados"]
+            print(f"  REQUIERE REVISION: {len(descartados)} documento(s) descartado(s) por patrones de inyeccion")
+            for descartado in descartados:
+                print(f"  Descartado: {limpio(descartado['fuente'])} ({limpio(', '.join(descartado['patrones']))})")
         if resultado["truncado"]:
             print("  AVISO: respuesta cortada por max_tokens.")
         admite = resultado["admite_falta_de_contexto"]
@@ -275,6 +307,7 @@ def _crear_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tope-usd", type=float, default=TOPE_USD_MAXIMO)
     parser.add_argument("--max-tokens", type=int, default=MAX_TOKENS_POR_DEFECTO)
     parser.add_argument("--confirmar-api-real", action="store_true")
+    parser.add_argument("--registro-json", action="store_true", help="escribe en stderr un log JSON por evento, sin contenido")
     return parser
 
 
@@ -322,7 +355,12 @@ def main(argv: list[str] | None = None) -> int:
         modelo = modelo_langchain.crear_modelo(max_tokens=args.max_tokens)
     except ValueError as error:
         return _error(str(error))
-    salida = consultar_casos(casos, vectorstore, modelo, args.k, args.tope_usd, args.salida)
+    logger_json = None
+    if args.registro_json:
+        import registro_estructurado
+
+        logger_json = registro_estructurado.crear_logger()
+    salida = consultar_casos(casos, vectorstore, modelo, args.k, args.tope_usd, args.salida, logger_json)
     informar(salida)
     if salida["interrumpido"]:
         print("Interrumpido por la persona. Resultados parciales guardados.", file=sys.stderr)
