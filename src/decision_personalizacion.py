@@ -24,6 +24,7 @@ PESOS = {
 JORNADA_HORAS = 8
 MAX_CARACTERES_PROBLEMA = 1000
 CLAVES_RESULTADO = ("puntos", "ganadoras", "empate", "sin_necesidad")
+MENSAJE_NUMEROS_GRANDES = "los numeros son demasiado grandes"
 
 
 def validar_respuestas(respuestas) -> list[str]:
@@ -96,11 +97,21 @@ def _validar_costos(num_ejemplos, minutos_por_ejemplo, costo_por_hora) -> None:
         raise ValueError("costo_por_hora debe ser un numero finito mayor o igual que 0")
 
 
+def _exigir_finitos(*valores) -> None:
+    if not all(math.isfinite(v) for v in valores):
+        raise ValueError(MENSAJE_NUMEROS_GRANDES)
+
+
 def estimar_costo_de_etiquetar(num_ejemplos, minutos_por_ejemplo, costo_por_hora) -> tuple[float, float]:
     """Devuelve (horas, costo) de etiquetar num_ejemplos a mano."""
     _validar_costos(num_ejemplos, minutos_por_ejemplo, costo_por_hora)
-    horas = float(num_ejemplos * minutos_por_ejemplo / 60)
-    return horas, float(horas * costo_por_hora)
+    try:
+        horas = float(num_ejemplos * minutos_por_ejemplo / 60)
+        costo = float(horas * costo_por_hora)
+    except OverflowError:
+        raise ValueError(MENSAJE_NUMEROS_GRANDES) from None
+    _exigir_finitos(horas, costo)
+    return horas, costo
 
 
 def estimar_costo_con_revision(num_ejemplos, minutos_por_ejemplo, costo_por_hora, fraccion_revision, minutos_revision) -> dict:
@@ -110,19 +121,24 @@ def estimar_costo_con_revision(num_ejemplos, minutos_por_ejemplo, costo_por_hora
         raise ValueError("fraccion_revision debe ser un numero entre 0 y 1")
     if not _es_numero_no_negativo(minutos_revision):
         raise ValueError("minutos_revision debe ser un numero finito mayor o igual que 0")
-    ejemplos_revisados = num_ejemplos * fraccion_revision
-    horas_revision = ejemplos_revisados * minutos_revision / 60
-    horas_total = horas_base + horas_revision
-    return {
-        "horas_base": horas_base,
-        "costo_base": costo_base,
-        "ejemplos_revisados": ejemplos_revisados,
-        "horas_revision": horas_revision,
-        "costo_revision": horas_revision * costo_por_hora,
-        "horas_total": horas_total,
-        "costo_total": horas_total * costo_por_hora,
-        "jornadas": horas_total / JORNADA_HORAS,
-    }
+    try:
+        ejemplos_revisados = num_ejemplos * fraccion_revision
+        horas_revision = ejemplos_revisados * minutos_revision / 60
+        horas_total = horas_base + horas_revision
+        resultado = {
+            "horas_base": horas_base,
+            "costo_base": costo_base,
+            "ejemplos_revisados": ejemplos_revisados,
+            "horas_revision": horas_revision,
+            "costo_revision": horas_revision * costo_por_hora,
+            "horas_total": horas_total,
+            "costo_total": horas_total * costo_por_hora,
+            "jornadas": horas_total / JORNADA_HORAS,
+        }
+    except OverflowError:
+        raise ValueError(MENSAJE_NUMEROS_GRANDES) from None
+    _exigir_finitos(*resultado.values())
+    return resultado
 
 
 def normalizar_problema(problema) -> str:
@@ -135,6 +151,10 @@ def normalizar_problema(problema) -> str:
         raise ValueError(f"problema supera los {MAX_CARACTERES_PROBLEMA} caracteres")
     if any(unicodedata.category(c) == "Cc" and c not in "\n\t" for c in problema):
         raise ValueError("problema tiene caracteres de control")
+    try:
+        problema.encode("utf-8")
+    except UnicodeEncodeError:  # surrogate suelto: no se puede escribir en un archivo
+        raise ValueError("problema no se puede codificar en UTF-8") from None
     normalizado = " ".join(problema.split())
     if normalizado.startswith("#"):
         raise ValueError("problema no puede empezar con #")

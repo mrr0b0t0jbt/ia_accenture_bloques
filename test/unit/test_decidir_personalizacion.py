@@ -295,3 +295,44 @@ def test_j2_h11_separador_de_linea_no_llega_a_la_consola(tmp_path, capsys):
     assert decidir.main(["--respuestas", _archivo(tmp_path, _datos(evidencia=evidencia))]) == 0
     out = capsys.readouterr().out
     assert chr(0x2028) not in out and "  informacion_cambia_seguido: False -- a b" in out.splitlines()
+
+
+def _con_surrogate_en_el_problema(tmp_path) -> str:
+    """Archivo con el escape JSON de un surrogate suelto en el problema (escrito como bytes)."""
+    texto = json.dumps(_datos(problema="PLACEHOLDER")).replace("PLACEHOLDER", "a\\ud800b")
+    return _archivo_de_bytes(tmp_path, texto.encode("utf-8"))
+
+
+def test_j2_t2a_surrogate_con_salida_no_crea_el_archivo(tmp_path, capsys):
+    salida = tmp_path / "decision.md"
+    assert decidir.main(["--respuestas", _con_surrogate_en_el_problema(tmp_path), "--salida", str(salida)]) == 1
+    err = capsys.readouterr().err
+    assert "Error: problema no se puede codificar en UTF-8\n" in err and "Traceback" not in err
+    assert not salida.exists()
+
+
+def test_j2_t2b_surrogate_sin_salida(tmp_path, capsys):
+    assert decidir.main(["--respuestas", _con_surrogate_en_el_problema(tmp_path)]) == 1
+    captura = capsys.readouterr()
+    assert "Error: problema no se puede codificar en UTF-8\n" in captura.err and captura.out == ""
+
+
+def test_j2_t2c_esqueleto_no_codificable_no_crea_el_archivo(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(dp, "generar_esqueleto_decision", lambda problema, resultado: "x" + chr(0xD800))
+    salida = tmp_path / "decision.md"
+    assert decidir.main(["--respuestas", _archivo(tmp_path, _datos()), "--salida", str(salida)]) == 1
+    captura = capsys.readouterr()
+    assert "Error: no se pudo crear la salida: el texto no se puede codificar en UTF-8\n" in captura.err
+    assert "Traceback" not in captura.err and captura.out == "" and not salida.exists()
+
+
+@pytest.mark.parametrize(
+    "argumentos",
+    [["1" + "0" * 400, "5", "25"], ["10", "1e308", "1e308"]],
+    ids=["n_gigante", "minutos_y_tarifa_enormes"],
+)
+def test_j2_t4_costo_con_numeros_demasiado_grandes(capsys, argumentos):
+    assert decidir.main(["--estimar-etiquetado", *argumentos]) == 1
+    captura = capsys.readouterr()
+    assert "Error: los numeros son demasiado grandes\n" in captura.err
+    assert "Traceback" not in captura.err and captura.out == ""

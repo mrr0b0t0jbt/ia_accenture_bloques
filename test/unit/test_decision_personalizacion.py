@@ -304,3 +304,29 @@ def test_j2_h2_caso_1_cambia_y_ganadoras_por_fila():
     assert [f["pregunta"] for f in filas] == list(dp.PREGUNTAS)
     assert [f["cambia"] for f in filas] == [True, False, False, False, True]
     assert [f["ganadoras"] for f in filas] == [["PEFT"], ["RAG"], ["RAG"], ["RAG"], ["RAG", "PEFT"]]
+
+
+def test_j2_t1a_problema_con_surrogate_suelto_levanta():
+    with pytest.raises(ValueError, match="^problema no se puede codificar en UTF-8$"):
+        dp.normalizar_problema("a" + chr(0xD800) + "b")
+    assert dp.normalizar_problema("a " + chr(0x1F600)) == "a " + chr(0x1F600)  # un emoji valido sigue siendo valido
+
+
+def test_j2_t1b_esqueleto_con_surrogate_suelto_levanta():
+    with pytest.raises(ValueError, match="^problema no se puede codificar en UTF-8$"):
+        _esqueleto("a" + chr(0xD800) + "b")
+
+
+@pytest.mark.parametrize(
+    "llamada",
+    [
+        lambda: dp.estimar_costo_de_etiquetar(10**400, 5, 25),
+        lambda: dp.estimar_costo_de_etiquetar(10, 1e308, 1e308),
+        lambda: dp.estimar_costo_con_revision(10**400, 5, 25, 0.2, 2),
+        lambda: dp.estimar_costo_con_revision(10, 1, 1, 1, 1e308),
+    ],
+    ids=["n_gigante", "minutos_y_tarifa_enormes", "revision_n_gigante", "revision_desborda"],
+)
+def test_j2_t3_numeros_demasiado_grandes(llamada):
+    with pytest.raises(ValueError, match="^los numeros son demasiado grandes$"):
+        llamada()

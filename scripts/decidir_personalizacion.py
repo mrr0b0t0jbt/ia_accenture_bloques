@@ -92,9 +92,10 @@ def _problemas_de_contenido(datos: dict) -> list[str]:
 
 
 def _escribir_esqueleto(ruta: str, texto: str) -> None:
-    """Crea el archivo en modo exclusivo (nunca pisa uno existente); OSError si no se puede."""
-    with open(ruta, "x", encoding="utf-8") as archivo:
-        archivo.write(texto + "\n")
+    """Crea el archivo en modo exclusivo (nunca pisa uno existente); OSError si no se puede, UnicodeEncodeError si el texto no es UTF-8."""
+    contenido = (texto + "\n").encode("utf-8")  # antes de abrir: si falla no queda un archivo vacío
+    with open(ruta, "xb") as archivo:
+        archivo.write(contenido)
 
 
 def _modo_respuestas(args) -> int:
@@ -114,6 +115,8 @@ def _modo_respuestas(args) -> int:
             _escribir_esqueleto(args.salida, decision_personalizacion.generar_esqueleto_decision(datos["problema"], resultado))
         except OSError as error:
             return _error(f"no se pudo crear la salida: {error.strerror or type(error).__name__}")
+        except UnicodeEncodeError:
+            return _error("no se pudo crear la salida: el texto no se puede codificar en UTF-8")
     _imprimir(f"Problema: {decision_personalizacion.normalizar_problema(datos['problema'])}")
     _imprimir("Puntajes:")
     puntos = resultado["puntos"]

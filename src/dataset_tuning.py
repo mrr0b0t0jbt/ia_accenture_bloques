@@ -176,7 +176,7 @@ def validar_dataset(examples, claves=CLAVES, valores_permitidos=VALORES_PERMITID
             continue
         if not _es_utf8(salida):
             problemas.append(prefijo + "output no se puede codificar en UTF-8")
-        normalizado =normalizar_texto(texto) if isinstance(texto, str) else ""
+        normalizado = normalizar_texto(texto) if isinstance(texto, str) else ""
         if normalizado:
             j = vistos.setdefault(normalizado, i)
             if j != i:
