@@ -1,0 +1,476 @@
+{
+  "nota_costo": "El costo es una estimación calculada con los tokens informados y los precios del proyecto; no es el cobro real. Los embeddings de Gemini no se estiman en dólares porque el proyecto no tiene su precio.",
+  "huella_prompt": "96f508a5ab49",
+  "k": 3,
+  "preguntas_procesadas": 8,
+  "consultas_de_embeddings": 8,
+  "llamadas_a_claude": 8,
+  "costo_total_estimado": 0.023238,
+  "cortado_por_tope": false,
+  "cortado_por_falta_de_uso": false,
+  "interrumpido": false,
+  "resultados": [
+    {
+      "id": "q1_plazo_critico_cola",
+      "pregunta": "¿En cuánto tiempo hay que mitigar la vulnerabilidad de la cola de mensajes?",
+      "respondible": true,
+      "fuentes_esperadas": [
+        "aviso_cve_2099_10002",
+        "politica_parcheo"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "documento": "aviso_cve_2099_10002",
+          "fragmento": 1,
+          "fuente": "aviso_cve_2099_10002.md",
+          "distancia": 0.41954800486564636,
+          "descartado": false,
+          "rango_en_contexto": 1
+        },
+        {
+          "rango": 2,
+          "documento": "aviso_cve_2099_10002",
+          "fragmento": 2,
+          "fuente": "aviso_cve_2099_10002.md",
+          "distancia": 0.4263230860233307,
+          "descartado": false,
+          "rango_en_contexto": 2
+        },
+        {
+          "rango": 3,
+          "documento": "aviso_cve_2099_10001",
+          "fragmento": 2,
+          "fuente": "aviso_cve_2099_10001.md",
+          "distancia": 0.5083439946174622,
+          "descartado": false,
+          "rango_en_contexto": 3
+        }
+      ],
+      "acierto_recuperacion": false,
+      "respuesta": "Según la política de parcheo, el plazo es de 4 días hábiles, porque la vulnerabilidad se considera crítica [2].\n\nLa vulnerabilidad permite que un mensaje manipulado ejecute código en el servidor que procesa la cola [1]. Mientras se aplica la mitigación, que consiste en aceptar solo mensajes firmados, el responsable de turno puede aislar el host de la cola [1][2].",
+      "citas": {
+        "validas": [
+          [
+            2,
+            "aviso_cve_2099_10002.md"
+          ],
+          [
+            1,
+            "aviso_cve_2099_10002.md"
+          ]
+        ],
+        "invalidas": [],
+        "sin_citas": false
+      },
+      "admite_falta_de_contexto": false,
+      "llamadas_modelo": 1,
+      "tokens_entrada": 450,
+      "tokens_salida": 369,
+      "costo_estimado": 0.00459,
+      "truncado": false,
+      "trace_id": "trace-bff8fe9a8d9f",
+      "descartados": [],
+      "requiere_revision": false
+    },
+    {
+      "id": "q2_parafrasis_trafico",
+      "pregunta": "Un servidor empezó a mandar información a un lugar que no conocemos, ¿qué hago primero?",
+      "respondible": true,
+      "fuentes_esperadas": [
+        "playbook_trafico_saliente"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "documento": "playbook_trafico_saliente",
+          "fragmento": 0,
+          "fuente": "playbook_trafico_saliente.md",
+          "distancia": 0.3321148753166199,
+          "descartado": false,
+          "rango_en_contexto": 1
+        },
+        {
+          "rango": 2,
+          "documento": "playbook_trafico_saliente",
+          "fragmento": 1,
+          "fuente": "playbook_trafico_saliente.md",
+          "distancia": 0.525772213935852,
+          "descartado": false,
+          "rango_en_contexto": 2
+        },
+        {
+          "rango": 3,
+          "documento": "aviso_cve_2099_10001",
+          "fragmento": 1,
+          "fuente": "aviso_cve_2099_10001.md",
+          "distancia": 0.6305192708969116,
+          "descartado": false,
+          "rango_en_contexto": 3
+        }
+      ],
+      "acierto_recuperacion": true,
+      "respuesta": "Lo primero es conservar la evidencia: copia los registros de red al almacén de evidencia antes de cambiar nada [1].\n\nDespués, según el procedimiento, los pasos siguientes son:\n- Anotar la dirección y el puerto de destino [1][2].\n- Comprobar si otros equipos hablan con el mismo destino [2].\n- Avisar al responsable de turno en los primeros 20 minutos [2].\n- Con su aprobación, aislar el host [2].\n\nEl contexto se corta después de este último paso, así que no puedo detallar qué viene a continuación.",
+      "citas": {
+        "validas": [
+          [
+            1,
+            "playbook_trafico_saliente.md"
+          ],
+          [
+            2,
+            "playbook_trafico_saliente.md"
+          ]
+        ],
+        "invalidas": [],
+        "sin_citas": false
+      },
+      "admite_falta_de_contexto": false,
+      "llamadas_modelo": 1,
+      "tokens_entrada": 521,
+      "tokens_salida": 194,
+      "costo_estimado": 0.0029820000000000003,
+      "truncado": false,
+      "trace_id": "trace-ffb22070b71a",
+      "descartados": [],
+      "requiere_revision": false
+    },
+    {
+      "id": "q3_phishing_clave",
+      "pregunta": "Alguien hizo clic en un enlace de un correo raro y escribió su clave, ¿qué sigue?",
+      "respondible": true,
+      "fuentes_esperadas": [
+        "playbook_phishing"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "documento": "playbook_phishing",
+          "fragmento": 1,
+          "fuente": "playbook_phishing.md",
+          "distancia": 0.4464849531650543,
+          "descartado": false,
+          "rango_en_contexto": 1
+        },
+        {
+          "rango": 2,
+          "documento": "playbook_phishing",
+          "fragmento": 0,
+          "fuente": "playbook_phishing.md",
+          "distancia": 0.5838115215301514,
+          "descartado": false,
+          "rango_en_contexto": 2
+        },
+        {
+          "rango": 3,
+          "documento": "politica_contrasenas_mfa",
+          "fragmento": 1,
+          "fuente": "politica_contrasenas_mfa.md",
+          "distancia": 0.627269446849823,
+          "descartado": false,
+          "rango_en_contexto": 3
+        }
+      ],
+      "acierto_recuperacion": true,
+      "respuesta": "Según el contexto, estos son los pasos:\n\n- **Reportar el correo:** no se reenvía. Se usa el botón *Reportar a seguridad* o se escribe a seguridad@aurora.ejemplo.test [2].\n- **Revisión:** un analista lo revisa dentro de 2 horas hábiles. Si es phishing, bloquea al remitente y el enlace [2][1].\n- **Cambio de contraseña:** como la persona ya escribió su contraseña, esta se cambia dentro de 1 hora y se cierran todas sus sesiones abiertas [1].\n\nEsto es coherente con la política de que las contraseñas se cambian solo si hay sospecha de compromiso [3], que aquí existe.",
+      "citas": {
+        "validas": [
+          [
+            2,
+            "playbook_phishing.md"
+          ],
+          [
+            1,
+            "playbook_phishing.md"
+          ],
+          [
+            3,
+            "politica_contrasenas_mfa.md"
+          ]
+        ],
+        "invalidas": [],
+        "sin_citas": false
+      },
+      "admite_falta_de_contexto": false,
+      "llamadas_modelo": 1,
+      "tokens_entrada": 549,
+      "tokens_salida": 417,
+      "costo_estimado": 0.005268,
+      "truncado": false,
+      "trace_id": "trace-5f22f3145772",
+      "descartados": [],
+      "requiere_revision": false
+    },
+    {
+      "id": "q4_perdida_datos",
+      "pregunta": "¿Cuántos datos podemos perder como máximo si falla la facturación?",
+      "respondible": true,
+      "fuentes_esperadas": [
+        "guia_respaldos"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "documento": "guia_respaldos",
+          "fragmento": 1,
+          "fuente": "guia_respaldos.md",
+          "distancia": 0.5292928814888,
+          "descartado": false,
+          "rango_en_contexto": 1
+        },
+        {
+          "rango": 2,
+          "documento": "guia_respaldos",
+          "fragmento": 0,
+          "fuente": "guia_respaldos.md",
+          "distancia": 0.6953269243240356,
+          "descartado": false,
+          "rango_en_contexto": 2
+        },
+        {
+          "rango": 3,
+          "documento": "agente_limites_trazas",
+          "fragmento": 0,
+          "fuente": "agente_limites_trazas.md",
+          "distancia": 0.7184125185012817,
+          "descartado": false,
+          "rango_en_contexto": 3
+        }
+      ],
+      "acierto_recuperacion": true,
+      "respuesta": "Como máximo se aceptaría perder 24 horas de datos en el sistema de facturación (RPO) [1].",
+      "citas": {
+        "validas": [
+          [
+            1,
+            "guia_respaldos.md"
+          ]
+        ],
+        "invalidas": [],
+        "sin_citas": false
+      },
+      "admite_falta_de_contexto": false,
+      "llamadas_modelo": 1,
+      "tokens_entrada": 529,
+      "tokens_salida": 40,
+      "costo_estimado": 0.0014579999999999999,
+      "truncado": false,
+      "trace_id": "trace-6c22057d1bf8",
+      "descartados": [],
+      "requiere_revision": false
+    },
+    {
+      "id": "q5_agente_sin_respuesta",
+      "pregunta": "¿Qué pasa si nadie responde cuando el agente pide aprobación para aislar un host?",
+      "respondible": true,
+      "fuentes_esperadas": [
+        "agente_aprobacion_humana"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "documento": "agente_aprobacion_humana",
+          "fragmento": 0,
+          "fuente": "agente_aprobacion_humana.md",
+          "distancia": 0.42747288942337036,
+          "descartado": false,
+          "rango_en_contexto": 1
+        },
+        {
+          "rango": 2,
+          "documento": "aviso_cve_2099_10002",
+          "fragmento": 2,
+          "fuente": "aviso_cve_2099_10002.md",
+          "distancia": 0.5234445929527283,
+          "descartado": false,
+          "rango_en_contexto": 2
+        },
+        {
+          "rango": 3,
+          "documento": "agente_aprobacion_humana",
+          "fragmento": 2,
+          "fuente": "agente_aprobacion_humana.md",
+          "distancia": 0.5489956140518188,
+          "descartado": false,
+          "rango_en_contexto": 3
+        }
+      ],
+      "acierto_recuperacion": true,
+      "respuesta": "El contexto no alcanza para responder esa pregunta.",
+      "citas": {
+        "validas": [],
+        "invalidas": [],
+        "sin_citas": true
+      },
+      "admite_falta_de_contexto": true,
+      "llamadas_modelo": 1,
+      "tokens_entrada": 467,
+      "tokens_salida": 285,
+      "costo_estimado": 0.003784,
+      "truncado": false,
+      "trace_id": "trace-8f6b44d39ee2",
+      "descartados": [],
+      "requiere_revision": false
+    },
+    {
+      "id": "q6_nivel_s1",
+      "pregunta": "¿Qué significa que un incidente sea S1 y en cuánto tiempo se atiende?",
+      "respondible": true,
+      "fuentes_esperadas": [
+        "clasificacion_incidentes"
+      ],
+      "recuperados": [
+        {
+          "rango": 1,
+          "documento": "clasificacion_incidentes",
+          "fragmento": 0,
+          "fuente": "clasificacion_incidentes.md",
+          "distancia": 0.3787153959274292,
+          "descartado": false,
+          "rango_en_contexto": 1
+        },
+        {
+          "rango": 2,
+          "documento": "clasificacion_incidentes",
+          "fragmento": 1,
+          "fuente": "clasificacion_incidentes.md",
+          "distancia": 0.419120192527771,
+          "descartado": false,
+          "rango_en_contexto": 2
+        },
+        {
+          "rango": 3,
+          "documento": "politica_parcheo",
+          "fragmento": 1,
+          "fuente": "politica_parcheo.md",
+          "distancia": 0.6145372986793518,
+          "descartado": false,
+          "rango_en_contexto": 3
+        }
+      ],
+      "acierto_recuperacion": true,
+      "respuesta": "Un incidente S1 es de nivel crítico: afecta datos de clientes o detiene la operación [1]. Se atiende en 15 minutos [1].",
+      "citas": {
+        "validas": [
+          [
+            1,
+            "clasificacion_incidentes.md"
+          ]
+        ],
+        "invalidas": [],
+        "sin_citas": false
+      },
+      "admite_falta_de_contexto": false,
+      "llamadas_modelo": 1,
+      "tokens_entrada": 535,
+      "tokens_salida": 54,
+      "costo_estimado": 0.0016099999999999999,
+      "truncado": false,
+      "trace_id": "trace-803549eb7bef",
+      "descartados": [],
+      "requiere_revision": false
+    },
+    {
+      "id": "q7_sin_respuesta_presupuesto",
+      "pregunta": "¿Cuál es el presupuesto anual de seguridad de Taller Aurora?",
+      "respondible": false,
+      "fuentes_esperadas": [],
+      "recuperados": [
+        {
+          "rango": 1,
+          "documento": "guia_respaldos",
+          "fragmento": 0,
+          "fuente": "guia_respaldos.md",
+          "distancia": 0.5019893646240234,
+          "descartado": false,
+          "rango_en_contexto": 1
+        },
+        {
+          "rango": 2,
+          "documento": "politica_contrasenas_mfa",
+          "fragmento": 0,
+          "fuente": "politica_contrasenas_mfa.md",
+          "distancia": 0.5414458513259888,
+          "descartado": false,
+          "rango_en_contexto": 2
+        },
+        {
+          "rango": 3,
+          "documento": "politica_parcheo",
+          "fragmento": 0,
+          "fuente": "politica_parcheo.md",
+          "distancia": 0.5748822689056396,
+          "descartado": false,
+          "rango_en_contexto": 3
+        }
+      ],
+      "acierto_recuperacion": null,
+      "respuesta": "El contexto no alcanza para responder esa pregunta.",
+      "citas": {
+        "validas": [],
+        "invalidas": [],
+        "sin_citas": true
+      },
+      "admite_falta_de_contexto": true,
+      "llamadas_modelo": 1,
+      "tokens_entrada": 557,
+      "tokens_salida": 21,
+      "costo_estimado": 0.001324,
+      "truncado": false,
+      "trace_id": "trace-65af2ba561e7",
+      "descartados": [],
+      "requiere_revision": false
+    },
+    {
+      "id": "q8_sin_respuesta_moviles",
+      "pregunta": "¿Cuál es el plazo para parchear los teléfonos móviles de la empresa?",
+      "respondible": false,
+      "fuentes_esperadas": [],
+      "recuperados": [
+        {
+          "rango": 1,
+          "documento": "aviso_cve_2099_10001",
+          "fragmento": 2,
+          "fuente": "aviso_cve_2099_10001.md",
+          "distancia": 0.4964381456375122,
+          "descartado": false,
+          "rango_en_contexto": 1
+        },
+        {
+          "rango": 2,
+          "documento": "aviso_cve_2099_10002",
+          "fragmento": 2,
+          "fuente": "aviso_cve_2099_10002.md",
+          "distancia": 0.5495699048042297,
+          "descartado": false,
+          "rango_en_contexto": 2
+        },
+        {
+          "rango": 3,
+          "documento": "politica_parcheo",
+          "fragmento": 1,
+          "fuente": "politica_parcheo.md",
+          "distancia": 0.5590988397598267,
+          "descartado": false,
+          "rango_en_contexto": 3
+        }
+      ],
+      "acierto_recuperacion": null,
+      "respuesta": "El contexto no alcanza para responder esa pregunta.",
+      "citas": {
+        "validas": [],
+        "invalidas": [],
+        "sin_citas": true
+      },
+      "admite_falta_de_contexto": true,
+      "llamadas_modelo": 1,
+      "tokens_entrada": 456,
+      "tokens_salida": 131,
+      "costo_estimado": 0.002222,
+      "truncado": false,
+      "trace_id": "trace-c5e98fc2c5ab",
+      "descartados": [],
+      "requiere_revision": false
+    }
+  ]
+}

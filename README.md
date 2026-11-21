@@ -397,7 +397,7 @@ La primera indexación real creó 29 chunks (4865 caracteres) con una sola petic
 **Recuperación y citas** (`src/recuperacion.py`, `scripts/consultar_corpus.py`, `JSON/casos_recuperacion.json`):
 
 - `recuperar` busca los k fragmentos más parecidos con su **distancia** (menor es más parecido). `formatear_contexto` los numera `[1]..[k]` y guarda el mapa número -> fuente; `extraer_citas` separa las citas válidas, las inválidas (un `[99]` que el modelo inventa) y detecta la ausencia de citas. Reconoce `[1]`, listas (`[1,2]`, `[1, 2]`) y rangos ascendentes de hasta 10 (`[1-3]`, `[1–3]`); solo cuentan dígitos ASCII sin ceros a la izquierda (`[01]`, `[１]`, `[+1]`, `[1.0]` no son citas) y se ignoran `arr[2]` y lo que esté dentro de bloques de código.
-- El prompt trata el contexto como **datos, no instrucciones**: va entre `<contexto>` y `</contexto>`, una regla lo declara material de consulta y las etiquetas que traiga un chunk se neutralizan (`<contexto>`, `</CONTEXTO>`, `< / contexto >`, `</contexto foo>`, una etiqueta sin cerrar y la de ancho completo, tras normalizar a NFKC) y se le quitan los saltos de línea, de modo que ninguna línea de un chunk pueda imitar `[2]`, `Pregunta:` o `Respuesta:`. Si el contexto no alcanza el modelo debe responder con una frase fija ("El contexto no alcanza para responder esa pregunta."), lo que permite comprobar por código si la admitió: la respuesta debe EMPEZAR con la frase (con o sin punto, comillas o negrita); una redacción distinta no cuenta, y una frase citada en medio de una respuesta tampoco. Son desvíos de la clase, que solo pide "dilo explícitamente".
+- El prompt trata el contexto como **datos, no instrucciones**: va entre `<contexto>` y `</contexto>`, una regla lo declara material de consulta y las etiquetas que traiga un chunk se neutralizan (`<contexto>`, `</CONTEXTO>`, `< / contexto >`, `</contexto foo>`, una etiqueta sin cerrar y la de ancho completo, tras normalizar a NFKC) y se le quitan los saltos de línea, de modo que ninguna línea de un chunk pueda imitar `[2]`, `Pregunta:` o `Respuesta:`. Si el contexto no alcanza el modelo debe responder con una frase fija ("El contexto no alcanza para responder esa pregunta."), lo que permite comprobar por código si la admitió: la respuesta debe EMPEZAR con la frase (con o sin punto, comillas o negrita); una redacción distinta no cuenta, y una frase citada en medio de una respuesta tampoco. Son desvíos de la clase, que solo pide "dilo explícitamente". Desde el Bloque 31 `scripts/consultar_corpus.py` ya no usa `construir_prompt`: manda el mismo contenido como dos mensajes (sistema y humano), con el contexto solo en el humano (ver la sección del Bloque 31).
 - `construir_prompt` recibe el índice ya abierto y nunca calcula embeddings del corpus (reindexar dentro de cada consulta es el error que la clase señala).
 - El script exige `--confirmar-api-real` (sin él sale con código 2 sin hacer nada) y lleva topes forzados en código: gasto máximo USD 0.05, `--max-tokens` hasta 1024 (512 por defecto), `--k` de 1 a 5 y como máximo 10 preguntas. Guarda el JSON después de cada caso, de forma atómica, con la distancia y la fuente de cada fragmento recuperado (no su texto) y la verificación de las citas.
 - Robustez (QA): un Ctrl-C guarda lo hecho, registra el caso en vuelo como interrumpido, informa el costo y sale con código 130. La corrida corta **entre** casos al llegar al tope (con una tolerancia de 1e-9 por el punto flotante), así que el gasto puede pasarse del tope como máximo en lo que cuesta un caso. `--salida` se comprueba antes de gastar: no puede ser vacía, estar en una carpeta sin permiso de escritura, quedar dentro del índice ni pisar un archivo que no sea un resultado previo del propio script. En consola cada línea de la respuesta del modelo lleva el prefijo `    | `, para que no pueda imitar las líneas del informe (el JSON conserva la respuesta tal cual).
@@ -428,7 +428,7 @@ python scripts/consultar_corpus.py --confirmar-api-real --max-tokens 512 --tope-
 - **Corte por falta de datos de uso**: el cliente real (`ChatAnthropic`) no deja `usage_metadata` vacío cuando la API no trae el uso: entrega `input_tokens: 0`. Por eso el script trata `input_tokens` igual a 0 (o no entero) como uso faltante: registra el caso, marca `cortado_por_falta_de_uso` y no sigue, porque sin uso no se puede controlar el gasto. Si solo falta `output_tokens` no corta y queda en 0. Probado con el cliente real contra un servidor local falso. El agente y `ejecutar_cadenas.py` no tienen esta regla (con ceros suman 0 y el costo queda subestimado). El techo natural con 8 preguntas y 512 tokens es de unos USD 0.046.
 - Los reintentos del SDK de Anthropic (`max_retries=2`) no se cuentan como llamadas.
 - Un 429 persistente de embeddings cuesta tiempo y no dinero: 4 intentos con esperas de 5, 10 y 20 s por pregunta (unos 35 s por pregunta).
-- `acierto_recuperacion` se calcula por documento (ver arriba) y es solo informativo.
+- `acierto_recuperacion` se calcula por documento (ver arriba) y es solo informativo; desde el Bloque 31 solo cuenta los fragmentos que vio el modelo (uno descartado por el filtro de inyección no cuenta).
 - La pregunta del archivo de casos se usa tal cual (es un archivo propio); lo que se neutraliza son las etiquetas de los chunks recuperados. No se cubren los homoglifos de otros alfabetos (`</соntехtо>` con letras cirílicas), las entidades HTML ni acentos (`</CONTEXTÓ>`). Aun así, la validación de citas solo comprueba que el número **existe** en el mapa: cualquier `[n]` con n ≤ k es "válido" aunque ese fragmento no respalde la frase, así que "citas verificables" significa "la fuente existe", no "respalda la afirmación" (y un chunk hostil con un modelo real no se ha probado: la instrucción de tratar el contexto como datos es la única barrera adicional).
 - El guardián de las pruebas del índice compara solo la fecha del directorio `vectorstore/` y no detecta escrituras sobre un índice existente que no lo cambien.
 - Hallazgos menores de la QA que se documentan y no se corrigen: el índice y las rutas relativas se resuelven contra el directorio actual (los valores por defecto cuelgan de la raíz del repo); si el índice se creó con otro modelo de embeddings, la consulta hace una petición por pregunta y falla con un mensaje rotulado "API" (indexar sí da el aviso de dimensión); abrir una colección inexistente en un índice ya creado la crea vacía antes de fallar; los errores locales (permisos de disco) se rotulan como error de la API; reindexar vuelve a calcular los embeddings de todo el corpus, sin caché; una pregunta de solo caracteres de control se acepta; los reintentos del SDK dejan un traceback por caso en stderr.
@@ -612,9 +612,50 @@ La primera corrida superó el umbral en estricto, pero **dos de sus fallos eran 
 **Límites conocidos:**
 
 - La muestra son ejemplos que escribió la orquestadora, no mensajes reales, y es una sola pasada: sirve como indicio, no como estadística. El router del SDK puede reintentar, y el costo es una estimación con los precios del proyecto.
-- `decidir_personalizacion.py --salida` con un texto de problema que trae un carácter surrogate suelto (`\ud800`) termina con `UnicodeEncodeError` y deja el archivo creado y vacío; `--estimar-etiquetado` con un número de ejemplos de cientos de dígitos da `OverflowError` con traceback, y con `1e308` imprime `inf`. Ambos son de gravedad baja y no están corregidos.
+- Corregido en la pasada J2: `decidir_personalizacion.py --salida` con un carácter surrogate suelto (`\ud800`) en el problema ahora termina con `Error: problema no se puede codificar en UTF-8` (código 1, sin crear el archivo), y `--estimar-etiquetado` con un número de ejemplos de cientos de dígitos, o con `1e308`, termina con `Error: los numeros son demasiado grandes` en vez de un traceback o de imprimir `inf`.
 - Con una `GEMINI_API_KEY`, el SDK (`google-genai` 3.0.0) solo llena las estadísticas facturables del tuning (`tuning_data_stats`) para Vertex: el bloque de costo de cómputo de la clase diría siempre "sin estadísticas". Y, como en el Bloque 29, el tuning con adapter no corre con esa clave.
-- Huecos de pruebas conocidos y aceptados (mutantes vivos de la verificación): bordes de tamaño del archivo de respuestas y longitud de la evidencia, tope de llamadas del script de medición, claves de más en orden, `truncado` sin prueba que lo exija, limpieza de caracteres no imprimibles que no son de control, atomicidad de la escritura y las abreviaturas de opciones.
+- Huecos de pruebas: la pasada J2 cerró los mutantes vivos de la pasada J (bordes de tamaño, `truncado`, atomicidad, caracteres no imprimibles, claves de más y abreviaturas de opciones) y los de I2; quedan dos mutantes equivalentes sin efecto observable.
+
+## Registro estructurado y defensa contra inyección de prompt (Bloque 31)
+
+La clase pide dos cosas para un RAG: que cada consulta deje un rastro que se pueda seguir sin guardar su contenido, y que un texto recuperado no pueda darle órdenes al modelo. El código de este bloque no usa la API (modelos y servidores falsos); la corrida real se pide aparte con `--registro-json`. Se hizo en dos pasadas (K y K2) con una revisión de QA a ciegas y una revisión de seguridad en medio.
+
+**Registro estructurado** (`src/registro_estructurado.py`). Cada evento es **una línea JSON ASCII** con `ts` (UTC, milisegundos), `level`, `msg`, `trace_id` y los datos del evento. Una clave de datos que coincide con una reservada no la pisa (sale como `datos_level`, `datos_msg`...), un valor que JSON no sabe escribir sale como el nombre de su tipo, los caracteres no ASCII salen escapados (un ESC o un separador de línea Unicode nunca llega crudo a la terminal) y de una excepción solo se escribe el **nombre del tipo**. El `trace_id` se fija con `contextvars`: un hilo nuevo no lo hereda, pero `copy_context().run`, `asyncio` y las ramas de LangChain sí. **Regla de gobernanza:** ningún log lleva el texto de una pregunta, de un fragmento, de una respuesta ni el mensaje de una excepción; solo longitud, huella (`sha256`, 12 caracteres hexadecimales), ids y tipos. `registrar_consumo` lee el uso de tokens y marca `uso_faltante` con el mismo criterio del script (`input_tokens` en 0 o no entero), y `HandlerDeTrazas` registra el ciclo de una cadena de LangChain (cadena, retriever, modelo y sus errores) sin contenido.
+
+**Defensa contra inyección** (`src/defensa_inyeccion.py`). El prompt se divide en dos mensajes: las instrucciones van en el de **sistema** y el contexto recuperado solo en el **humano**, entre `<contexto>` y `</contexto>`, declarado como datos (la neutralización de etiquetas de la sección de recuperación se mantiene). Además, un detector de 8 patrones (español e inglés) descarta los fragmentos que parecen órdenes. Mira el texto en **dos vistas**: una donde los caracteres invisibles se borran (`ig` + espacio de ancho cero + `nora`) y otra donde se cambian por un espacio, que es lo que recibe el modelo; entre palabras acepta cualquier signo, guion bajo o markdown. La política ante un fragmento sospechoso es descartarlo, responder con el resto y marcar la consulta con `requiere_revision`, sin frenar la respuesta. El detector es **una señal, no una frontera**: el control principal son los roles y la regla de tratar el contexto como datos.
+
+**Consulta instrumentada** (`src/consulta_rag.py`): `preparar_consulta` recupera, filtra y arma los mensajes; `responder_consulta` llama al modelo, registra el consumo y verifica las citas; `procesar_consulta` hace ambas bajo un `trace_id` propio y valida los precios antes de pagar la llamada. Los eventos son `consulta_recibida`, `documentos_recuperados`, `documento_descartado_por_inyeccion`, `contexto_filtrado`, `llamada_modelo`, `consumo_registrado` (o `consumo_sin_datos_de_uso`) y `respuesta_generada`, más `consulta_rechazada`, `recuperacion_fallo` y `modelo_fallo` en los errores; el script agrega `consumo_fallo` y `consulta_interrumpida`.
+
+**En el script de consulta** (`scripts/consultar_corpus.py`): el modelo recibe los dos mensajes y cada caso corre bajo su propio `trace_id`. El JSON de resultados agrega `huella_prompt`, y por caso `trace_id`, `descartados` (índice, fuente, patrones, longitud y huella, nunca el contenido) y `requiere_revision`; cada recuperado lleva `descartado` y `rango_en_contexto` (la posición que tiene en el contexto, porque las citas `[n]` se numeran solo entre los que se conservan), y `acierto_recuperacion` cuenta únicamente lo que vio el modelo. En consola un caso con descartados imprime `REQUIERE REVISION` y la fuente y los patrones de cada uno, y el recuperado descartado termina con `[DESCARTADO]`.
+
+```
+python scripts/consultar_corpus.py --confirmar-api-real --registro-json --tope-usd 0.03 2> log.jsonl
+```
+
+`--registro-json` está apagada por defecto: sin ella stdout, stderr, código de salida y JSON de resultados quedan como antes (salvo las claves nuevas). Con ella, stderr lleva un JSON por evento; ese mismo stderr puede traer además los mensajes finales de la herramienta (`Error: ...`, `Interrumpido por la persona`), que no son logs. Con un fallo del modelo el log solo dice `modelo_fallo` y el tipo, pero el mensaje de la excepción sigue yendo al JSON de resultados y a la consola, como antes del bloque.
+
+**Primera corrida real con registro** (2026-11-21, `k=3`, las mismas 8 preguntas, con `--registro-json`; resultados en [docs/resultados_recuperacion_registro.json](docs/resultados_recuperacion_registro.json) y log completo en [docs/registro_consulta_real.jsonl](docs/registro_consulta_real.jsonl)): terminó con código 0, 8 consultas de embeddings y 8 llamadas a Claude, 4064 tokens de entrada y 1511 de salida, costo estimado USD 0,02324 (se había estimado unos USD 0,02, con tope de 0,03). El log tiene 48 líneas, todas JSON válido y ASCII: seis eventos por caso (`consulta_recibida`, `documentos_recuperados`, `contexto_filtrado`, `llamada_modelo`, `consumo_registrado`, `respuesta_generada`), 8 `trace_id` distintos que coinciden con los del JSON de resultados y ningún WARNING ni ERROR. **No contiene ninguna pregunta, fragmento ni respuesta** (se comprobó buscando esos textos en el log; tampoco aparece ninguna clave del `.env`). El costo del log, el calculado por token desde el JSON y el del script coinciden. Con datos reales el filtro no descartó nada (`requiere_revision` falso en los 8 casos).
+
+Contra la corrida del Bloque 26 (más arriba): mismos documentos recuperados, mismo `acierto_recuperacion`, mismas citas válidas (en `q3` en otro orden) y las tres preguntas sin respuesta siguen admitiendo la falta de contexto con la frase fija. El costo subió de USD 0,01754 a 0,02324 (+32 %): la entrada crece exactamente 55 tokens por caso (el prompt de sistema es más largo) y la salida sube de 1029 a 1511 tokens, sobre todo en casos donde la respuesta visible no cambió (en `q8` es la misma frase de 51 caracteres con 21 tokens de salida antes y 131 ahora). Probablemente son tokens de razonamiento que no se ven en el texto, pero no se verificó (el resultado no guarda los bloques de la respuesta) y con una sola corrida por pregunta no se puede atribuir al cambio de rol.
+
+**Qué encontró la revisión independiente y se corrigió en K2** (la QA a ciegas reprodujo 1 hallazgo alto, 3 medios y 5 bajos, y la revisión de seguridad dio el veredicto "apto con condiciones"):
+
+- Un carácter invisible **entre palabras** anulaba el filtro: el detector los borraba sin dejar espacio (`ignoreprevious`) pero el contexto que ve el modelo los cambia por un espacio, así que `ignore previous instructions` llegaba completo. Por eso el detector ahora mira las dos vistas.
+- Faltaban frases directas comunes (`ignorar las instrucciones anteriores`, `ignore the previous instructions`) y los patrones no toleraban puntuación ni markdown entre palabras.
+- Tras descartar un documento las citas se renumeraban, pero `recuperados` y `acierto_recuperacion` seguían contando el descartado.
+- Con `--registro-json`, un error del modelo dejaba en stderr un traceback con el mensaje de la excepción, y el script no emitía `llamada_modelo` ni `modelo_fallo`.
+- Los precios inválidos se descubrían después de pagar la llamada.
+
+Verificación propia de K2: 1171, 1215, 1230 y 1241 pruebas por commit, cliente real de Anthropic contra un servidor local falso (nueve escenarios sin fugas), el script sin la opción comparado con la versión anterior, y 77 mutantes de los que mueren 63; los vivos son 8 huecos de pruebas, 5 equivalentes o cosméticos y 1 casi equivalente. El detector no marca ninguno de los 10 documentos del corpus ni de los 323 párrafos del README y de `docs/` que existían antes de esta sección (esta sección, que cita los ataques, sí se marcaría), y analiza 5 MB de texto en unos 1,5 s.
+
+**Límites conocidos:**
+
+- El detector no cubre homoglifos de otros alfabetos (una `о` cirílica dentro de `ignora`), sinónimos, letras separadas por espacios, palabras en otro orden, entidades HTML ni una marca combinante o selector de variación **entre** palabras.
+- Falsos positivos medidos: `nuevo sistema:`, `system prompt:`, `olvida todo lo anterior`, `ignorar las indicaciones previas` en un procedimiento, `forget the previous context` y `revela tu prompt` en un manual, además de cualquier documento que **cite** el ataque. El fragmento legítimo se descarta y la consulta queda marcada para revisión.
+- `huella` es un `sha256` sin sal: un texto corto o predecible se confirma comparando huellas, así que el log de preguntas y respuestas se trata como sensible. Un valor NaN o infinito, o una clave que no es texto, deja ilegibles todos los datos de ese evento.
+- Si todos los fragmentos se descartan igual se llama al modelo con `(sin contexto recuperado)` y cuesta tokens. `procesar_consulta` no tiene un llamador productivo y el script duplica su lógica. El filtro no tiene tope de tamaño (es lineal). `chromadb` 1.5.9 tiene 4 avisos de seguridad sin arreglo disponible, de alcance probablemente no aplicable (sin verificar).
+- Huecos de pruebas conocidos: un invisible dentro de una palabra con las dos vistas, el rango con el descartado en el medio, un error de cadena hija y cuatro ejemplos de patrones.
+- Sin verificar: el comportamiento con el modelo real ante un fragmento hostil que **evada** el detector, y los eventos de error con la API real: la corrida real no tuvo descartes ni fallos, y esos casos solo se probaron con el cliente real contra un servidor falso.
 
 ## Ensayo real de rate limit
 
@@ -648,7 +689,7 @@ Desde la raíz del proyecto:
 # python -m pytest -v            # con el entorno virtual activo
 ```
 
-No usan la API real ni la red (todo está mockeado) y corren en menos de 2 segundos. `pytest.ini` limita la suite a `test/unit`; la prueba de consistencia sigue siendo el script aparte con `PYTHONPATH=src` y con costo (9 llamadas).
+No usan la API real ni la red (todo está mockeado) y la suite completa tarda unos 50 segundos. `pytest.ini` limita la suite a `test/unit`; la prueba de consistencia sigue siendo el script aparte con `PYTHONPATH=src` y con costo (9 llamadas).
 
 ## Prueba de consistencia
 
@@ -701,6 +742,9 @@ src/
   dataset_tuning.py        valida de forma estricta el dataset de tuning (texto, salida JSON, formato canónico, duplicados) y calcula su balance, sin API
   decision_personalizacion.py  método de decisión entre RAG, fine-tuning y PEFT con booleanos estrictos, costo de etiquetado y esqueleto del documento, sin API
   medicion_clasificador.py     clasifica la respuesta cruda del router (exacta, válida, correcta) y resume el formato contra el umbral de la clase
+  registro_estructurado.py     logs JSON de una línea sin contenido, `trace_id` por contexto, huellas, consumo y handler de callbacks de LangChain
+  defensa_inyeccion.py         detector de inyección con dos vistas del texto, filtro de documentos y mensajes de sistema y humano
+  consulta_rag.py              consulta RAG instrumentada: prepara (recupera y filtra), responde (modelo, consumo y citas) y procesa con un `trace_id` por consulta
 scripts/
   ensayo_rate_limit_simulado.py  ensayo de rate limit simulado con mocks
   ejecutar_pipeline.py           pipeline de texto sobre respuestas reales de Claude (con costo)
@@ -710,7 +754,7 @@ scripts/
   ejecutar_agente.py             agente con herramientas y memoria sobre respuestas reales de Claude, con topes de llamadas y de gasto, aprobación y trazas (con costo)
   revisar_trazas.py              revisa las trazas del agente y marca candidatos a revisar (sin costo)
   indexar_corpus.py              revisa (sin API) o indexa el corpus en Chroma con embeddings de Gemini
-  consultar_corpus.py            recuperación semántica con embeddings de Gemini y respuestas de Claude con citas verificadas (con costo)
+  consultar_corpus.py            recuperación semántica con embeddings de Gemini y respuestas de Claude con citas verificadas, filtro de inyección y logs JSON opcionales (con costo)
   evaluar_recuperacion.py        evalúa la recuperación por chunk con embeddings de Gemini, sin llamar a Claude (con costo en embeddings)
   medir_latencia_costo.py        mide la latencia por etapa y el costo del flujo RAG con Gemini y Claude y anexa un registro por llamada (con costo)
   preflight_rag.py               revisa sin API el índice (conteo e ids contra el corpus) y que el directorio esté ignorado por git
@@ -759,6 +803,9 @@ test/
   unit/test_decidir_personalizacion.py   pruebas del script de decisión (archivo de respuestas, salida exclusiva, costos, texto hostil y que no usa API)
   unit/test_medicion_clasificador.py     pruebas de la clasificación de la respuesta cruda, el resumen, el umbral y el costo
   unit/test_medir_clasificador_router.py pruebas del script de medición (bandera, topes, uso faltante, Ctrl-C, salida atómica y modelo falso)
+  unit/test_registro_estructurado.py     pruebas del formateador JSON, el `trace_id`, las huellas, el consumo y el handler de callbacks
+  unit/test_defensa_inyeccion.py         pruebas del detector (evasiones, límites y falsos positivos), el filtro de documentos y los mensajes
+  unit/test_consulta_rag.py              pruebas de la consulta instrumentada con un vectorstore y un modelo falsos
   test_consistencia.py         prueba de consistencia con Claude
   test_consistencia_gemini.py  misma prueba con Gemini (comparativa)
 JSON/
@@ -785,6 +832,8 @@ docs/                      decisión de arquitectura, diagrama y evidencias
   resultados_agente.json   resultados de la primera corrida real del agente, 8 turnos (se genera al correr ejecutar_agente.py)
   resultados_agente_v2.json  resultados de la segunda corrida real, 10 turnos y una aprobación interactiva
   resultados_recuperacion.json  resultados de la primera corrida real de la recuperación con citas
+  resultados_recuperacion_registro.json  resultados de la corrida real con `--registro-json` y filtro de inyección (Bloque 31)
+  registro_consulta_real.jsonl  log JSON de esa corrida, 48 líneas sin contenido de preguntas, fragmentos ni respuestas
   resultados_evaluacion_recuperacion.json  resultados de la primera evaluación real de la recuperación por chunk (se genera al correr evaluar_recuperacion.py)
   registros_latencia_costo.jsonl  registros de latencia y costo del flujo RAG, una línea por llamada (se anexa al correr medir_latencia_costo.py)
   limites_autonomia_agente.md  límites de autonomía del agente: riesgo por herramienta, aprobación, trazas y límites conocidos
