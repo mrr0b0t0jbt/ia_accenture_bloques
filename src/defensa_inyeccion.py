@@ -12,16 +12,24 @@ from recuperacion import FRASE_SIN_CONTEXTO
 from registro_estructurado import huella
 
 MAX_LONGITUD_FUENTE = 100
+SEP = r"[\W_]+"  # separador: cualquier signo, espacio o guion bajo
+# rellenos que NFKC no cambia y que son imprimibles o no tienen categoría Cf (Hangul, braille, jemer)
+RELLENOS_INVISIBLES = frozenset(
+    {
+        "\N{HANGUL CHOSEONG FILLER}", "\N{HANGUL JUNGSEONG FILLER}", "\N{HANGUL FILLER}", "\N{HALFWIDTH HANGUL FILLER}",
+        "\N{BRAILLE PATTERN BLANK}", "\N{KHMER VOWEL INHERENT AQ}", "\N{KHMER VOWEL INHERENT AA}",
+    }
+)
 # los seis primeros son los de la clase; los dos últimos son una ampliación declarada
 PATRONES = {
-    "ignorar_instrucciones_es": re.compile(r"ignora(?:r|\s+las)?\s+(?:todas\s+las\s+)?instrucciones\s+(?:anteriores|previas)"),
-    "ignorar_instrucciones_en": re.compile(r"ignore\s+(?:all\s+)?(?:previous|prior)\s+instructions"),
-    "olvidar_anterior": re.compile(r"olvida\s+(?:todo\s+lo\s+)?anterior"),
-    "nuevo_sistema": re.compile(r"nuevo\s+sistema\s*:"),
-    "system_prompt": re.compile(r"system\s*prompt\s*:"),
-    "revelar_prompt": re.compile(r"revela\s+tu\s+prompt"),
-    "descartar_instrucciones_en": re.compile(r"(?:disregard|forget)\s+(?:all\s+|the\s+)?(?:above|previous|prior)\s+(?:instructions|context)"),
-    "descartar_instrucciones_es": re.compile(r"(?:desestima|descarta|omite)\s+(?:todo\s+)?(?:lo\s+)?(?:indicado|dicho|anterior)"),
+    "ignorar_instrucciones_es": re.compile(r"ignor(?:a|ar|e|en)" + SEP + r"(?:(?:todas|todo|las|los|tus|sus|mis)" + SEP + r"){0,3}(?:instrucciones|indicaciones|ordenes)" + SEP + r"(?:anteriores|previas|de" + SEP + r"arriba)"),
+    "ignorar_instrucciones_en": re.compile(r"ignore" + SEP + r"(?:(?:all|any|the|your|my|these|those)" + SEP + r"){0,3}(?:previous|prior|above|earlier)" + SEP + r"(?:instructions|prompts?|directions)"),
+    "olvidar_anterior": re.compile(r"olvida" + SEP + r"(?:todo" + SEP + r"lo" + SEP + r")?anterior"),
+    "nuevo_sistema": re.compile(r"nuevo" + SEP + r"sistema[\W_]*:"),
+    "system_prompt": re.compile(r"system[\W_]*prompt[\W_]*:"),
+    "revelar_prompt": re.compile(r"revela" + SEP + r"tu" + SEP + r"prompt"),
+    "descartar_instrucciones_en": re.compile(r"(?:disregard|forget)" + SEP + r"(?:(?:all|any|the|your|these|those)" + SEP + r"){0,3}(?:above|previous|prior|earlier)" + SEP + r"(?:instructions|context|prompt)"),
+    "descartar_instrucciones_es": re.compile(r"(?:desestima|descarta|omite)(?:r)?" + SEP + r"(?:(?:todas|todo|las|los|tus|sus)" + SEP + r"){0,3}(?:instrucciones|indicaciones|ordenes)" + SEP + r"(?:anteriores|previas|dadas|indicadas)"),
 }
 PROMPT_SISTEMA = (
     "Eres un asistente que responde preguntas usando SOLO el contexto recuperado que recibes. "
@@ -49,14 +57,32 @@ def normalizar_para_deteccion(texto: str) -> str:
     return " ".join(texto.casefold().split())
 
 
-def detectar_inyeccion(texto: str) -> list[str]:
-    """Devuelve los nombres de los patrones que coinciden con el texto normalizado, en el orden de PATRONES.
+def normalizar_vista_separada(texto: str) -> str:
+    """Vista separada: como la pegada, pero cada carácter no imprimible, relleno invisible o marca de espaciado (Mc, Me) pasa a un espacio."""
+    if not isinstance(texto, str):
+        raise ValueError("texto no es texto")
+    texto = unicodedata.normalize("NFKC", texto)
+    texto = "".join(
+        " " if (not c.isprintable()) or (c in RELLENOS_INVISIBLES) or unicodedata.category(c) in ("Mc", "Me") else c for c in texto
+    )
+    texto = "".join(c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn")
+    return " ".join(texto.casefold().split())
 
-    Límites: no cubre homoglifos de otros alfabetos (una o cirílica dentro de "ignora") ni sinónimos o
-    reformulaciones; un documento legítimo que CITA un ataque se marca igual (falso positivo esperado).
+
+def detectar_inyeccion(texto: str) -> list[str]:
+    """Devuelve los nombres de los patrones que coinciden en al menos una de las dos vistas del texto, en el orden de PATRONES.
+
+    Usa dos vistas: la pegada (los invisibles se borran, "ig" + U+200B + "nora" -> "ignora") y la separada (los invisibles
+    pasan a espacio, como hace recuperacion._limpiar_fragmento antes de que el texto llegue al modelo).
+
+    Límites conocidos: no cubre homoglifos de otros alfabetos (una o cirílica dentro de "ignora"), sinónimos ni
+    reformulaciones, letras separadas por espacios, palabras en otro orden ni entidades HTML.
+
+    Falsos positivos conocidos: los patrones nuevo_sistema y system_prompt marcan texto legítimo como "nuevo sistema:"
+    o "system prompt:"; también "olvida todo lo anterior" y un documento que CITA un ataque.
     """
-    normalizado = normalizar_para_deteccion(texto)
-    return [nombre for nombre, patron in PATRONES.items() if patron.search(normalizado)]
+    vistas = (normalizar_para_deteccion(texto), normalizar_vista_separada(texto))
+    return [nombre for nombre, patron in PATRONES.items() if any(patron.search(vista) for vista in vistas)]
 
 
 def fuente_saneada(documento) -> str:
