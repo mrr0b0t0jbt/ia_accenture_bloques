@@ -763,3 +763,26 @@ def test_k_w1g_sin_datos_de_uso_corta_como_hoy_y_el_log_lo_dice(tmp_path, monkey
     salida = _leer(tmp_path)
     assert salida["cortado_por_falta_de_uso"] is True and salida["preguntas_procesadas"] == 1
     assert [l["level"] for l in _lineas_json(capsys.readouterr().err) if l["msg"] == "consumo_sin_datos_de_uso"] == ["WARNING"]
+
+
+def test_k2_s_informar_lista_cada_descartado_con_todos_sus_patrones(capsys):
+    resultado = {
+        "id": "c1", "pregunta": "p", "respondible": True, "recuperados": [], "llamadas_modelo": 0, "citas": recuperacion.extraer_citas("", {}),
+        "truncado": False, "admite_falta_de_contexto": False, "requiere_revision": True,
+        "descartados": [
+            {"fuente": "a.md", "patrones": ["ignorar_instrucciones_es", "revelar_prompt"]},
+            {"fuente": "b.md", "patrones": ["nuevo_sistema"]},
+        ],
+    }
+    consultar_corpus.informar(
+        {
+            "resultados": [resultado], "cortado_por_tope": False, "cortado_por_falta_de_uso": False, "preguntas_procesadas": 1,
+            "consultas_de_embeddings": 1, "llamadas_a_claude": 0, "costo_total_estimado": 0.0, "nota_costo": "n",
+        }
+    )
+    lineas = capsys.readouterr().out.split("\n")
+    assert [l for l in lineas if "REVISION" in l or "Descartado" in l] == [
+        "  REQUIERE REVISION: 2 documento(s) descartado(s) por patrones de inyeccion",
+        "  Descartado: a.md (ignorar_instrucciones_es, revelar_prompt)",
+        "  Descartado: b.md (nuevo_sistema)",
+    ]

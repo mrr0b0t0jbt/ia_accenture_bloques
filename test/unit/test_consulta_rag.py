@@ -249,6 +249,41 @@ def test_k_c2j_la_respuesta_se_registra_solo_con_longitud_y_huella(registro):
     assert "a" * 100 not in salida and chr(27) not in salida
 
 
+def _evento(flujo, mensaje) -> dict:
+    return next(l for l in _lineas(flujo) if l["msg"] == mensaje)
+
+
+def test_k2_c_a_la_distancia_minima_es_la_del_documento_mas_cercano(registro):
+    logger, flujo = registro
+    vectorstore = VectorstoreFalso([(_doc(TEXTO_1, "a.md"), 0.4), (_doc(TEXTO_2, "b.md"), 0.1)])
+    preparar_consulta(PREGUNTA, vectorstore, logger=logger)
+    assert _evento(flujo, "documentos_recuperados")["distancia_minima"] == 0.1
+
+
+def test_k2_c_b_llamada_modelo_trae_dos_mensajes(registro):
+    _procesar(registro)
+    assert _evento(registro[1], "llamada_modelo")["n_mensajes"] == 2
+
+
+def test_k2_c_c_respuesta_generada_cuenta_citas_validas_e_invalidas(registro):
+    modelo = ModeloFalso(AIMessage(content="Respuesta [1] y [9].", usage_metadata={"input_tokens": 5, "output_tokens": 5, "total_tokens": 10}))
+    _procesar(registro, modelo, vectorstore=VectorstoreFalso([(_doc(TEXTO_1, "a.md"), 0.2)]))
+    evento = _evento(registro[1], "respuesta_generada")
+    assert (evento["n_citas_validas"], evento["n_citas_invalidas"], evento["sin_citas"]) == (1, 1, False)
+
+
+def test_k2_c_d_consulta_recibida_registra_el_k_pedido(registro):
+    logger, flujo = registro
+    preparar_consulta(PREGUNTA, _limpios(), k=4, logger=logger)
+    assert _evento(flujo, "consulta_recibida")["k"] == 4
+
+
+def test_k2_c_e_el_descarte_por_inyeccion_es_warning(registro):
+    logger, flujo = registro
+    preparar_consulta(PREGUNTA, _con_hostil(), logger=logger)
+    assert _evento(flujo, "documento_descartado_por_inyeccion")["level"] == "WARNING"
+
+
 def test_k_c2k_un_documento_sospechoso_marca_la_revision_sin_frenar_la_respuesta(registro):
     resultado, modelo = _procesar(registro, vectorstore=_con_hostil())
     assert resultado["requiere_revision"] is True and resultado["respuesta"] == "Respuesta [1]."

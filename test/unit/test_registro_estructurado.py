@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import threading
+import uuid
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
@@ -22,6 +23,7 @@ from registro_estructurado import (
     crear_logger,
     huella,
     registrar_consumo,
+    registrar_evento,
     resumen_de_texto,
     trace_id_var,
 )
@@ -374,3 +376,52 @@ def test_k_f6e_un_logger_que_lanza_no_rompe_la_cadena(registro):
     logger.handlers = [Explota()]
     assert HandlerDeTrazas.raise_error is False and isinstance(HandlerDeTrazas(logger), BaseCallbackHandler)
     assert _correr(logger) == RESPUESTA
+
+
+# K2 grupo R: huecos de la pasada K
+def test_k2_r_a_trace_id_de_exactamente_64_caracteres_se_acepta():
+    with con_trace_id("x" * 64) as valor:
+        assert valor == "x" * 64 and trace_id_var.get() == "x" * 64
+
+
+@pytest.mark.parametrize("nombre", ["", 5])
+def test_k2_r_b_crear_logger_con_nombre_invalido_levanta(nombre):
+    with pytest.raises(ValueError, match="^nombre invalido$"):
+        crear_logger(nombre)
+
+
+def test_k2_r_c_registrar_evento_con_msg_que_no_es_texto_levanta(registro):
+    logger, flujo = registro
+    with pytest.raises(ValueError, match="^msg invalido$"):
+        registrar_evento(logger, logging.INFO, 5)
+    assert flujo.getvalue() == ""
+
+
+@pytest.mark.parametrize("precios", [(float("inf"), 1), (float("nan"), 1)], ids=["inf", "nan"])
+def test_k2_r_d_precios_no_finitos_levantan(registro, precios):
+    logger, _ = registro
+    with pytest.raises(ValueError, match="^precios invalidos$"):
+        registrar_consumo(logger, AIMessage(content="x"), precios)
+
+
+@pytest.mark.parametrize("precios", [(1, 2, 3), (1,)], ids=["tres", "uno"])
+def test_k2_r_e_precios_con_largo_distinto_de_dos_levantan(registro, precios):
+    logger, _ = registro
+    with pytest.raises(ValueError, match="^precios invalidos$"):
+        registrar_consumo(logger, AIMessage(content="x"), precios)
+
+
+def test_k2_r_f_un_trace_id_de_metadata_que_no_es_texto_no_se_registra(registro):
+    logger, flujo = registro
+    HandlerDeTrazas(logger).on_chain_start({}, {}, run_id=uuid.uuid4(), metadata={"trace_id": 5})
+    (evento,) = _lineas(flujo)
+    assert evento["msg"] == "cadena_inicio" and "trace_id_metadata" not in evento
+
+
+def test_k2_r_g_retriever_fin_cuenta_los_documentos_o_deja_null(registro):
+    logger, flujo = registro
+    handler = HandlerDeTrazas(logger)
+    handler.on_retriever_end([Document(page_content="a")] * 3, run_id=uuid.uuid4())
+    handler.on_retriever_end("x", run_id=uuid.uuid4())
+    tres, texto = _lineas(flujo)
+    assert tres["n_documentos"] == 3 and texto["n_documentos"] is None
