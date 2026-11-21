@@ -8,6 +8,9 @@ cada caso. Hace llamadas REALES a las APIs, con costo.
 La corrida corta ENTRE casos (por el tope, por falta de datos de uso o por Ctrl-C), de modo que el
 gasto puede pasarse del tope como máximo en lo que cuesta UN caso. Con Ctrl-C guarda lo hecho y sale con 130.
 
+Con --registro-json los logs JSON (sin contenido) van a stderr. Ese mismo stderr puede traer además los mensajes
+finales de la herramienta (por ejemplo "Error: ..." o "Interrumpido por la persona"), que no son logs.
+
 Requiere el índice creado antes con scripts/indexar_corpus.py --confirmar-api-real.
 
 Cómo correrlo (desde cualquier directorio):
@@ -149,36 +152,54 @@ def consultar_casos(casos: list[dict], vectorstore, modelo, k: int, tope_usd: fl
                     mapa_citas, encontrados = preparacion["citas"], preparacion["resultados"]
                     resultado["descartados"] = preparacion["descartados"]
                     resultado["requiere_revision"] = preparacion["requiere_revision"]
-                    resultado["recuperados"] = [
-                        {
-                            "rango": rango,
-                            "documento": documento.metadata.get("documento"),
-                            "fragmento": documento.metadata.get("fragmento"),
-                            "fuente": documento.metadata.get("fuente"),
-                            "distancia": distancia,
-                        }
-                        for rango, (documento, distancia) in enumerate(encontrados, start=1)
-                    ]
+                    indices_descartados = {d["indice"] for d in preparacion["descartados"]}
+                    en_contexto = 0
+                    for rango, (documento, distancia) in enumerate(encontrados, start=1):
+                        descartado = rango - 1 in indices_descartados
+                        en_contexto += not descartado
+                        resultado["recuperados"].append(
+                            {
+                                "rango": rango,
+                                "documento": documento.metadata.get("documento"),
+                                "fragmento": documento.metadata.get("fragmento"),
+                                "fuente": documento.metadata.get("fuente"),
+                                "distancia": distancia,
+                                "descartado": descartado,
+                                "rango_en_contexto": None if descartado else en_contexto,
+                            }
+                        )
                     if caso["respondible"]:
-                        recuperados = {r["documento"] for r in resultado["recuperados"]}
-                        resultado["acierto_recuperacion"] = set(caso["fuentes_esperadas"]) <= recuperados
+                        # solo lo que vio el modelo: un documento descartado no cuenta como recuperado
+                        vistos = {r["documento"] for r in resultado["recuperados"] if not r["descartado"]}
+                        resultado["acierto_recuperacion"] = set(caso["fuentes_esperadas"]) <= vistos
                     resultado["llamadas_modelo"] = 1
+                    registro_estructurado.registrar_evento(
+                        logger, logging.INFO, "llamada_modelo",
+                        n_mensajes=len(preparacion["mensajes"]), huella_prompt=preparacion["huella_prompt"],
+                    )
                     try:
                         mensaje = modelo.invoke(preparacion["mensajes"])
                     except Exception as error:
                         # un caso fallido no corta los siguientes
-                        logger_del_modulo.exception("Error consultando al modelo")
+                        if logger is None:
+                            logger_del_modulo.exception("Error consultando al modelo")
+                        else:  # con --registro-json stderr solo lleva JSON: ni traceback ni mensaje de la excepción
+                            registro_estructurado.registrar_evento(logger, logging.ERROR, "modelo_fallo", tipo=type(error).__name__)
                         resultado["error"] = f"{type(error).__name__}: {str(error)[:300]}"
                     else:
                         if logger is not None:  # solo para el log: no decide nada
-                            registro_estructurado.registrar_consumo(logger, mensaje, (INPUT_PRICING, OUTPUT_PRICING))
+                            try:
+                                registro_estructurado.registrar_consumo(logger, mensaje, (INPUT_PRICING, OUTPUT_PRICING))
+                            except Exception as error_consumo:
+                                registro_estructurado.registrar_evento(logger, logging.ERROR, "consumo_fallo", tipo=type(error_consumo).__name__)
                         uso = getattr(mensaje, "usage_metadata", None) or {}
                         entrada, salida_tokens = uso.get("input_tokens"), uso.get("output_tokens")
                         if not _es_entero(entrada) or entrada == 0:
                             # falta el uso si input_tokens no es entero o es 0: el cliente real (ChatAnthropic) no lo deja vacío
                             # sino en ceros, y una llamada real siempre consume tokens de entrada; sin uso el tope no se controla
                             # (si falta solo output_tokens no se corta y queda en 0)
-                            logger_del_modulo.warning("Caso sin datos de uso: el costo no se puede controlar")
+                            if logger is None:  # con logger, el evento consumo_sin_datos_de_uso ya lo dice
+                                logger_del_modulo.warning("Caso sin datos de uso: el costo no se puede controlar")
                             resultado["sin_datos_de_uso"] = True
                             salida["cortado_por_falta_de_uso"] = True
                         else:
@@ -200,6 +221,7 @@ def consultar_casos(casos: list[dict], vectorstore, modelo, k: int, tope_usd: fl
                         )
             except KeyboardInterrupt:
                 # Ctrl-C: el caso en vuelo queda registrado (llamadas_modelo dice si ya se pidió la respuesta) y se guarda lo ya pagado
+                registro_estructurado.registrar_evento(logger, logging.WARNING, "consulta_interrumpida")
                 resultado["error"] = "interrumpido por la persona"
                 salida["interrumpido"] = True
         salida["resultados"].append(resultado)
@@ -221,7 +243,8 @@ def informar(salida: dict) -> None:
     for resultado in salida["resultados"]:
         print(f"\n[{limpio(resultado['id'])}] {limpio(resultado['pregunta'])}")
         for r in resultado["recuperados"]:
-            print(f"  {r['rango']}. {limpio(str(r['fuente']))} (documento {limpio(str(r['documento']))}, fragmento {r['fragmento']}) distancia {r['distancia']:.3f}")
+            marca = " [DESCARTADO]" if r.get("descartado") else ""
+            print(f"  {r['rango']}. {limpio(str(r['fuente']))} (documento {limpio(str(r['documento']))}, fragmento {r['fragmento']}) distancia {r['distancia']:.3f}{marca}")
         if "error" in resultado:
             print(f"  Error: {limpio(resultado['error'])}")
         if resultado["llamadas_modelo"] and "error" not in resultado:
@@ -307,7 +330,7 @@ def _crear_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tope-usd", type=float, default=TOPE_USD_MAXIMO)
     parser.add_argument("--max-tokens", type=int, default=MAX_TOKENS_POR_DEFECTO)
     parser.add_argument("--confirmar-api-real", action="store_true")
-    parser.add_argument("--registro-json", action="store_true", help="escribe en stderr un log JSON por evento, sin contenido")
+    parser.add_argument("--registro-json", action="store_true", help="escribe en stderr un log JSON por evento, sin contenido; stderr puede traer además mensajes finales que no son logs (Error: ..., Interrumpido por la persona)")
     return parser
 
 
