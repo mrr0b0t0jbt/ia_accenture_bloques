@@ -6,7 +6,7 @@ import pytest
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from consulta_rag import preparar_consulta, procesar_consulta
+from consulta_rag import preparar_consulta, procesar_consulta, responder_consulta
 from defensa_inyeccion import HUELLA_PROMPT
 from recuperacion import SIN_CONTEXTO
 from registro_estructurado import con_trace_id, crear_logger, huella
@@ -295,6 +295,22 @@ def test_k2_e7_b_texto_legitimo_con_omite_llega_al_modelo(registro):
     texto = "Si el equipo ya esta parcheado, omite lo indicado en la seccion 3."
     prep = preparar_consulta(PREGUNTA, VectorstoreFalso([(_doc(texto, "x.md"), 0.1)]), logger=registro[0])
     assert prep["descartados"] == [] and texto in prep["mensajes"][1].content
+
+
+def test_k2_r_a_responder_con_precios_invalidos_levanta_antes_de_llamar_al_modelo(registro):
+    logger, flujo = registro
+    modelo = ModeloFalso()
+    preparacion = preparar_consulta(PREGUNTA, _limpios(), logger=logger)
+    with pytest.raises(ValueError, match="^precios invalidos$"):
+        responder_consulta(preparacion, modelo, logger, (float("nan"), 1))
+    assert modelo.recibidos == [] and "llamada_modelo" not in flujo.getvalue()
+
+
+def test_k2_r_b_procesar_con_precios_invalidos_no_toca_el_modelo_ni_el_vectorstore(registro):
+    modelo, vectorstore = ModeloFalso(), _limpios()
+    with pytest.raises(ValueError, match="^precios invalidos$"):
+        procesar_consulta(PREGUNTA, vectorstore, modelo, logger=registro[0], precios=(-1, 1))
+    assert modelo.recibidos == [] and vectorstore.llamadas == [] and registro[1].getvalue() == ""
 
 
 def test_k_c2k_un_documento_sospechoso_marca_la_revision_sin_frenar_la_respuesta(registro):

@@ -23,7 +23,11 @@ trace_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("trace
 
 
 def huella(texto: str) -> str:
-    """Devuelve los primeros 12 caracteres hexadecimales del sha256 del texto (un surrogate suelto no lanza)."""
+    """Devuelve los primeros 12 caracteres hexadecimales del sha256 del texto (un surrogate suelto no lanza).
+
+    Es un hash sin sal: un texto corto o predecible (una pregunta típica, "sí", un número) se puede confirmar
+    comparando su huella con la de un candidato; por eso el log de preguntas y respuestas se trata como sensible.
+    """
     if not isinstance(texto, str):
         raise ValueError("texto no es texto")
     return hashlib.sha256(texto.encode("utf-8", errors="replace")).hexdigest()[:12]
@@ -61,7 +65,11 @@ def _nombre_del_tipo(valor) -> str:
 
 
 class FormateadorJson(logging.Formatter):
-    """Formatea cada registro como UNA línea JSON ASCII: ts, level, msg, trace_id y los datos."""
+    """Formatea cada registro como UNA línea JSON ASCII: ts, level, msg, trace_id y los datos.
+
+    Límite: un valor NaN o infinito, o una clave que no es texto, deja ilegibles TODOS los datos del evento;
+    la línea sale solo con las claves base y datos_ilegibles en true.
+    """
 
     def format(self, record: logging.LogRecord) -> str:
         try:
@@ -126,10 +134,15 @@ def _precios_validos(precios) -> bool:
     )
 
 
-def registrar_consumo(logger: logging.Logger | None, respuesta, precios=None) -> dict:
-    """Lee el uso de tokens de la respuesta, lo registra y devuelve el consumo (uso_faltante si no hay entrada)."""
+def validar_precios(precios) -> None:
+    """Acepta None o dos precios finitos y no negativos; si no, levanta ValueError (para fallar antes de pagar la llamada)."""
     if precios is not None and not _precios_validos(precios):
         raise ValueError("precios invalidos")
+
+
+def registrar_consumo(logger: logging.Logger | None, respuesta, precios=None) -> dict:
+    """Lee el uso de tokens de la respuesta, lo registra y devuelve el consumo (uso_faltante si no hay entrada)."""
+    validar_precios(precios)
     uso = getattr(respuesta, "usage_metadata", None) or {}
     entrada = uso.get("input_tokens")
     # igual que scripts/consultar_corpus.py: el cliente real deja los tokens en 0 en vez de vacíos
@@ -154,7 +167,7 @@ def registrar_consumo(logger: logging.Logger | None, respuesta, precios=None) ->
 def _ids_de_ejecucion(run_id, parent_run_id, metadata) -> dict:
     datos = {"run_id": str(run_id), "parent_run_id": None if parent_run_id is None else str(parent_run_id)}
     if isinstance(metadata, dict) and isinstance(metadata.get("trace_id"), str):
-        datos["trace_id_metadata"] = metadata["trace_id"]
+        datos["trace_id_metadata"] = metadata["trace_id"][:MAX_LONGITUD_TRACE_ID]
     return datos
 
 
@@ -170,6 +183,16 @@ class HandlerDeTrazas(BaseCallbackHandler):
     def on_chain_start(self, serialized, inputs, *, run_id, parent_run_id=None, metadata=None, **kwargs) -> None:
         if parent_run_id is None:
             registrar_evento(self.logger, logging.INFO, "cadena_inicio", **_ids_de_ejecucion(run_id, parent_run_id, metadata))
+
+    def on_chain_error(self, error, *, run_id, parent_run_id=None, **kwargs) -> None:
+        if parent_run_id is None:
+            registrar_evento(self.logger, logging.ERROR, "cadena_error", tipo=type(error).__name__, **_ids_de_ejecucion(run_id, parent_run_id, None))
+
+    def on_llm_error(self, error, *, run_id, parent_run_id=None, **kwargs) -> None:
+        registrar_evento(self.logger, logging.ERROR, "llm_error", tipo=type(error).__name__, **_ids_de_ejecucion(run_id, parent_run_id, None))
+
+    def on_retriever_error(self, error, *, run_id, parent_run_id=None, **kwargs) -> None:
+        registrar_evento(self.logger, logging.ERROR, "retriever_error", tipo=type(error).__name__, **_ids_de_ejecucion(run_id, parent_run_id, None))
 
     def on_retriever_start(self, serialized, query, *, run_id, parent_run_id=None, metadata=None, **kwargs) -> None:
         datos = _ids_de_ejecucion(run_id, parent_run_id, metadata)

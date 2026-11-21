@@ -7,7 +7,7 @@ import logging
 
 import recuperacion
 from defensa_inyeccion import HUELLA_PROMPT, construir_mensajes, filtrar_documentos, fuente_saneada
-from registro_estructurado import con_trace_id, registrar_consumo, registrar_evento, resumen_de_texto
+from registro_estructurado import con_trace_id, registrar_consumo, registrar_evento, resumen_de_texto, validar_precios
 
 
 def preparar_consulta(pregunta: str, vectorstore, k: int = recuperacion.K_POR_DEFECTO, logger: logging.Logger | None = None) -> dict:
@@ -51,6 +51,7 @@ def preparar_consulta(pregunta: str, vectorstore, k: int = recuperacion.K_POR_DE
 
 def responder_consulta(preparacion: dict, modelo, logger: logging.Logger | None = None, precios=None) -> dict:
     """Llama al modelo con los mensajes preparados, registra el consumo y verifica las citas."""
+    validar_precios(precios)  # un precio invalido no se descubre despues de pagar la llamada
     mensajes = preparacion["mensajes"]
     registrar_evento(logger, logging.INFO, "llamada_modelo", n_mensajes=len(mensajes), huella_prompt=preparacion["huella_prompt"])
     try:
@@ -79,6 +80,7 @@ def procesar_consulta(
     pregunta: str, vectorstore, modelo, k: int = recuperacion.K_POR_DEFECTO, logger: logging.Logger | None = None, precios=None
 ) -> dict:
     """Prepara y responde una consulta bajo un trace_id nuevo; devuelve la respuesta con el id y el resultado del filtro."""
+    validar_precios(precios)
     with con_trace_id() as trace_id:
         preparacion = preparar_consulta(pregunta, vectorstore, k, logger)
         resultado = responder_consulta(preparacion, modelo, logger, precios)

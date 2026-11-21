@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.documents import Document
+from langchain_core.language_models import BaseChatModel
 from langchain_core.language_models.fake import FakeListLLM
 from langchain_core.messages import AIMessage
 from langchain_core.retrievers import BaseRetriever
@@ -26,6 +27,7 @@ from registro_estructurado import (
     registrar_evento,
     resumen_de_texto,
     trace_id_var,
+    validar_precios,
 )
 
 PRECIOS = (0.000002, 0.00001)
@@ -425,3 +427,83 @@ def test_k2_r_g_retriever_fin_cuenta_los_documentos_o_deja_null(registro):
     handler.on_retriever_end("x", run_id=uuid.uuid4())
     tres, texto = _lineas(flujo)
     assert tres["n_documentos"] == 3 and texto["n_documentos"] is None
+
+
+# K2 V: validar_precios
+def test_k2_v_a_precios_validos_o_none_no_levantan():
+    for precios in (None, (1, 2), [0, 0.5], (0, 0)):
+        assert validar_precios(precios) is None
+
+
+@pytest.mark.parametrize("precios", [(-1, 1), ("x", 1), (True, 1), (float("inf"), 1), (1,), (1, 2, 3)])
+def test_k2_v_b_precios_invalidos_levantan(precios):
+    with pytest.raises(ValueError, match="^precios invalidos$"):
+        validar_precios(precios)
+
+
+# K2 M: tope del trace_id de metadata
+def test_k2_m_el_trace_id_de_metadata_se_recorta_a_64_caracteres(registro):
+    logger, flujo = registro
+    handler = HandlerDeTrazas(logger)
+    largo = "".join(chr(97 + n % 26) for n in range(3000))
+    handler.on_chain_start({}, {}, run_id=uuid.uuid4(), metadata={"trace_id": largo})
+    handler.on_chain_start({}, {}, run_id=uuid.uuid4(), metadata={"trace_id": largo[:64]})
+    recortado, igual = (linea["trace_id_metadata"] for linea in _lineas(flujo))
+    assert recortado == largo[:64] and len(recortado) == 64 and igual == largo[:64]
+
+
+# K2 H: errores del handler (nunca el mensaje de la excepción)
+class RetrieverQueFalla(BaseRetriever):
+    def _get_relevant_documents(self, query, *, run_manager):
+        raise RuntimeError("secreto-r")
+
+
+class ModeloQueFalla(BaseChatModel):
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        raise ValueError("secreto-l")
+
+    @property
+    def _llm_type(self) -> str:
+        return "falla"
+
+
+def _eventos(flujo, mensaje) -> list[dict]:
+    return [linea for linea in _lineas(flujo) if linea["msg"] == mensaje]
+
+
+def test_k2_h_a_una_cadena_que_falla_registra_cadena_error_una_vez_sin_el_mensaje(registro):
+    logger, flujo = registro
+    with pytest.raises(ZeroDivisionError):
+        RunnableLambda(lambda x: 1 / 0).invoke(1, config={"callbacks": [HandlerDeTrazas(logger)]})
+    (evento,) = _eventos(flujo, "cadena_error")
+    assert evento["level"] == "ERROR" and evento["tipo"] == "ZeroDivisionError" and evento["parent_run_id"] is None
+    assert "division by zero" not in flujo.getvalue()
+
+
+def test_k2_h_b_un_retriever_que_falla_registra_retriever_error_sin_el_mensaje(registro):
+    logger, flujo = registro
+    cadena = RetrieverQueFalla() | RunnableLambda(lambda documentos: documentos)
+    with pytest.raises(RuntimeError):
+        cadena.invoke("q", config={"callbacks": [HandlerDeTrazas(logger)]})
+    (evento,) = _eventos(flujo, "retriever_error")
+    assert evento["level"] == "ERROR" and evento["tipo"] == "RuntimeError" and evento["parent_run_id"] is not None
+    assert len(_eventos(flujo, "cadena_error")) == 1 and "secreto-r" not in flujo.getvalue()
+
+
+def test_k2_h_c_un_modelo_que_falla_registra_llm_error_sin_el_mensaje(registro):
+    logger, flujo = registro
+    cadena = RunnableLambda(lambda x: x) | ModeloQueFalla()
+    with pytest.raises(ValueError):
+        cadena.invoke("q", config={"callbacks": [HandlerDeTrazas(logger)]})
+    (evento,) = _eventos(flujo, "llm_error")
+    assert evento["level"] == "ERROR" and evento["tipo"] == "ValueError" and evento["parent_run_id"] is not None
+    assert len(_eventos(flujo, "cadena_error")) == 1 and "secreto-l" not in flujo.getvalue()
+
+
+# K2 D: límites documentados
+def test_k2_d_a_la_huella_documenta_que_no_lleva_sal():
+    assert "sin sal" in huella.__doc__
+
+
+def test_k2_d_b_el_formateador_documenta_datos_ilegibles():
+    assert "datos_ilegibles" in FormateadorJson.__doc__
