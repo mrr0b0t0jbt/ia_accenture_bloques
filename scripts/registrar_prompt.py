@@ -60,6 +60,9 @@ def main(argv=None) -> int:
     except ValueError as error:
         print(f"Registro invalido: {error}", file=sys.stderr)
         return 1
+    except OSError as error:
+        print(f"No se pudo leer el registro: {type(error).__name__}.", file=sys.stderr)
+        return 1
     if argumentos.listar:
         for e in entradas:
             print(f"{e['nombre']} v{e['version']} {e['huella']} {e['fecha_utc']} {e['autor']} - {e['nota']}")
@@ -97,6 +100,9 @@ def main(argv=None) -> int:
         )
     except ValueError as error:
         print(f"No se registro: {error}", file=sys.stderr)
+        return 1
+    except OSError as error:
+        print(f"No se registro: no se pudo escribir el registro ({type(error).__name__}).", file=sys.stderr)
         return 1
     print(f"Registrada {entrada['nombre']} v{entrada['version']} ({entrada['huella']}).")
     return 0

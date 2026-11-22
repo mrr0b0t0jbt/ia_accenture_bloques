@@ -101,6 +101,9 @@ def registrar_version(
     if not os.path.isdir(os.path.dirname(os.path.abspath(ruta))):
         raise ValueError("el directorio del registro no existe")
     entradas = leer_registro(ruta)
+    problemas = problemas_del_registro(entradas)
+    if problemas:
+        raise ValueError(f"el registro tiene problemas: {problemas[0]}")
     anterior = ultima(entradas, nombre)
     nueva_huella = huella_prompt(texto)
     if anterior is not None and anterior["huella"] == nueva_huella:

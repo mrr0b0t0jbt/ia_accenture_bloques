@@ -228,3 +228,15 @@ def test_l2_u_el_diff_reproduce_el_ejemplo_de_la_clase():
 def test_l2_v_dos_textos_iguales_no_tienen_diff_y_la_constante_de_la_ruta_es_la_de_docs():
     assert diff_prompts(V1, V1) == []
     assert registro_prompts.RUTA_REGISTRO_POR_DEFECTO == "docs/registro_prompts.jsonl"
+
+
+def test_l2b_e_registrar_version_rechaza_un_registro_con_problemas_en_la_cadena_y_no_escribe(ruta):
+    registrar_version(ruta, "p", V1, "a", "n", ahora=AHORA)
+    entrada = json.loads(_lineas(ruta)[0])
+    salto = {**entrada, "version": 3, "huella": huella(V2), "huella_anterior": huella(V1), "texto": V2}
+    with open(ruta, "a", encoding="utf-8", newline="") as archivo:
+        archivo.write(json.dumps(salto) + "\n")
+    antes = _lineas(ruta)
+    with pytest.raises(ValueError, match="^el registro tiene problemas: linea 2: version 3 en lugar de 2$"):
+        registrar_version(ruta, "p", V1 + " otro cambio", "a", "n", ahora=AHORA)
+    assert _lineas(ruta) == antes
