@@ -34,7 +34,7 @@ def test_l2_w_el_texto_actual_del_codigo_tiene_la_huella_que_ya_usan_los_resulta
     assert huella(TEXTO_ACTUAL) == defensa_inyeccion.HUELLA_PROMPT
 
 
-def test_l2_x_la_ruta_por_defecto_es_docs_registro_prompts_de_la_raiz_del_proyecto(capsys):
+def test_l2_x_la_ruta_por_defecto_es_docs_registro_prompts_de_la_raiz_del_proyecto():
     argumentos = registrar_prompt._argumentos(["--listar"])
     assert argumentos.registro == str(RAIZ / "docs" / "registro_prompts.jsonl")
 
@@ -166,3 +166,44 @@ def test_l2_al_el_prompt_del_codigo_coincide_con_el_registro_commiteado():
     entradas = registro_prompts.leer_registro(str(ruta))
     assert registro_prompts.problemas_del_registro(entradas) == []
     assert registro_prompts.comparar_con_codigo(entradas, registrar_prompt.NOMBRE_PROMPT, TEXTO_ACTUAL)["estado"] == "igual"
+
+
+def test_l2b_a_un_registro_que_es_una_carpeta_sale_con_1_y_sin_traceback(tmp_path, capsys):
+    carpeta = str(tmp_path)
+    for argv in (["--listar"], ["--verificar"], ["--diff"], ["--registrar", "--origen", "actual", "--autor", "a", "--nota", "n"]):
+        assert registrar_prompt.main(["--registro", carpeta, *argv]) == 1
+        assert "No se pudo leer el registro: IsADirectoryError." in capsys.readouterr().err
+
+
+def test_l2b_b_un_registro_ilegible_sale_con_1_y_nombra_solo_el_tipo_del_error(ruta, capsys, monkeypatch):
+    def ilegible(ruta_del_registro):
+        raise PermissionError("CANARIO-RUTA-PRIVADA")
+
+    monkeypatch.setattr(registro_prompts, "leer_registro", ilegible)
+    assert registrar_prompt.main(["--registro", ruta, "--listar"]) == 1
+    error = capsys.readouterr().err
+    assert error == "No se pudo leer el registro: PermissionError.\n" and "CANARIO" not in error
+
+
+def test_l2b_c_un_registro_que_no_se_puede_escribir_sale_con_1_sin_traceback(ruta, capsys, monkeypatch):
+    def sin_permiso(*args, **kwargs):
+        raise PermissionError("CANARIO-RUTA-PRIVADA")
+
+    monkeypatch.setattr(registro_prompts, "registrar_version", sin_permiso)
+    assert _registrar(ruta) == 1
+    error = capsys.readouterr().err
+    assert error == "No se registro: no se pudo escribir el registro (PermissionError).\n" and "CANARIO" not in error
+
+
+def test_l2b_d_registrar_se_niega_a_anexar_a_una_cadena_rota_y_no_escribe(ruta, capsys):
+    assert _registrar(ruta, "plantilla_un_mensaje", "a") == 0
+    assert _registrar(ruta, "actual", "b") == 0
+    lineas = Path(ruta).read_text(encoding="utf-8").split("\n")[:-1]
+    segunda = json.loads(lineas[1])
+    segunda["huella_anterior"] = "000000000000"
+    Path(ruta).write_text(lineas[0] + "\n" + json.dumps(segunda) + "\n", encoding="utf-8")
+    antes = Path(ruta).read_bytes()
+    capsys.readouterr()
+    assert _registrar(ruta, "plantilla_un_mensaje", "c") == 1
+    assert "No se registro: el registro tiene problemas: linea 2: huella_anterior no encadena con la version previa" in capsys.readouterr().err
+    assert Path(ruta).read_bytes() == antes
