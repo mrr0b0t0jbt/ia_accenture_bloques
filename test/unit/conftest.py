@@ -1,4 +1,5 @@
 import os
+import socket
 
 import pytest
 
@@ -78,3 +79,35 @@ def _no_escribe_en_las_trazas_reales():
     yield
     if estado_de_las_trazas_reales() != antes:
         pytest.fail(f"La prueba escribió en {RUTA_TRAZAS_REALES}: debe usar --sin-trazas o una ruta en tmp_path.")
+
+
+# L1: sexto guardian (el registro de prompts) y guarda de red (K-04 de Sirius)
+RUTA_REGISTRO_PROMPTS_REAL = "docs/registro_prompts.jsonl"
+
+
+def estado_del_registro_de_prompts_real() -> tuple | None:
+    """Estado de docs/registro_prompts.jsonl respecto del directorio actual (None si no existe)."""
+    return _estado(os.path.abspath(RUTA_REGISTRO_PROMPTS_REAL))
+
+
+@pytest.fixture(autouse=True)
+def _no_escribe_en_el_registro_de_prompts_real():
+    """Falla la prueba que cree o modifique docs/registro_prompts.jsonl respecto del directorio actual."""
+    antes = estado_del_registro_de_prompts_real()
+    yield
+    if estado_del_registro_de_prompts_real() != antes:
+        pytest.fail(f"La prueba escribió en {RUTA_REGISTRO_PROMPTS_REAL}: debe pasar --registro en tmp_path.")
+
+
+def _red_bloqueada(*_args, **_kwargs):
+    raise RuntimeError("RED BLOQUEADA: ninguna prueba abre red; usa un doble con monkeypatch o un servidor falso en memoria.")
+
+
+@pytest.fixture(autouse=True)
+def _sin_red(monkeypatch):
+    """Ninguna prueba abre una conexión ni resuelve nombres: si un doble falla, la prueba falla en vez de llamar a la API real."""
+    monkeypatch.setattr(socket.socket, "connect", _red_bloqueada)
+    monkeypatch.setattr(socket.socket, "connect_ex", _red_bloqueada)
+    monkeypatch.setattr(socket, "create_connection", _red_bloqueada)
+    monkeypatch.setattr(socket, "getaddrinfo", _red_bloqueada)
+    monkeypatch.setattr(socket, "gethostbyname", _red_bloqueada)
