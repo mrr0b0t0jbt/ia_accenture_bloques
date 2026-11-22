@@ -507,3 +507,15 @@ def test_k2_d_a_la_huella_documenta_que_no_lleva_sal():
 
 def test_k2_d_b_el_formateador_documenta_datos_ilegibles():
     assert "datos_ilegibles" in FormateadorJson.__doc__
+
+
+def test_k3_c1_c_un_error_de_cadena_hija_no_registra_cadena_error(registro):
+    """El primer paso de una secuencia es una cadena hija: solo la cadena raiz (parent_run_id None) registra cadena_error."""
+    logger, flujo = registro
+    cadena = RunnableLambda(lambda x: 1 / 0) | RunnableLambda(lambda x: x)
+    with pytest.raises(ZeroDivisionError):
+        cadena.invoke(1, config={"callbacks": [HandlerDeTrazas(logger)]})
+    (evento,) = _eventos(flujo, "cadena_error")
+    assert evento["parent_run_id"] is None and evento["tipo"] == "ZeroDivisionError"
+    HandlerDeTrazas(logger).on_chain_error(ValueError("x"), run_id=uuid.uuid4(), parent_run_id=uuid.uuid4())
+    assert len(_eventos(flujo, "cadena_error")) == 1

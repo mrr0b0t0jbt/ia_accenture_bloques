@@ -650,11 +650,11 @@ Verificación propia de K2: 1171, 1215, 1230 y 1241 pruebas por commit, cliente 
 
 **Límites conocidos:**
 
-- El detector no cubre homoglifos de otros alfabetos (una `о` cirílica dentro de `ignora`), sinónimos, letras separadas por espacios, palabras en otro orden, entidades HTML ni una marca combinante o selector de variación **entre** palabras.
+- El detector no cubre homoglifos de otros alfabetos (una `о` cirílica dentro de `ignora`), sinónimos, letras separadas por espacios, palabras en otro orden, entidades HTML ni una marca combinante que se compone con la letra anterior (a + U+0301 pasa a á): NFKC la funde con la letra y el modelo ve la palabra pegada. Desde K3 una marca que no se compone (selector de variación U+FE0F, U+034F, U+0338) **entre** palabras sí se detecta.
 - Falsos positivos medidos: `nuevo sistema:`, `system prompt:`, `olvida todo lo anterior`, `ignorar las indicaciones previas` en un procedimiento, `forget the previous context` y `revela tu prompt` en un manual, además de cualquier documento que **cite** el ataque. El fragmento legítimo se descarta y la consulta queda marcada para revisión.
 - `huella` es un `sha256` sin sal: un texto corto o predecible se confirma comparando huellas, así que el log de preguntas y respuestas se trata como sensible. Un valor NaN o infinito, o una clave que no es texto, deja ilegibles todos los datos de ese evento.
 - Si todos los fragmentos se descartan igual se llama al modelo con `(sin contexto recuperado)` y cuesta tokens. `procesar_consulta` no tiene un llamador productivo y el script duplica su lógica. El filtro no tiene tope de tamaño (es lineal). `chromadb` 1.5.9 tiene 4 avisos de seguridad sin arreglo disponible, de alcance probablemente no aplicable (sin verificar).
-- Huecos de pruebas conocidos: un invisible dentro de una palabra con las dos vistas, el rango con el descartado en el medio, un error de cadena hija y cuatro ejemplos de patrones.
+- Huecos de pruebas de K2: cerrados en K3 (un invisible dentro de una palabra con las dos vistas, el rango con el descartado en el medio, un error de cadena hija y cinco ejemplos de patrones: indicaciones, prompts, revela con separador, forget the previous prompt y el relleno U+115F). Nota: el README de K2 decía cuatro ejemplos; eran cinco.
 - Sin verificar: el comportamiento con el modelo real ante un fragmento hostil que **evada** el detector, y los eventos de error con la API real: la corrida real no tuvo descartes ni fallos, y esos casos solo se probaron con el cliente real contra un servidor falso.
 
 ## Ensayo real de rate limit

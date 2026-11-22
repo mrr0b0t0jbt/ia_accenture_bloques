@@ -58,12 +58,12 @@ def normalizar_para_deteccion(texto: str) -> str:
 
 
 def normalizar_vista_separada(texto: str) -> str:
-    """Vista separada: como la pegada, pero cada carácter no imprimible, relleno invisible o marca de espaciado (Mc, Me) pasa a un espacio."""
+    """Vista separada: como la pegada, pero cada carácter no imprimible, relleno invisible o marca combinante o de espaciado (Mn, Mc, Me) pasa a un espacio."""
     if not isinstance(texto, str):
         raise ValueError("texto no es texto")
     texto = unicodedata.normalize("NFKC", texto)
     texto = "".join(
-        " " if (not c.isprintable()) or (c in RELLENOS_INVISIBLES) or unicodedata.category(c) in ("Mc", "Me") else c for c in texto
+        " " if (not c.isprintable()) or (c in RELLENOS_INVISIBLES) or unicodedata.category(c) in ("Mc", "Me", "Mn") else c for c in texto
     )
     texto = "".join(c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn")
     return " ".join(texto.casefold().split())
@@ -75,7 +75,8 @@ def detectar_inyeccion(texto: str) -> list[str]:
     Usa dos vistas: la pegada (los invisibles se borran, "ig" + U+200B + "nora" -> "ignora") y la separada (los invisibles
     pasan a espacio, como hace recuperacion._limpiar_fragmento antes de que el texto llegue al modelo).
 
-    Límites conocidos: no cubre homoglifos de otros alfabetos (una o cirílica dentro de "ignora"), sinónimos ni
+    Límites conocidos: una marca combinante que se compone con la letra anterior (a + U+0301) no separa palabras: NFKC la
+    funde con la letra y el modelo ve la palabra pegada; no cubre homoglifos de otros alfabetos (una o cirílica dentro de "ignora"), sinónimos ni
     reformulaciones, letras separadas por espacios, palabras en otro orden ni entidades HTML.
 
     Falsos positivos conocidos: los patrones nuevo_sistema y system_prompt marcan texto legítimo como "nuevo sistema:"
