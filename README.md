@@ -657,6 +657,31 @@ Verificación propia de K2: 1171, 1215, 1230 y 1241 pruebas por commit, cliente 
 - Huecos de pruebas de K2: cerrados en K3 (un invisible dentro de una palabra con las dos vistas, el rango con el descartado en el medio, un error de cadena hija y cinco ejemplos de patrones: indicaciones, prompts, revela con separador, forget the previous prompt y el relleno U+115F). Nota: el README de K2 decía cuatro ejemplos; eran cinco.
 - Sin verificar: el comportamiento con el modelo real ante un fragmento hostil que **evada** el detector, y los eventos de error con la API real: la corrida real no tuvo descartes ni fallos, y esos casos solo se probaron con el cliente real contra un servidor falso.
 
+## Versionado de prompts, supervisión y riesgos (Bloque 32)
+
+La Unidad 2.7 cierra con tres piezas: un registro de versiones del prompt, un punto de supervisión humana para desplegar una versión nueva y una matriz de riesgos. Esta sección documenta lo hecho hasta ahora (pasada L1: el registro y las guardas de la suite); la supervisión con langgraph y la matriz de riesgos siguen pendientes. Nada de este bloque llama a la API ni usa red.
+
+**Registro de versiones del prompt** (`src/registro_prompts.py`, `scripts/registrar_prompt.py`, `docs/registro_prompts.jsonl`). Es un JSONL de solo anexar: cada versión es una línea con nombre, versión, huella, huella anterior (encadena las versiones), texto, autor, fecha UTC, nota, modelo y parámetros. Reutiliza la huella de `registro_estructurado` (sha256 de 12 caracteres). Corrige tres defectos del código de la clase: el registro solo vivía en memoria, la fecha era la local y sin zona, y aceptaba la misma versión dos veces. La línea se escribe en ASCII, así que un carácter invisible del texto queda visible en el diff de git. La lectura es estricta (claves y su orden, tipos, huella contra texto y fecha) y su error cita solo el número de línea, nunca el contenido.
+
+```bash
+python scripts/registrar_prompt.py --listar
+python scripts/registrar_prompt.py --verificar    # sale con 1 si el prompt del código no es el último registrado
+python scripts/registrar_prompt.py --diff
+python scripts/registrar_prompt.py --registrar --origen actual --autor "nombre" --nota "qué cambió y por qué"
+```
+
+El historial inicial (sembrado el 2026-11-22) tiene dos versiones de `prompt_rag`: la v1 (`72be37be6604`) es la plantilla de un solo mensaje de los Bloques 24 a 26 (`recuperacion.PROMPT_TEMPLATE`) y la v2 (`96f508a5ab49`) es la de roles separados del Bloque 31, el prompt de la corrida real de K2. La v1 se reconstruye del código que se conserva y su fecha es la del registro, no la de su primer uso. Una prueba (`test_l2_al`) compara el prompt del código con el registro commiteado: si cambias el prompt sin registrar la versión nueva, la suite falla.
+
+**Guardas de la suite** (`test/unit/conftest.py`). Un sexto guardián falla toda prueba que escriba en `docs/registro_prompts.jsonl`. Una guarda de red (hallazgo K-04 de la revisión de seguridad) falla toda prueba que llame a `connect`, `connect_ex`, `create_connection`, `getaddrinfo` o `gethostbyname` con `RuntimeError("RED BLOQUEADA...")`; no tiene escape ni marcador y no impide `socketpair`, que usa asyncio.
+
+**Límites conocidos:**
+
+- No hay bloqueo de archivo: dos escrituras simultáneas pueden mezclarse.
+- La huella no impide que alguien edite el texto y la huella a mano; la cadena de huellas y el control de versiones de git lo muestran, no lo evitan.
+- Si `--registro` apunta a una carpeta o a un archivo ilegible, el script sale con un traceback en vez de un mensaje; y `registrar_version` anexa aunque la cadena ya esté rota (solo `--verificar` lo detecta). Ambos están identificados y pendientes de una pasada corta.
+- `diff_prompts` compara por palabras, como el código de la clase, así que no conserva los saltos de línea.
+- Pendiente del bloque: el punto de supervisión con langgraph (envolviendo `src/supervision.py`) y la matriz de riesgos.
+
 ## Ensayo real de rate limit
 
 Envía N peticiones seguidas a Claude pidiendo una respuesta de una sola palabra, para intentar provocar un 429 real del proveedor. Registra la petición del primer 429, las esperas del backoff, las llamadas HTTP y el costo:
@@ -689,7 +714,7 @@ Desde la raíz del proyecto:
 # python -m pytest -v            # con el entorno virtual activo
 ```
 
-No usan la API real ni la red (todo está mockeado) y la suite completa tarda unos 50 segundos. `pytest.ini` limita la suite a `test/unit`; la prueba de consistencia sigue siendo el script aparte con `PYTHONPATH=src` y con costo (9 llamadas).
+No usan la API real ni la red (todo está mockeado; una guarda de `test/unit/conftest.py` hace fallar cualquier prueba que intente abrir una conexión o resolver un nombre) y la suite completa tarda unos 95 segundos. `pytest.ini` limita la suite a `test/unit`; la prueba de consistencia sigue siendo el script aparte con `PYTHONPATH=src` y con costo (9 llamadas).
 
 ## Prueba de consistencia
 
@@ -744,6 +769,7 @@ src/
   medicion_clasificador.py     clasifica la respuesta cruda del router (exacta, válida, correcta) y resume el formato contra el umbral de la clase
   registro_estructurado.py     logs JSON de una línea sin contenido, `trace_id` por contexto, huellas, consumo y handler de callbacks de LangChain
   defensa_inyeccion.py         detector de inyección con dos vistas del texto, filtro de documentos y mensajes de sistema y humano
+  registro_prompts.py          registro de versiones de prompts en JSONL de solo anexar: huella, cadena de versiones, lectura estricta y comparación con el código
   consulta_rag.py              consulta RAG instrumentada: prepara (recupera y filtra), responde (modelo, consumo y citas) y procesa con un `trace_id` por consulta
 scripts/
   ensayo_rate_limit_simulado.py  ensayo de rate limit simulado con mocks
@@ -758,6 +784,7 @@ scripts/
   evaluar_recuperacion.py        evalúa la recuperación por chunk con embeddings de Gemini, sin llamar a Claude (con costo en embeddings)
   medir_latencia_costo.py        mide la latencia por etapa y el costo del flujo RAG con Gemini y Claude y anexa un registro por llamada (con costo)
   preflight_rag.py               revisa sin API el índice (conteo e ids contra el corpus) y que el directorio esté ignorado por git
+  registrar_prompt.py            lista, verifica contra el código, registra y compara versiones del prompt del RAG (sin API ni red)
   preparar_dataset_tuning.py     prepara y valida el dataset de tuning y muestra su balance, sin API ni claves
   decidir_personalizacion.py     aplica el método de decisión a un JSON de respuestas o estima el costo de etiquetar, sin API ni claves
   medir_clasificador_router.py   mide el formato y la exactitud del clasificador del router sobre el dataset de tuning (con costo)
@@ -784,9 +811,9 @@ test/
   unit/test_trazas.py                  pruebas de las trazas, su lectura validada y su revisión
   unit/test_limites_autonomia.py       pruebas que cruzan el documento de límites con el código
   unit/test_conftest_guardian.py       prueba del guardián que impide que la suite escriba en las trazas reales
-  unit/conftest.py                     guardianes automáticos: fallan una prueba que escriba en trazas/trazas_agente.jsonl, en vectorstore/, en docs/resultados_evaluacion_recuperacion.json, en docs/registros_latencia_costo.jsonl o en docs/resultados_clasificador_router.json
+  unit/conftest.py                     guardianes automáticos: fallan una prueba que escriba en trazas/trazas_agente.jsonl, en vectorstore/, en docs/resultados_evaluacion_recuperacion.json, en docs/registros_latencia_costo.jsonl, en docs/resultados_clasificador_router.json o en docs/registro_prompts.jsonl; y una guarda de red que falla cualquier prueba que intente conectarse
   unit/test_conftest_guardian.py       pruebas de las funciones que miden el estado de trazas/ y vectorstore/
-  unit/test_guardianes.py              prueba, en un pytest aparte, que los cinco guardianes fallan de verdad
+  unit/test_guardianes.py              prueba, en un pytest aparte, que los seis guardianes fallan de verdad
   unit/embeddings_falsos.py            embeddings falsos por tema para probar el orden de recuperación (sin pruebas propias)
   unit/test_indexacion.py              pruebas de la indexación con Chroma real y embeddings falsos
   unit/test_indexar_corpus.py          pruebas del script de indexación (modo revisión, errores de la API)
@@ -805,6 +832,9 @@ test/
   unit/test_medir_clasificador_router.py pruebas del script de medición (bandera, topes, uso faltante, Ctrl-C, salida atómica y modelo falso)
   unit/test_registro_estructurado.py     pruebas del formateador JSON, el `trace_id`, las huellas, el consumo y el handler de callbacks
   unit/test_defensa_inyeccion.py         pruebas del detector (evasiones, límites y falsos positivos), el filtro de documentos y los mensajes
+  unit/test_registro_prompts.py          pruebas del registro de versiones: validaciones, cadena de huellas, lectura estricta y diff
+  unit/test_registrar_prompt.py          pruebas del script del registro (listar, verificar, registrar y diff) y del registro commiteado
+  unit/test_guarda_de_red.py             pruebas de la guarda de red de la suite
   unit/test_consulta_rag.py              pruebas de la consulta instrumentada con un vectorstore y un modelo falsos
   test_consistencia.py         prueba de consistencia con Claude
   test_consistencia_gemini.py  misma prueba con Gemini (comparativa)
@@ -834,6 +864,7 @@ docs/                      decisión de arquitectura, diagrama y evidencias
   resultados_recuperacion.json  resultados de la primera corrida real de la recuperación con citas
   resultados_recuperacion_registro.json  resultados de la corrida real con `--registro-json` y filtro de inyección (Bloque 31)
   registro_consulta_real.jsonl  log JSON de esa corrida, 48 líneas sin contenido de preguntas, fragmentos ni respuestas
+  registro_prompts.jsonl  historial de versiones del prompt del RAG (JSONL de solo anexar; lo escribe scripts/registrar_prompt.py)
   resultados_evaluacion_recuperacion.json  resultados de la primera evaluación real de la recuperación por chunk (se genera al correr evaluar_recuperacion.py)
   registros_latencia_costo.jsonl  registros de latencia y costo del flujo RAG, una línea por llamada (se anexa al correr medir_latencia_costo.py)
   limites_autonomia_agente.md  límites de autonomía del agente: riesgo por herramienta, aprobación, trazas y límites conocidos
