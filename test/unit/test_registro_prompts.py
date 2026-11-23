@@ -240,3 +240,42 @@ def test_l2b_e_registrar_version_rechaza_un_registro_con_problemas_en_la_cadena_
     with pytest.raises(ValueError, match="^el registro tiene problemas: linea 2: version 3 en lugar de 2$"):
         registrar_version(ruta, "p", V1 + " otro cambio", "a", "n", ahora=AHORA)
     assert _lineas(ruta) == antes
+
+
+def _anexar(ruta, entrada) -> None:
+    with open(ruta, "a", encoding="utf-8", newline="") as archivo:
+        archivo.write(json.dumps(entrada) + "\n")
+
+
+def test_l2c_a_con_dos_o_mas_problemas_el_mensaje_nombra_solo_el_primero_y_no_escribe(ruta):
+    registrar_version(ruta, "p", V1, "a", "n", ahora=AHORA)
+    entrada = json.loads(_lineas(ruta)[0])
+    _anexar(ruta, {**entrada, "version": 3, "huella": huella(V2), "huella_anterior": "000000000000", "texto": V2})
+    assert len(problemas_del_registro(leer_registro(ruta))) == 2
+    antes = _lineas(ruta)
+    with pytest.raises(ValueError) as info:
+        registrar_version(ruta, "p", V1 + " otro cambio", "a", "n", ahora=AHORA)
+    assert str(info.value) == "el registro tiene problemas: linea 2: version 3 en lugar de 2"
+    assert _lineas(ruta) == antes
+
+
+def test_l2c_b_una_cadena_rota_en_otro_nombre_tambien_impide_registrar_y_no_escribe(ruta):
+    registrar_version(ruta, "q", V1, "a", "n", ahora=AHORA)
+    entrada = json.loads(_lineas(ruta)[0])
+    _anexar(ruta, {**entrada, "version": 3, "huella": huella(V2), "huella_anterior": entrada["huella"], "texto": V2})
+    antes = _lineas(ruta)
+    with pytest.raises(ValueError) as info:
+        registrar_version(ruta, "p", V1, "a", "n", ahora=AHORA)
+    assert str(info.value) == "el registro tiene problemas: linea 2: version 3 en lugar de 2"
+    assert _lineas(ruta) == antes
+
+
+def test_l2c_c_con_la_cadena_rota_y_el_texto_igual_al_de_la_ultima_version_gana_el_error_de_la_cadena(ruta):
+    registrar_version(ruta, "p", V1, "a", "n", ahora=AHORA)
+    entrada = json.loads(_lineas(ruta)[0])
+    _anexar(ruta, {**entrada, "version": 3, "huella": huella(V2), "huella_anterior": entrada["huella"], "texto": V2})
+    antes = _lineas(ruta)
+    with pytest.raises(ValueError) as info:
+        registrar_version(ruta, "p", V2, "a", "n", ahora=AHORA)
+    assert str(info.value).startswith("el registro tiene problemas:")
+    assert _lineas(ruta) == antes
