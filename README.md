@@ -716,6 +716,12 @@ Límites de la matriz: que el símbolo exista no prueba que la mitigación funci
 - Si `--registro` apunta a una carpeta o a un archivo ilegible o no escribible, el script sale con 1 y un mensaje que nombra solo el tipo del error; y `registrar_version` se niega a anexar si la cadena de cualquier prompt ya está rota (L1b).
 - `diff_prompts` compara por palabras, como el código de la clase, así que no conserva los saltos de línea.
 
+**Límites conocidos de la supervisión y de las trazas (QA final, 2026-11-23):**
+
+- `reanudar` escribe en la `ruta_registro` guardada en el checkpoint, no en la de la instancia que reanuda: con una base SQLite compartida, quien reanuda no elige el destino, y quien pueda escribir en la base lo elige. Trata la base como parte del registro.
+- Un turno del agente cortado por un tope o por un error no escribe traza, aunque ya se haya aprobado y ejecutado una acción de riesgo alto: la decisión queda solo en el JSON de salida y `scripts/revisar_trazas.py` no la ve.
+- `scripts/registrar_prompt.py --registrar` anexa una versión sin pasar por `SupervisionDespliegue`: el grafo solo lo usa `scripts/comparar_supervision.py`.
+
 ## Ensayo real de rate limit
 
 Envía N peticiones seguidas a Claude pidiendo una respuesta de una sola palabra, para intentar provocar un 429 real del proveedor. Registra la petición del primer 429, las esperas del backoff, las llamadas HTTP y el costo:

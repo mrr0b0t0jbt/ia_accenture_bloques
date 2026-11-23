@@ -40,7 +40,7 @@
     "riesgo": "Accion de riesgo alto ejecutada sin aprobacion humana",
     "probabilidad": 2,
     "impacto": 5,
-    "mitigacion": "La herramienta de riesgo alto exige un aprobador, hay topes de aprobaciones por turno y por corrida y la revision de trazas marca la accion sin aprobacion; la accion real esta simulada, asi que lo probado vale solo contra la simulacion.",
+    "mitigacion": "La herramienta de riesgo alto exige un aprobador, hay topes de aprobaciones por turno y por corrida y la revision de trazas marca la accion sin aprobacion; la accion real esta simulada, asi que lo probado vale solo contra la simulacion. La revision de trazas no cubre los turnos cortados por un tope o por un error, que no dejan traza.",
     "evidencias": [
       "src/herramientas_agente.py::RIESGO",
       "src/supervision.py::esperar_aprobacion",
@@ -84,7 +84,7 @@
       "src/supervision_despliegue.py::desplegar"
     ],
     "supervision": "supervisar: interrupt del grafo antes de desplegar",
-    "nota": "No hay bloqueo de archivo entre comprobar la huella y anexar (ventana teorica)."
+    "nota": "No hay bloqueo de archivo entre comprobar la huella y anexar (ventana teorica). scripts/registrar_prompt.py --registrar anexa sin pasar por el grafo, y reanudar escribe en la ruta del registro guardada en el checkpoint."
   },
   {
     "riesgo": "Modelo de embeddings usado queda deprecado sin aviso",
