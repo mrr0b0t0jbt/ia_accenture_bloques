@@ -659,7 +659,7 @@ Verificación propia de K2: 1171, 1215, 1230 y 1241 pruebas por commit, cliente 
 
 ## Versionado de prompts, supervisión y riesgos (Bloque 32)
 
-La Unidad 2.7 cierra con tres piezas: un registro de versiones del prompt, un punto de supervisión humana para desplegar una versión nueva y una matriz de riesgos. Esta sección documenta lo hecho hasta ahora (pasadas L1 y L2: el registro, las guardas de la suite y la supervisión del despliegue con langgraph); la matriz de riesgos sigue pendiente. Nada de este bloque llama a la API ni usa red.
+La Unidad 2.7 cierra con tres piezas: un registro de versiones del prompt, un punto de supervisión humana para desplegar una versión nueva y una matriz de riesgos. Esta sección documenta las tres (pasadas L1, L2 y L3: el registro, las guardas de la suite, la supervisión del despliegue con langgraph y la matriz de riesgos). Nada de este bloque llama a la API ni usa red.
 
 **Registro de versiones del prompt** (`src/registro_prompts.py`, `scripts/registrar_prompt.py`, `docs/registro_prompts.jsonl`). Es un JSONL de solo anexar: cada versión es una línea con nombre, versión, huella, huella anterior (encadena las versiones), texto, autor, fecha UTC, nota, modelo y parámetros. Reutiliza la huella de `registro_estructurado` (sha256 de 12 caracteres). Corrige tres defectos del código de la clase: el registro solo vivía en memoria, la fecha era la local y sin zona, y aceptaba la misma versión dos veces. La línea se escribe en ASCII, así que un carácter invisible del texto queda visible en el diff de git. La lectura es estricta (claves y su orden, tipos, huella contra texto y fecha) y su error cita solo el número de línea, nunca el contenido.
 
@@ -699,13 +699,22 @@ Reglas:
 
 Límites: no hay bloqueo de archivo entre la comprobación de la huella y la anexión (ventana teórica, igual que el registro); langgraph agrega una nota (`__notes__`) a las excepciones que salen de un nodo.
 
+**Matriz de riesgos** (`src/matriz_riesgos.py`, `scripts/matriz_riesgos.py`, `docs/matriz_riesgos.json`). Una fila por riesgo, con probabilidad e impacto de 1 a 5 (estimaciones, no mediciones), mitigación, evidencias en el código, punto de supervisión asociado y una nota. El puntaje es probabilidad por impacto y la categoría usa cortes fijados de antemano: CRITICO desde 15, ALTO desde 9, MEDIO desde 4 y BAJO por debajo. `esta_en_el_limite` marca la fila si mover probabilidad o impacto un punto cambia su categoría.
+
+```bash
+python scripts/matriz_riesgos.py    # tabla ordenada; sale con 1 si la matriz es inválida o una evidencia no existe en el código
+```
+
+Cada evidencia es `ruta.py::simbolo` y se comprueba leyendo el archivo con `ast` (no se importa ni se ejecuta nada): el archivo debe estar dentro del proyecto y el símbolo debe ser una definición de primer nivel (función, clase o constante). Si una mitigación cita código que ya no existe, la suite falla. La lectura es estricta (claves y su orden, enteros de 1 a 5 sin `bool`, riesgos sin repetir) y sus errores citan solo el número de fila, nunca el contenido ni la ruta. Las 11 filas iniciales las prellenó Antares y salen todas `[AL LIMITE]`, como en la clase: los cortes están juntos frente al rango de 1 a 25, así que la marca no distingue entre ellas; trata la categoría como aproximada y revísala con otra persona. Incluye el consumo descontrolado de llamadas y costo (OWASP LLM10:2025, referencia de memoria sin contrastar).
+
+Límites de la matriz: que el símbolo exista no prueba que la mitigación funcione ni que el texto de la fila describa bien el código; el texto de mitigaciones y notas no se contrastó contra el código más allá de la existencia de los símbolos.
+
 **Límites conocidos del registro:**
 
 - No hay bloqueo de archivo: dos escrituras simultáneas pueden mezclarse.
 - La huella no impide que alguien edite el texto y la huella a mano; la cadena de huellas y el control de versiones de git lo muestran, no lo evitan.
 - Si `--registro` apunta a una carpeta o a un archivo ilegible o no escribible, el script sale con 1 y un mensaje que nombra solo el tipo del error; y `registrar_version` se niega a anexar si la cadena de cualquier prompt ya está rota (L1b).
 - `diff_prompts` compara por palabras, como el código de la clase, así que no conserva los saltos de línea.
-- Pendiente del bloque: la matriz de riesgos.
 
 ## Ensayo real de rate limit
 
@@ -784,6 +793,7 @@ src/
   agente.py                agente con herramientas, traza de decisión, memoria por sesión y normalización de la salida
   supervision.py           aprobación humana con plazo, registro de decisiones y topes de aprobaciones por turno y por corrida
   supervision_despliegue.py  grafo de langgraph (proponer, supervisar, desplegar) que envuelve la aprobación para desplegar versiones de prompts; InMemorySaver o SqliteSaver
+  matriz_riesgos.py          matriz de riesgos: puntaje, categoría, marca de límite y validación de evidencias contra el código con ast
   trazas.py                trazas JSONL por turno y marcas para su revisión
   embeddings_gemini.py     crea los embeddings de Gemini a pedido y clasifica los errores de la API (límite, clave u otro)
   indexacion.py            carga y valida el corpus, lo parte en chunks con ids deterministas e indexa en Chroma de forma idempotente
@@ -812,6 +822,7 @@ scripts/
   preflight_rag.py               revisa sin API el índice (conteo e ids contra el corpus) y que el directorio esté ignorado por git
   registrar_prompt.py            lista, verifica contra el código, registra y compara versiones del prompt del RAG (sin API ni red)
   comparar_supervision.py        compara la aprobación previa con el grafo de supervisión con las mismas 10 respuestas (sin API ni red)
+  matriz_riesgos.py              tabla de la matriz de riesgos; sale con 1 si es inválida o una evidencia no existe (sin API ni red)
   preparar_dataset_tuning.py     prepara y valida el dataset de tuning y muestra su balance, sin API ni claves
   decidir_personalizacion.py     aplica el método de decisión a un JSON de respuestas o estima el costo de etiquetar, sin API ni claves
   medir_clasificador_router.py   mide el formato y la exactitud del clasificador del router sobre el dataset de tuning (con costo)
@@ -862,6 +873,7 @@ test/
   unit/test_registro_prompts.py          pruebas del registro de versiones: validaciones, cadena de huellas, lectura estricta y diff
   unit/test_registrar_prompt.py          pruebas del script del registro (listar, verificar, registrar y diff) y del registro commiteado
   unit/test_supervision_despliegue.py    pruebas del grafo de supervisión (aprobar, rechazar, huella pendiente, thread_id, SQLite) y de la comparación previo vs grafo
+  unit/test_matriz_riesgos.py            pruebas de la matriz: puntaje, cortes, límite, validación de filas, evidencias con ast y script
   unit/test_guarda_de_red.py             pruebas de la guarda de red de la suite
   unit/test_consulta_rag.py              pruebas de la consulta instrumentada con un vectorstore y un modelo falsos
   test_consistencia.py         prueba de consistencia con Claude
@@ -893,6 +905,7 @@ docs/                      decisión de arquitectura, diagrama y evidencias
   resultados_recuperacion_registro.json  resultados de la corrida real con `--registro-json` y filtro de inyección (Bloque 31)
   registro_consulta_real.jsonl  log JSON de esa corrida, 48 líneas sin contenido de preguntas, fragmentos ni respuestas
   registro_prompts.jsonl  historial de versiones del prompt del RAG (JSONL de solo anexar; lo escribe scripts/registrar_prompt.py)
+  matriz_riesgos.json     matriz de riesgos del proyecto (11 filas; la valida scripts/matriz_riesgos.py)
   resultados_evaluacion_recuperacion.json  resultados de la primera evaluación real de la recuperación por chunk (se genera al correr evaluar_recuperacion.py)
   registros_latencia_costo.jsonl  registros de latencia y costo del flujo RAG, una línea por llamada (se anexa al correr medir_latencia_costo.py)
   limites_autonomia_agente.md  límites de autonomía del agente: riesgo por herramienta, aprobación, trazas y límites conocidos
