@@ -49,10 +49,11 @@ Contienen las entradas completas de los turnos, es decir, lo que escribió quien
 
 Cada línea trae: timestamp en UTC, `session_id`, entrada, acciones (herramienta, argumentos y observación), respuesta final y aprobaciones del turno. Un turno interrumpido con Ctrl-C trae además `"interrumpido": true`.
 
-Cómo revisarlas: `python scripts/revisar_trazas.py` (o con `--trazas <ruta>`). Marca dos cosas:
+Cómo revisarlas: `python scripts/revisar_trazas.py` (o con `--trazas <ruta>`). Marca tres cosas:
 
 - La misma herramienta usada dos veces seguidas en un turno.
 - Una herramienta de riesgo alto sin ningún registro de aprobación en esa traza.
+- Una herramienta que no figura en RIESGO (sin nivel de riesgo definido), en esa traza.
 
 Un intento rechazado por host no permitido cuenta como registro, así que no se marca.
 
