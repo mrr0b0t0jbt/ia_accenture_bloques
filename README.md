@@ -659,7 +659,7 @@ Verificación propia de K2: 1171, 1215, 1230 y 1241 pruebas por commit, cliente 
 
 ## Versionado de prompts, supervisión y riesgos (Bloque 32)
 
-La Unidad 2.7 cierra con tres piezas: un registro de versiones del prompt, un punto de supervisión humana para desplegar una versión nueva y una matriz de riesgos. Esta sección documenta lo hecho hasta ahora (pasada L1: el registro y las guardas de la suite); la supervisión con langgraph y la matriz de riesgos siguen pendientes. Nada de este bloque llama a la API ni usa red.
+La Unidad 2.7 cierra con tres piezas: un registro de versiones del prompt, un punto de supervisión humana para desplegar una versión nueva y una matriz de riesgos. Esta sección documenta lo hecho hasta ahora (pasadas L1 y L2: el registro, las guardas de la suite y la supervisión del despliegue con langgraph); la matriz de riesgos sigue pendiente. Nada de este bloque llama a la API ni usa red.
 
 **Registro de versiones del prompt** (`src/registro_prompts.py`, `scripts/registrar_prompt.py`, `docs/registro_prompts.jsonl`). Es un JSONL de solo anexar: cada versión es una línea con nombre, versión, huella, huella anterior (encadena las versiones), texto, autor, fecha UTC, nota, modelo y parámetros. Reutiliza la huella de `registro_estructurado` (sha256 de 12 caracteres). Corrige tres defectos del código de la clase: el registro solo vivía en memoria, la fecha era la local y sin zona, y aceptaba la misma versión dos veces. La línea se escribe en ASCII, así que un carácter invisible del texto queda visible en el diff de git. La lectura es estricta (claves y su orden, tipos, huella contra texto y fecha) y su error cita solo el número de línea, nunca el contenido.
 
@@ -674,13 +674,38 @@ El historial inicial (sembrado el 2026-11-22) tiene dos versiones de `prompt_rag
 
 **Guardas de la suite** (`test/unit/conftest.py`). Un sexto guardián falla toda prueba que escriba en `docs/registro_prompts.jsonl`. Una guarda de red (hallazgo K-04 de la revisión de seguridad) falla toda prueba que llame a `connect`, `connect_ex`, `create_connection`, `getaddrinfo` o `gethostbyname` con `RuntimeError("RED BLOQUEADA...")`; no tiene escape ni marcador y no impide `socketpair`, que usa asyncio.
 
-**Límites conocidos:**
+**Supervisión del despliegue con langgraph** (`src/supervision_despliegue.py`, `scripts/comparar_supervision.py`). Un grafo de tres nodos que envuelve la aprobación humana de `src/supervision.py` sin modificarla: `proponer` valida la cadena del registro y fija la huella pendiente (no escribe), `supervisar` detiene el grafo con `interrupt` y `desplegar` anexa la versión con `registrar_version` solo si la decisión fue aprobada. El aprobador (`esperar_aprobacion`, `denegar_siempre`) sigue decidiendo; el grafo solo guarda el estado entre la propuesta y la decisión.
+
+```python
+from supervision import esperar_aprobacion
+from supervision_despliegue import SupervisionDespliegue
+
+supervision = SupervisionDespliegue("docs/registro_prompts.jsonl")   # InMemorySaver
+propuesta = supervision.iniciar("prompt_rag", texto, "autor", "nota")  # {"thread_id": ..., "pendiente": {...}}
+supervision.reanudar(propuesta["thread_id"], True)                    # {"estado": "desplegado", ...}
+# o todo junto: supervision.ejecutar("prompt_rag", texto, "autor", "nota", aprobador)
+```
+
+Reglas:
+
+- Solo un `True` exacto despliega; cualquier otro valor (`"s"`, `1`, `None`) rechaza en silencio y no escribe.
+- Cada propuesta recibe un `thread_id` único (uuid4). Un `thread_id` desconocido o ya resuelto lanza `ValueError` y no puede desplegar dos veces.
+- La huella pendiente se comprueba al decidir: si otra versión del mismo prompt se anexó (o el registro desapareció) entre la propuesta y la aprobación, el resultado es `desactualizado` y no se escribe.
+- `proponer` rechaza una cadena rota y un texto idéntico al de la última versión, antes de preguntar.
+- El payload de la interrupción lleva nombre, versión propuesta y huellas, no el texto del prompt.
+- Con `SupervisionDespliegue(ruta_registro, ruta_sqlite)` el estado vive en SQLite (`langgraph-checkpoint-sqlite`) y la decisión puede tomarse desde otra instancia o proceso. El checkpoint SÍ guarda el texto del prompt: trátalo como el registro. Una base que no se puede abrir lanza `ValueError` sin la ruta.
+
+`python scripts/comparar_supervision.py` da las mismas 10 respuestas (s, S, " s ", n, vacío, "si", EOF, línea parcial, línea de más de 1024 bytes, plazo vencido) por una tubería real a `esperar_aprobacion` y al grafo, imprime la tabla de decisiones y sale con 1 si alguna difiere. No usa API ni red.
+
+Límites: no hay bloqueo de archivo entre la comprobación de la huella y la anexión (ventana teórica, igual que el registro); langgraph agrega una nota (`__notes__`) a las excepciones que salen de un nodo.
+
+**Límites conocidos del registro:**
 
 - No hay bloqueo de archivo: dos escrituras simultáneas pueden mezclarse.
 - La huella no impide que alguien edite el texto y la huella a mano; la cadena de huellas y el control de versiones de git lo muestran, no lo evitan.
-- Si `--registro` apunta a una carpeta o a un archivo ilegible, el script sale con un traceback en vez de un mensaje; y `registrar_version` anexa aunque la cadena ya esté rota (solo `--verificar` lo detecta). Ambos están identificados y pendientes de una pasada corta.
+- Si `--registro` apunta a una carpeta o a un archivo ilegible o no escribible, el script sale con 1 y un mensaje que nombra solo el tipo del error; y `registrar_version` se niega a anexar si la cadena de cualquier prompt ya está rota (L1b).
 - `diff_prompts` compara por palabras, como el código de la clase, así que no conserva los saltos de línea.
-- Pendiente del bloque: el punto de supervisión con langgraph (envolviendo `src/supervision.py`) y la matriz de riesgos.
+- Pendiente del bloque: la matriz de riesgos.
 
 ## Ensayo real de rate limit
 
@@ -758,6 +783,7 @@ src/
   herramientas_agente.py   herramientas del agente: documentación, cálculo seguro con ast, CVE de laboratorio y aislamiento simulado con aprobación
   agente.py                agente con herramientas, traza de decisión, memoria por sesión y normalización de la salida
   supervision.py           aprobación humana con plazo, registro de decisiones y topes de aprobaciones por turno y por corrida
+  supervision_despliegue.py  grafo de langgraph (proponer, supervisar, desplegar) que envuelve la aprobación para desplegar versiones de prompts; InMemorySaver o SqliteSaver
   trazas.py                trazas JSONL por turno y marcas para su revisión
   embeddings_gemini.py     crea los embeddings de Gemini a pedido y clasifica los errores de la API (límite, clave u otro)
   indexacion.py            carga y valida el corpus, lo parte en chunks con ids deterministas e indexa en Chroma de forma idempotente
@@ -785,6 +811,7 @@ scripts/
   medir_latencia_costo.py        mide la latencia por etapa y el costo del flujo RAG con Gemini y Claude y anexa un registro por llamada (con costo)
   preflight_rag.py               revisa sin API el índice (conteo e ids contra el corpus) y que el directorio esté ignorado por git
   registrar_prompt.py            lista, verifica contra el código, registra y compara versiones del prompt del RAG (sin API ni red)
+  comparar_supervision.py        compara la aprobación previa con el grafo de supervisión con las mismas 10 respuestas (sin API ni red)
   preparar_dataset_tuning.py     prepara y valida el dataset de tuning y muestra su balance, sin API ni claves
   decidir_personalizacion.py     aplica el método de decisión a un JSON de respuestas o estima el costo de etiquetar, sin API ni claves
   medir_clasificador_router.py   mide el formato y la exactitud del clasificador del router sobre el dataset de tuning (con costo)
@@ -834,6 +861,7 @@ test/
   unit/test_defensa_inyeccion.py         pruebas del detector (evasiones, límites y falsos positivos), el filtro de documentos y los mensajes
   unit/test_registro_prompts.py          pruebas del registro de versiones: validaciones, cadena de huellas, lectura estricta y diff
   unit/test_registrar_prompt.py          pruebas del script del registro (listar, verificar, registrar y diff) y del registro commiteado
+  unit/test_supervision_despliegue.py    pruebas del grafo de supervisión (aprobar, rechazar, huella pendiente, thread_id, SQLite) y de la comparación previo vs grafo
   unit/test_guarda_de_red.py             pruebas de la guarda de red de la suite
   unit/test_consulta_rag.py              pruebas de la consulta instrumentada con un vectorstore y un modelo falsos
   test_consistencia.py         prueba de consistencia con Claude
