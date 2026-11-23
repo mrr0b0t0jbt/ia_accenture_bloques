@@ -149,6 +149,20 @@ def test_sd_k_proponer_sobre_una_cadena_rota_o_sin_cambios_lanza_value_error_y_n
     assert _lineas(ruta) == antes
 
 
+def test_sd_k2_con_dos_o_mas_problemas_en_la_cadena_iniciar_nombra_solo_el_primero_y_no_escribe(supervision, ruta):
+    registro_prompts.registrar_version(ruta, "p", V1, "ana", "primera")
+    primera = json.loads(_lineas(ruta)[0])
+    salto = {**primera, "version": 3, "huella": registro_prompts.huella_prompt(V2), "huella_anterior": "000000000000", "texto": V2}
+    with open(ruta, "a", encoding="utf-8", newline="") as archivo:
+        archivo.write(json.dumps(salto) + "\n")
+    assert len(registro_prompts.problemas_del_registro(registro_prompts.leer_registro(ruta))) == 2
+    antes = _lineas(ruta)
+    with pytest.raises(ValueError) as info:
+        supervision.iniciar("q", V1, "ana", "otro nombre")
+    assert info.value.args == ("el registro tiene problemas: linea 2: version 3 en lugar de 2",)
+    assert _lineas(ruta) == antes
+
+
 @pytest.mark.parametrize("campo", ["nombre", "texto", "autor", "nota"])
 @pytest.mark.parametrize("valor", ["", "   ", None, 5])
 def test_sd_l_iniciar_rechaza_campos_vacios_o_que_no_son_texto(supervision, ruta, campo, valor):
