@@ -246,3 +246,18 @@ def test_sd_s_el_script_sale_con_1_si_alguna_decision_difiere(monkeypatch, capsy
     monkeypatch.setattr(comparar_supervision, "decision_grafo", lambda datos, indice: True)
     assert comparar_supervision.main() == 1
     assert "False" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("campo, maximo", [("nombre", 200), ("texto", 100000), ("autor", 200), ("nota", 1000)])
+def test_sd_t_iniciar_rechaza_un_campo_sobre_el_limite_antes_de_pedir_la_aprobacion(supervision, ruta, campo, maximo):
+    argumentos = {"nombre": "p", "texto": V1, "autor": "ana", "nota": "n", campo: "a" * (maximo + 1)}
+    with pytest.raises(ValueError) as info:
+        supervision.iniciar(**argumentos)
+    assert info.value.args == (f"{campo} invalido: debe ser un texto no vacio de hasta {maximo} caracteres",)
+    assert _lineas(ruta) == []
+
+
+def test_sd_t2_iniciar_acepta_cada_campo_justo_en_el_limite(supervision, ruta):
+    propuesta = supervision.iniciar("n" * 200, "a" * 100000, "u" * 200, "o" * 1000)
+    assert set(propuesta) == {"thread_id", "pendiente"}
+    assert _lineas(ruta) == []

@@ -121,6 +121,10 @@ class SupervisionDespliegue:
         for valor, campo in ((nombre, "nombre"), (texto, "texto"), (autor, "autor"), (nota, "nota")):
             if not isinstance(valor, str) or not valor.strip():
                 raise ValueError(f"{campo} invalido: debe ser un texto no vacio")
+        maximos = (registro_prompts.MAX_NOMBRE, registro_prompts.MAX_TEXTO, registro_prompts.MAX_AUTOR, registro_prompts.MAX_NOTA)
+        for (valor, campo), maximo in zip(((nombre, "nombre"), (texto, "texto"), (autor, "autor"), (nota, "nota")), maximos):
+            if len(valor) > maximo:
+                raise ValueError(f"{campo} invalido: debe ser un texto no vacio de hasta {maximo} caracteres")
         thread_id = uuid.uuid4().hex
         entrada = {"ruta_registro": self.ruta_registro, "nombre": nombre, "texto": texto, "autor": autor, "nota": nota}
         resultado = self._app.invoke(entrada, config=self._config(thread_id))
