@@ -1,0 +1,138 @@
+[
+  {
+    "riesgo": "Inyeccion de prompt via documento recuperado",
+    "probabilidad": 4,
+    "impacto": 4,
+    "mitigacion": "Filtro de patrones sobre cada fragmento y mensajes con el contexto delimitado (Bloque 31); sin verificar contra un modelo real con un fragmento que evada el detector.",
+    "evidencias": [
+      "src/defensa_inyeccion.py::detectar_inyeccion",
+      "src/defensa_inyeccion.py::filtrar_documentos",
+      "src/defensa_inyeccion.py::construir_mensajes"
+    ],
+    "supervision": null,
+    "nota": "OWASP LLM01:2025 (Prompt Injection)."
+  },
+  {
+    "riesgo": "Entradas completas de usuarios guardadas en las trazas del agente",
+    "probabilidad": 3,
+    "impacto": 4,
+    "mitigacion": "Archivo fuera de git con permisos 0600 y carpeta 0700; la revision semanal es un proceso humano propuesto, no automatizado, y no hay rotacion.",
+    "evidencias": [
+      "src/trazas.py::registrar_traza",
+      "src/trazas.py::leer_trazas"
+    ],
+    "supervision": "Revision humana semanal de una muestra de trazas",
+    "nota": "Borrado manual; las trazas contienen la entrada completa del usuario."
+  },
+  {
+    "riesgo": "Filtracion de datos personales en los logs del RAG",
+    "probabilidad": 2,
+    "impacto": 5,
+    "mitigacion": "Los logs registran huella y longitud del texto en lugar del contenido (Bloque 31).",
+    "evidencias": [
+      "src/registro_estructurado.py::resumen_de_texto",
+      "src/registro_estructurado.py::registrar_evento"
+    ],
+    "supervision": null,
+    "nota": "OWASP LLM02:2025 (Sensitive Information Disclosure)."
+  },
+  {
+    "riesgo": "Accion de riesgo alto ejecutada sin aprobacion humana",
+    "probabilidad": 2,
+    "impacto": 5,
+    "mitigacion": "La herramienta de riesgo alto exige un aprobador, hay topes de aprobaciones por turno y por corrida y la revision de trazas marca la accion sin aprobacion; la accion real esta simulada, asi que lo probado vale solo contra la simulacion.",
+    "evidencias": [
+      "src/herramientas_agente.py::RIESGO",
+      "src/supervision.py::esperar_aprobacion",
+      "src/supervision.py::LimiteAprobaciones",
+      "src/trazas.py::marcar_riesgo_alto_sin_aprobacion"
+    ],
+    "supervision": "esperar_aprobacion: una persona aprueba antes de la accion",
+    "nota": "OWASP LLM06:2025 (Excessive Agency)."
+  },
+  {
+    "riesgo": "Prompt cambiado en el codigo sin registrar la version",
+    "probabilidad": 3,
+    "impacto": 3,
+    "mitigacion": "Registro de versiones con huella y una prueba que compara el prompt del codigo con el ultimo registrado; la suite falla si no coinciden.",
+    "evidencias": [
+      "src/registro_prompts.py::comparar_con_codigo",
+      "src/registro_prompts.py::registrar_version"
+    ],
+    "supervision": null,
+    "nota": "La proteccion depende de correr la suite."
+  },
+  {
+    "riesgo": "Dataset de tuning desbalanceado produce sesgo",
+    "probabilidad": 3,
+    "impacto": 3,
+    "mitigacion": "Chequeo de balance por categoria y aviso antes de usar el dataset (Bloque 29).",
+    "evidencias": [
+      "src/dataset_tuning.py::avisos_de_balance",
+      "src/dataset_tuning.py::resumir_balance"
+    ],
+    "supervision": null,
+    "nota": ""
+  },
+  {
+    "riesgo": "Despliegue de un prompt nuevo sin aprobacion humana",
+    "probabilidad": 2,
+    "impacto": 4,
+    "mitigacion": "El grafo de supervision detiene el despliegue hasta que el aprobador decide y solo un True exacto anexa la version.",
+    "evidencias": [
+      "src/supervision_despliegue.py::SupervisionDespliegue",
+      "src/supervision_despliegue.py::desplegar"
+    ],
+    "supervision": "supervisar: interrupt del grafo antes de desplegar",
+    "nota": "No hay bloqueo de archivo entre comprobar la huella y anexar (ventana teorica)."
+  },
+  {
+    "riesgo": "Modelo de embeddings usado queda deprecado sin aviso",
+    "probabilidad": 2,
+    "impacto": 4,
+    "mitigacion": "Revision periodica de la documentacion oficial (Bloque 28); no hay chequeo automatico.",
+    "evidencias": [
+      "src/embeddings_gemini.py::MODELO_EMBEDDINGS"
+    ],
+    "supervision": null,
+    "nota": "Ya ocurrio con text-embedding-004."
+  },
+  {
+    "riesgo": "Registro de prompts corrompido por escrituras simultaneas o edicion a mano",
+    "probabilidad": 2,
+    "impacto": 3,
+    "mitigacion": "Lectura estricta, cadena de huellas y control de versiones de git; el registro se niega a anexar si la cadena esta rota.",
+    "evidencias": [
+      "src/registro_prompts.py::problemas_del_registro",
+      "src/registro_prompts.py::leer_registro"
+    ],
+    "supervision": null,
+    "nota": "No hay bloqueo de archivo y la huella no impide editar texto y huella a la vez."
+  },
+  {
+    "riesgo": "Respuesta con informacion vieja por fragmento no reindexado",
+    "probabilidad": 3,
+    "impacto": 2,
+    "mitigacion": "Indexacion con ids explicitos y verificacion de integridad del indice (Bloque 25).",
+    "evidencias": [
+      "src/indexacion.py::indexar",
+      "src/indexacion.py::verificar_integridad"
+    ],
+    "supervision": null,
+    "nota": ""
+  },
+  {
+    "riesgo": "Consumo descontrolado de llamadas y costo del modelo",
+    "probabilidad": 2,
+    "impacto": 3,
+    "mitigacion": "Topes de USD, de tokens, de llamadas y de iteraciones en los scripts que usan la API real; exigen confirmacion explicita.",
+    "evidencias": [
+      "scripts/ejecutar_agente.py::TOPE_USD_MAXIMO",
+      "scripts/ejecutar_agente.py::MAX_LLAMADAS",
+      "scripts/ejecutar_agente.py::MAX_ITERACIONES",
+      "scripts/consultar_corpus.py::TOPE_USD_MAXIMO"
+    ],
+    "supervision": null,
+    "nota": "OWASP LLM10:2025 (Unbounded Consumption); el costo de Claude no se ha contrastado con la consola de Anthropic."
+  }
+]
