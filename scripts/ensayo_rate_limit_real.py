@@ -177,7 +177,7 @@ def formatear_registro(info: dict, fecha: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     """Ejecuta el ensayo real solo con --confirmar-api-real."""
-    parser = argparse.ArgumentParser(description="Ensayo REAL de rate limit contra la API de Claude (con costo).")
+    parser = argparse.ArgumentParser(description="Ensayo REAL de rate limit contra la API de Claude (con costo).", allow_abbrev=False)
     parser.add_argument("--n", type=int, default=MAX_PETICIONES)
     parser.add_argument("--tope-usd", type=float, default=0.05)
     parser.add_argument("--concurrencia", type=int, default=1)

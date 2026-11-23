@@ -219,7 +219,7 @@ def informar(salida: dict) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     """Ejecuta las cadenas contra la API real solo con --confirmar-api-real."""
-    parser = argparse.ArgumentParser(description="Cadenas de LangChain sobre respuestas REALES de Claude o Gemini (con costo).")
+    parser = argparse.ArgumentParser(description="Cadenas de LangChain sobre respuestas REALES de Claude o Gemini (con costo).", allow_abbrev=False)
     parser.add_argument("--casos", default="JSON/casos_cadenas.json")
     parser.add_argument("--salida", default="docs/resultados_cadenas.json")
     parser.add_argument("--tope-usd", type=float, default=TOPE_USD_MAXIMO)

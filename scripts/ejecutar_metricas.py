@@ -72,7 +72,7 @@ def ejecutar_casos(
 
 def main(argv: list[str] | None = None) -> int:
     """Calcula las métricas contra la API real solo con --confirmar-api-real."""
-    parser = argparse.ArgumentParser(description="Métricas de texto sobre respuestas REALES de Claude (con costo).")
+    parser = argparse.ArgumentParser(description="Métricas de texto sobre respuestas REALES de Claude (con costo).", allow_abbrev=False)
     parser.add_argument("--casos", default="JSON/casos_metricas.json")
     parser.add_argument("--salida", default="docs/resultados_metricas.json")
     parser.add_argument("--tope-usd", type=float, default=TOPE_USD_MAXIMO)

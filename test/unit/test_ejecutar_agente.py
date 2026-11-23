@@ -598,3 +598,10 @@ def test_main_de_punta_a_punta_con_aislamiento_escribe_aprobaciones_y_trazas(mon
     escrito = json.loads(salida.read_text(encoding="utf-8"))
     assert [decision["aprobado"] for decision in escrito["aprobaciones"]] == [False]
     assert len(ruta_trazas.read_text(encoding="utf-8").splitlines()) == 2
+
+
+def test_h1_la_abreviatura_conf_se_rechaza_con_codigo_2():
+    # --tope-usd 0 a propósito: sin el arreglo el script devuelve 1 antes de llamar a ninguna API, y la prueba falla sin gastar nada
+    with pytest.raises(SystemExit) as salida:
+        ejecutar_agente.main(["--conf", "--tope-usd", "0"])
+    assert salida.value.code == 2

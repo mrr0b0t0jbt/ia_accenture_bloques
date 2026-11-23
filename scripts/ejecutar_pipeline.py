@@ -103,7 +103,7 @@ def formatear_registro(info: dict, fecha: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     """Ejecuta el pipeline contra la API real solo con --confirmar-api-real."""
-    parser = argparse.ArgumentParser(description="Pipeline de texto sobre respuestas REALES de Claude (con costo).")
+    parser = argparse.ArgumentParser(description="Pipeline de texto sobre respuestas REALES de Claude (con costo).", allow_abbrev=False)
     parser.add_argument("--casos", default="JSON/casos_pipeline.json")
     parser.add_argument("--salida", default="docs/registro_pipeline.md")
     parser.add_argument("--tope-usd", type=float, default=0.05)

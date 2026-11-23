@@ -276,3 +276,10 @@ def test_formatear_registro_concurrente_incluye_concurrencia_y_aviso():
     secuencial = ensayo.formatear_registro(info_a_mano(None, 0), "2026-10-28")
     assert "Concurrencia" not in secuencial
     assert "ráfaga" not in secuencial
+
+
+def test_h1_la_abreviatura_conf_se_rechaza_con_codigo_2(tmp_path):
+    # carpeta inexistente a propósito: sin el arreglo el script devuelve 1 antes de llamar a ninguna API, y la prueba falla sin gastar nada
+    with pytest.raises(SystemExit) as salida:
+        ensayo.main(["--conf", "--salida", str(tmp_path / "no_existe" / "registro.md")])
+    assert salida.value.code == 2

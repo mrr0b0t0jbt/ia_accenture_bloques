@@ -469,3 +469,10 @@ def test_main_sin_confirmar_menciona_gemini_y_el_flag(capsys):
     error = capsys.readouterr().err
     assert "Gemini" in error
     assert "--confirmar-api-real" in error
+
+
+def test_h1_la_abreviatura_conf_se_rechaza_con_codigo_2():
+    # --tope-usd 0 a propósito: sin el arreglo el script devuelve 1 antes de llamar a ninguna API, y la prueba falla sin gastar nada
+    with pytest.raises(SystemExit) as salida:
+        ejecutar_cadenas.main(["--conf", "--tope-usd", "0"])
+    assert salida.value.code == 2

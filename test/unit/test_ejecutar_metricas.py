@@ -220,3 +220,10 @@ def test_main_respeta_el_tope_recibido(monkeypatch, tmp_path):
     argv = ["--confirmar-api-real", "--casos", str(casos), "--salida", str(salida), "--tope-usd", "0.002"]
     assert ejecutar_metricas.main(argv) == 0
     assert len(json.loads(salida.read_text(encoding="utf-8"))) == 2
+
+
+def test_h1_la_abreviatura_conf_se_rechaza_con_codigo_2():
+    # --tope-usd 0 a propósito: sin el arreglo el script devuelve 1 antes de llamar a ninguna API, y la prueba falla sin gastar nada
+    with pytest.raises(SystemExit) as salida:
+        ejecutar_metricas.main(["--conf", "--tope-usd", "0"])
+    assert salida.value.code == 2

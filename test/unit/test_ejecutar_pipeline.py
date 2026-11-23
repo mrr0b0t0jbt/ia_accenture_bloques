@@ -141,3 +141,10 @@ def test_main_salida_en_directorio_inexistente_devuelve_1_sin_llamar_a_la_api(mo
     assert capsys.readouterr().err
     falso.assert_not_called()
     assert not (tmp_path / "no_existe").exists()
+
+
+def test_h1_la_abreviatura_conf_se_rechaza_con_codigo_2(tmp_path):
+    # carpeta inexistente a propósito: sin el arreglo el script devuelve 1 antes de llamar a ninguna API, y la prueba falla sin gastar nada
+    with pytest.raises(SystemExit) as salida:
+        ejecutar_pipeline.main(["--conf", "--salida", str(tmp_path / "no_existe" / "registro.md")])
+    assert salida.value.code == 2

@@ -288,7 +288,7 @@ def _problema_de_trazas(ruta: str, casos: str, salida: str) -> str | None:
 
 def main(argv: list[str] | None = None) -> int:
     """Ejecuta el agente contra la API real solo con --confirmar-api-real."""
-    parser = argparse.ArgumentParser(description="Agente de LangChain sobre respuestas REALES de Claude (con costo).")
+    parser = argparse.ArgumentParser(description="Agente de LangChain sobre respuestas REALES de Claude (con costo).", allow_abbrev=False)
     parser.add_argument("--casos", default="JSON/casos_agente.json")
     parser.add_argument("--salida", default="docs/resultados_agente.json")
     parser.add_argument("--tope-usd", type=float, default=TOPE_USD_MAXIMO)
