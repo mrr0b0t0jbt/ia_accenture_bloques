@@ -62,6 +62,21 @@ def test_la_peticion_se_arma_sin_red_y_sin_aviso_de_muestreo(clave_falsa):
         modelo._prepare_request([HumanMessage(content="hola")])
 
 
+def test_sin_thinking_level_la_peticion_no_trae_configuracion_de_pensamiento(clave_falsa):
+    modelo = modelo_gemini.crear_modelo_gemini()
+    peticion = modelo._prepare_request([HumanMessage(content="hola")])
+    assert peticion["config"].thinking_config is None
+
+
+def test_thinking_level_medium_llega_a_la_configuracion_de_generacion(clave_falsa):
+    modelo = modelo_gemini.crear_modelo_gemini(thinking_level="medium")
+    peticion = modelo._prepare_request([HumanMessage(content="hola")])
+    thinking_config = peticion["config"].thinking_config
+    assert thinking_config is not None
+    # el SDK google-genai lo guarda como enum; se compara su valor sin distinguir mayúsculas
+    assert str(thinking_config.thinking_level.value).lower() == "medium"
+
+
 def test_importar_el_modulo_no_requiere_clave_ni_la_libreria(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setitem(sys.modules, "langchain_google_genai", None)
