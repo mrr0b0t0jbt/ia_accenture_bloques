@@ -312,6 +312,18 @@ Procesa los 10 turnos de `JSON/casos_agente.json` (una consulta por herramienta,
 - El script desactiva el streaming del ejecutor (`stream_runnable=False`).
 - `--aprobacion {denegar,interactiva}` (por defecto `denegar`), `--tiempo-aprobacion` (segundos, mayor que 0 y como máximo 300; 60 por defecto), `--trazas <ruta>` (por defecto `trazas/trazas_agente.jsonl`) y `--sin-trazas`. Detalle en la sección siguiente.
 
+**Con Gemini** (`src/modelo_gemini.py`, modelo `gemini-3.5-flash-lite`):
+
+```bash
+python scripts/ejecutar_agente.py --confirmar-api-real --proveedor gemini
+```
+
+- Requiere `GEMINI_API_KEY` en `.env`. `--proveedor` acepta `claude` (por defecto) o `gemini`; sin `--confirmar-api-real` sale con código 2 sin importar `modelo_gemini` ni LangChain ni leer ninguna clave. Los topes y las demás opciones son los mismos, y `--max-tokens` es aquí `max_output_tokens`.
+- La salida por defecto es `docs/resultados_agente_gemini.json`, para no pisar los resultados reales de Claude; un `--salida` explícito se respeta siempre. El JSON trae `proveedor` y la `nota_costo` de Gemini, y la consola imprime esa misma nota.
+- El modelo se crea con nivel de razonamiento `medium` (`thinking_level="medium"`), porque la documentación de Gemini lo recomienda para agentes con herramientas; el nivel por defecto del modelo es `minimal`. El razonamiento se factura como salida (USD 2,50 por millón de tokens), así que `medium` cuesta más que `minimal`.
+- El costo se estima con los precios de Gemini 3.5 Flash-Lite que informó el usuario (`PRECIOS_GEMINI` de `scripts/ejecutar_cadenas.py`), como en las cadenas.
+- **Todavía no hay una corrida real del agente con Gemini**, y el efecto de `candidateCount` 1 sobre la API real (la librería lo envía por defecto y la guía de migración de Gemini 3 dice que no está soportado) está sin verificar. Lo comprobado hasta ahora es con modelos falsos y un servidor falso local: el medidor, el detector de corte y el historial funcionan igual que con Claude.
+
 **Primera corrida real** (2026-11-11, `--max-tokens 1024`, tope USD 0.10; registro en [docs/resultados_agente.json](docs/resultados_agente.json)): 15 llamadas, 13570 tokens de entrada y 1388 de salida, costo estimado USD 0.04102. No hubo cortes ni fallos y ningún tope se activó. El costo se calcula con los precios del proyecto y es una estimación; no se contrastó con la consola de Anthropic.
 
 | Turno | Llamadas | Tokens (entrada / salida) | Costo estimado (USD) |

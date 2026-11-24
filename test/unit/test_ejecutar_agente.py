@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 from langchain_core.messages import AIMessage
 
+import modelo_gemini
 import modelo_langchain
 import supervision
 import trazas
@@ -35,8 +36,8 @@ import importlib.util, json, sys
 spec = importlib.util.spec_from_file_location("ejecutar_agente", sys.argv[1])
 modulo = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(modulo)
-codigo = modulo.main([])
-vigilados = {"api_claude_refactor", "supervision", "trazas", "herramientas_agente", "agente", "modelo_langchain"}
+codigo = modulo.main(sys.argv[2:])
+vigilados = {"api_claude_refactor", "supervision", "trazas", "herramientas_agente", "agente", "modelo_langchain", "modelo_gemini"}
 cargados = [n for n in sys.modules if n.startswith("langchain") or n in vigilados]
 print(json.dumps({"codigo": codigo, "cargados": cargados}))
 """
@@ -598,6 +599,112 @@ def test_main_de_punta_a_punta_con_aislamiento_escribe_aprobaciones_y_trazas(mon
     escrito = json.loads(salida.read_text(encoding="utf-8"))
     assert [decision["aprobado"] for decision in escrito["aprobaciones"]] == [False]
     assert len(ruta_trazas.read_text(encoding="utf-8").splitlines()) == 2
+
+
+def _main_en_directorio_temporal(monkeypatch, tmp_path, *extra: str) -> tuple[int, str]:
+    """Corre main con cwd en tmp_path (y un docs/ propio) para que ninguna salida por defecto caiga en el repo."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "docs").mkdir(exist_ok=True)
+    casos = _escribir_casos(tmp_path, [_turno()])
+    return ejecutar_agente.main(["--confirmar-api-real", "--casos", casos, "--sin-trazas", *extra]), casos
+
+
+def _parchear_creadores(monkeypatch, modelo):
+    """Parchea los dos creadores de modelo; devuelve (crear_modelo_gemini, crear_modelo). Ninguna prueba crea un cliente real."""
+    gemini = MagicMock(return_value=modelo)
+    claude = MagicMock(return_value=modelo)
+    monkeypatch.setattr(modelo_gemini, "crear_modelo_gemini", gemini)
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", claude)
+    return gemini, claude
+
+
+def test_proveedor_gemini_sin_confirmar_devuelve_2_sin_salida_ni_importar_langchain_ni_modelo_gemini(tmp_path, capsys):
+    salida = tmp_path / "salida.json"
+    assert ejecutar_agente.main(["--proveedor", "gemini", "--salida", str(salida)]) == 2
+    error = capsys.readouterr().err
+    assert "--confirmar-api-real" in error and "Claude o Gemini" in error
+    assert not salida.exists()
+    proceso = subprocess.run(
+        [sys.executable, "-c", CODIGO_SIN_FLAG, SCRIPT, "--proveedor", "gemini"], capture_output=True, text=True, cwd=tmp_path, timeout=60
+    )
+    assert proceso.returncode == 0, proceso.stderr
+    assert json.loads(proceso.stdout) == {"codigo": 2, "cargados": []}
+
+
+def test_proveedor_invalido_termina_con_codigo_2_sin_crear_ningun_modelo(monkeypatch, tmp_path):
+    gemini, claude = _parchear_creadores(monkeypatch, object())
+    # --tope-usd 0 a propósito: un parser sin --proveedor igual devolvería 1 antes de llamar a ninguna API
+    with pytest.raises(SystemExit) as salida:
+        ejecutar_agente.main(_argv(tmp_path, "--proveedor", "otro", "--tope-usd", "0"))
+    assert salida.value.code == 2
+    gemini.assert_not_called()
+    claude.assert_not_called()
+
+
+def test_gemini_crea_el_modelo_con_max_output_tokens_y_razonamiento_medium_y_no_el_de_claude(monkeypatch, tmp_path):
+    gemini, claude = _parchear_creadores(monkeypatch, ModeloDeGuion(guion=[_respuesta("Directo.")]))
+    codigo, _ = _main_en_directorio_temporal(monkeypatch, tmp_path, "--proveedor", "gemini", "--max-tokens", "512")
+    assert codigo == 0
+    gemini.assert_called_once_with(max_output_tokens=512, thinking_level="medium")
+    claude.assert_not_called()
+
+
+def test_gemini_con_creador_que_lanza_valueerror_devuelve_1_con_el_mensaje_y_sin_crear_la_salida(monkeypatch, tmp_path, capsys):
+    gemini = MagicMock(side_effect=ValueError("Falta GEMINI_API_KEY en .env."))
+    monkeypatch.setattr(modelo_gemini, "crear_modelo_gemini", gemini)
+    monkeypatch.setattr(modelo_langchain, "crear_modelo", MagicMock(side_effect=AssertionError("no debe crearse el modelo de Claude")))
+    assert ejecutar_agente.main(_argv(tmp_path, "--proveedor", "gemini")) == 1
+    assert capsys.readouterr().err == "Error: Falta GEMINI_API_KEY en .env.\n"
+    assert not (tmp_path / "salida.json").exists()
+
+
+def test_gemini_sin_salida_escribe_docs_resultados_agente_gemini_json(monkeypatch, tmp_path):
+    _parchear_creadores(monkeypatch, ModeloDeGuion(guion=[_respuesta("Directo.")]))
+    codigo, _ = _main_en_directorio_temporal(monkeypatch, tmp_path, "--proveedor", "gemini")
+    assert codigo == 0
+    escrito = json.loads((tmp_path / "docs" / "resultados_agente_gemini.json").read_text(encoding="utf-8"))
+    assert escrito["proveedor"] == "gemini"
+    assert escrito["nota_costo"] == ejecutar_agente.ejecutar_cadenas.NOTA_COSTO_GEMINI
+    assert not (tmp_path / "docs" / "resultados_agente.json").exists()
+
+
+def test_gemini_con_salida_explicita_escribe_ahi_y_no_en_la_ruta_por_defecto(monkeypatch, tmp_path):
+    _parchear_creadores(monkeypatch, ModeloDeGuion(guion=[_respuesta("Directo.")]))
+    explicita = tmp_path / "mia.json"
+    codigo, _ = _main_en_directorio_temporal(monkeypatch, tmp_path, "--proveedor", "gemini", "--salida", str(explicita))
+    assert codigo == 0
+    assert json.loads(explicita.read_text(encoding="utf-8"))["proveedor"] == "gemini"
+    assert not (tmp_path / "docs" / "resultados_agente_gemini.json").exists()
+    assert not (tmp_path / "docs" / "resultados_agente.json").exists()
+
+
+def test_claude_sin_salida_escribe_docs_resultados_agente_json_con_proveedor_claude(monkeypatch, tmp_path):
+    gemini, _ = _parchear_creadores(monkeypatch, ModeloDeGuion(guion=[_respuesta("Directo.")]))
+    codigo, _ = _main_en_directorio_temporal(monkeypatch, tmp_path)
+    assert codigo == 0
+    escrito = json.loads((tmp_path / "docs" / "resultados_agente.json").read_text(encoding="utf-8"))
+    assert escrito["proveedor"] == "claude"
+    assert escrito["nota_costo"] == ejecutar_agente.ejecutar_cadenas.NOTA_COSTO
+    assert not (tmp_path / "docs" / "resultados_agente_gemini.json").exists()
+    gemini.assert_not_called()
+
+
+def test_ejecutar_turnos_con_proveedor_gemini_usa_los_precios_y_la_nota_de_gemini(tmp_path):
+    precio_entrada, precio_salida = ejecutar_agente.ejecutar_cadenas.PRECIOS_GEMINI
+    modelo = ModeloDeGuion(guion=[_respuesta("uno")])
+    salida = ejecutar_agente.ejecutar_turnos({"turnos": [_turno()]}, modelo, 0.05, str(tmp_path / "s.json"), proveedor="gemini")
+    assert salida["costo_total_estimado"] == 10 * precio_entrada + 5 * precio_salida
+    assert salida["resultados"][0]["costo_estimado"] == 10 * precio_entrada + 5 * precio_salida
+    assert salida["proveedor"] == "gemini"
+    assert salida["nota_costo"] == ejecutar_agente.ejecutar_cadenas.NOTA_COSTO_GEMINI
+
+
+def test_ejecutar_turnos_con_el_proveedor_por_defecto_usa_los_precios_y_la_nota_de_claude(tmp_path):
+    modelo = ModeloDeGuion(guion=[_respuesta("uno")])
+    salida = ejecutar_agente.ejecutar_turnos({"turnos": [_turno()]}, modelo, 0.05, str(tmp_path / "s.json"))
+    assert salida["costo_total_estimado"] == COSTO_POR_LLAMADA
+    assert salida["proveedor"] == "claude"
+    assert salida["nota_costo"] == ejecutar_agente.ejecutar_cadenas.NOTA_COSTO
 
 
 def test_h1_la_abreviatura_conf_se_rechaza_con_codigo_2():

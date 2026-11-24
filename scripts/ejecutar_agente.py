@@ -1,11 +1,13 @@
-"""Agente con herramientas y memoria sobre respuestas REALES de Claude (Bloques 21 y 22).
+"""Agente con herramientas y memoria sobre respuestas REALES de Claude o Gemini (Bloques 21 y 22).
 
 Procesa los turnos de JSON/casos_agente.json y escribe los resultados en
-docs/resultados_agente.json después de cada turno.
+docs/resultados_agente.json (Claude) o docs/resultados_agente_gemini.json (Gemini)
+después de cada turno.
 
 Cómo correrlo (desde la raíz del proyecto):
 
     python scripts/ejecutar_agente.py --confirmar-api-real
+    python scripts/ejecutar_agente.py --confirmar-api-real --proveedor gemini
 
 Hace llamadas REALES a la API, con costo; los reintentos internos del SDK no se cuentan como llamadas.
 Con la aprobación por defecto "denegar", las acciones de riesgo alto nunca se ejecutan en una corrida desatendida.
@@ -39,6 +41,8 @@ MOTIVO_TOPE = "tope de gasto"
 SALIDA_MAX_ITERACIONES = "Agent stopped due to max iterations."
 # igual a trazas.RUTA_TRAZAS (una prueba lo comprueba); no se importa aquí para no cargar langchain sin el flag
 RUTA_TRAZAS_POR_DEFECTO = "trazas/trazas_agente.jsonl"
+RUTA_SALIDA_CLAUDE_POR_DEFECTO = "docs/resultados_agente.json"
+RUTA_SALIDA_GEMINI_POR_DEFECTO = "docs/resultados_agente_gemini.json"
 MODOS_APROBACION = ("denegar", "interactiva")
 TIEMPO_APROBACION_POR_DEFECTO = 60
 TIEMPO_APROBACION_MAXIMO = 300
@@ -107,17 +111,26 @@ def ejecutar_turnos(
     max_iteraciones: int = MAX_ITERACIONES,
     aprobador=None,
     ruta_trazas: str | None = None,
+    proveedor: str = "claude",
 ) -> dict:
     """Procesa los turnos en orden, mide su uso y corta la corrida al llegar a un límite."""
     from langchain_core.callbacks import UsageMetadataCallbackHandler
 
     from agente import AlmacenHistoriales, construir_agente_con_memoria, construir_ejecutor
-    from api_claude_refactor import INPUT_PRICING, OUTPUT_PRICING
     from herramientas_agente import construir_herramientas
     from supervision import LimiteAprobaciones, RegistroAprobaciones
     from trazas import registrar_traza
 
-    # el medidor solo suma los mensajes cuyo response_metadata trae model_name; ChatAnthropic lo informa
+    if proveedor == "gemini":
+        precio_entrada, precio_salida = ejecutar_cadenas.PRECIOS_GEMINI
+        nota_costo = ejecutar_cadenas.NOTA_COSTO_GEMINI
+    else:
+        from api_claude_refactor import INPUT_PRICING, OUTPUT_PRICING
+
+        precio_entrada, precio_salida = INPUT_PRICING, OUTPUT_PRICING
+        nota_costo = ejecutar_cadenas.NOTA_COSTO
+
+    # el medidor solo suma los mensajes cuyo response_metadata trae model_name; ChatAnthropic y ChatGoogleGenerativeAI lo informan
     medidor = UsageMetadataCallbackHandler()
 
     def tokens_acumulados() -> tuple[int, int]:
@@ -125,7 +138,7 @@ def ejecutar_turnos(
         return sum(uso["input_tokens"] for uso in usos), sum(uso["output_tokens"] for uso in usos)
 
     def costo_de(tokens_entrada: int, tokens_salida: int) -> float:
-        return tokens_entrada * INPUT_PRICING + tokens_salida * OUTPUT_PRICING
+        return tokens_entrada * precio_entrada + tokens_salida * precio_salida
 
     def costo_actual() -> float:
         return costo_de(*tokens_acumulados())
@@ -140,8 +153,8 @@ def ejecutar_turnos(
     ejecutor = construir_ejecutor(modelo, herramientas=herramientas, max_iterations=max_iteraciones, stream_runnable=False)
     agente = construir_agente_con_memoria(ejecutor, almacen)
     salida = {
-        "proveedor": "claude",
-        "nota_costo": ejecutar_cadenas.NOTA_COSTO,
+        "proveedor": proveedor,
+        "nota_costo": nota_costo,
         "resultados": [],
         "llamadas_totales": 0,
         "costo_total_estimado": 0.0,
@@ -288,11 +301,12 @@ def _problema_de_trazas(ruta: str, casos: str, salida: str) -> str | None:
 
 def main(argv: list[str] | None = None) -> int:
     """Ejecuta el agente contra la API real solo con --confirmar-api-real."""
-    parser = argparse.ArgumentParser(description="Agente de LangChain sobre respuestas REALES de Claude (con costo).", allow_abbrev=False)
+    parser = argparse.ArgumentParser(description="Agente de LangChain sobre respuestas REALES de Claude o Gemini (con costo).", allow_abbrev=False)
     parser.add_argument("--casos", default="JSON/casos_agente.json")
-    parser.add_argument("--salida", default="docs/resultados_agente.json")
+    parser.add_argument("--salida", default=None, help="Por defecto docs/resultados_agente.json (Claude) o docs/resultados_agente_gemini.json (Gemini).")
     parser.add_argument("--tope-usd", type=float, default=TOPE_USD_MAXIMO)
-    parser.add_argument("--max-tokens", type=int, default=MAX_TOKENS_POR_DEFECTO)
+    parser.add_argument("--max-tokens", type=int, default=MAX_TOKENS_POR_DEFECTO, help="Tokens máximos de salida; en Gemini es max_output_tokens.")
+    parser.add_argument("--proveedor", choices=("claude", "gemini"), default="claude")
     parser.add_argument("--aprobacion", choices=MODOS_APROBACION, default="denegar")
     parser.add_argument("--tiempo-aprobacion", type=float, default=TIEMPO_APROBACION_POR_DEFECTO)
     parser.add_argument("--trazas", default=RUTA_TRAZAS_POR_DEFECTO)
@@ -300,8 +314,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--confirmar-api-real", action="store_true")
     args = parser.parse_args(argv)
     if not args.confirmar_api_real:
-        print("Este script hace llamadas REALES a la API de Claude, con costo. Para ejecutarlo pasa --confirmar-api-real.", file=sys.stderr)
+        print(
+            "Este script hace llamadas REALES a la API del proveedor elegido (Claude o Gemini), con costo. "
+            "Para ejecutarlo pasa --confirmar-api-real.",
+            file=sys.stderr,
+        )
         return 2
+    if args.salida is None:
+        # el valor por defecto depende del proveedor, para que una corrida de Gemini no pise los resultados reales de Claude
+        args.salida = RUTA_SALIDA_GEMINI_POR_DEFECTO if args.proveedor == "gemini" else RUTA_SALIDA_CLAUDE_POR_DEFECTO
     if not args.salida:
         print("Error: --salida no puede estar vacía.", file=sys.stderr)
         return 1
@@ -341,10 +362,16 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # import diferido: sin el flag no se carga langchain ni la API key
-    from modelo_langchain import crear_modelo
-
     try:
-        modelo = crear_modelo(max_tokens=args.max_tokens)
+        if args.proveedor == "gemini":
+            from modelo_gemini import crear_modelo_gemini
+
+            # medium: la documentación de Gemini recomienda medium o high para agentes con herramientas (el nivel por defecto es minimal)
+            modelo = crear_modelo_gemini(max_output_tokens=args.max_tokens, thinking_level="medium")
+        else:
+            from modelo_langchain import crear_modelo
+
+            modelo = crear_modelo(max_tokens=args.max_tokens)
     except ValueError as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
@@ -355,7 +382,9 @@ def main(argv: list[str] | None = None) -> int:
         aprobador = crear_aprobador_interactivo(args.tiempo_aprobacion)
     ruta_trazas = None if args.sin_trazas else args.trazas
     try:
-        salida = ejecutar_turnos(casos, modelo, args.tope_usd, args.salida, aprobador=aprobador, ruta_trazas=ruta_trazas)
+        salida = ejecutar_turnos(
+            casos, modelo, args.tope_usd, args.salida, aprobador=aprobador, ruta_trazas=ruta_trazas, proveedor=args.proveedor
+        )
     except KeyboardInterrupt:
         # ejecutar_turnos ya guardó el JSON y la traza del turno interrumpido
         print("Interrumpido por la persona. Resultados parciales guardados.", file=sys.stderr)
