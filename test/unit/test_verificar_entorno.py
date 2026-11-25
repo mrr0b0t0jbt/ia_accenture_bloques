@@ -9,13 +9,18 @@ CANARIO_CLAUDE = "canario-claude-0001"
 CANARIO_GEMINI = "canario-gemini-0002"
 
 
-def _correr(tmp_path, **extra_env):
-    """Copia el script a tmp_path y lo corre ahí con un entorno mínimo sin claves (más las variables dadas)."""
-    shutil.copy(RAIZ / "verificar_entorno.py", tmp_path / "verificar_entorno.py")
+def _correr_en(carpeta_script, cwd, **extra_env):
+    """Copia el script a carpeta_script y lo corre con cwd dado y un entorno mínimo sin claves (más las variables dadas)."""
+    shutil.copy(RAIZ / "verificar_entorno.py", carpeta_script / "verificar_entorno.py")
     env = {clave: os.environ[clave] for clave in ("PATH", "SYSTEMROOT", "LANG") if clave in os.environ}
     env.update(extra_env)
-    return subprocess.run([sys.executable, "verificar_entorno.py"], cwd=tmp_path, env=env,
+    return subprocess.run([sys.executable, str(carpeta_script / "verificar_entorno.py")], cwd=cwd, env=env,
                           capture_output=True, text=True, timeout=60)
+
+
+def _correr(tmp_path, **extra_env):
+    """Copia el script a tmp_path y lo corre ahí con un entorno mínimo sin claves (más las variables dadas)."""
+    return _correr_en(tmp_path, tmp_path, **extra_env)
 
 
 def test_sin_claves_ni_indice_sale_con_1(tmp_path):
@@ -63,3 +68,25 @@ def test_no_lee_el_env_de_un_directorio_padre(tmp_path):
     proceso = _correr(hijo)
     assert proceso.returncode == 1
     assert "CLAUDE_API_KEY: FALTA" in proceso.stdout
+
+
+def test_el_env_se_lee_del_cwd_y_no_de_la_carpeta_del_script(tmp_path):
+    canario_padre = "canario-padre-0004"
+    canario_cwd = "canario-cwd-0005"
+    padre = tmp_path / "padre"
+    carpeta_script = padre / "scripts_copia"
+    carpeta_script.mkdir(parents=True)
+    (padre / ".env").write_text(f"GEMINI_API_KEY={canario_padre}\n", encoding="utf-8")
+    trabajo = tmp_path / "trabajo"
+    (trabajo / "vectorstore").mkdir(parents=True)
+    (trabajo / "vectorstore" / "chroma.sqlite3").write_bytes(b"x")
+    (trabajo / ".env").write_text(f"CLAUDE_API_KEY={canario_cwd}\n", encoding="utf-8")
+    proceso = _correr_en(carpeta_script, trabajo)
+    salida = proceso.stdout + proceso.stderr
+    assert proceso.returncode == 1, salida
+    assert "CLAUDE_API_KEY: definida" in proceso.stdout
+    assert "GEMINI_API_KEY: FALTA" in proceso.stdout
+    assert "Pendiente:" in proceso.stdout
+    assert "GEMINI_API_KEY" in proceso.stdout.split("Pendiente:")[1]
+    assert canario_padre not in salida
+    assert canario_cwd not in salida
