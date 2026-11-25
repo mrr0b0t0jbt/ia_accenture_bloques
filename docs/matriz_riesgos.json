@@ -7,10 +7,12 @@
     "evidencias": [
       "src/defensa_inyeccion.py::detectar_inyeccion",
       "src/defensa_inyeccion.py::filtrar_documentos",
-      "src/defensa_inyeccion.py::construir_mensajes"
+      "src/defensa_inyeccion.py::construir_mensajes",
+      "src/consulta_rag.py::preparar_consulta",
+      "src/servicio_rag.py::consultar"
     ],
-    "supervision": null,
-    "nota": "OWASP LLM01:2025 (Prompt Injection)."
+    "supervision": "Revision humana de cada consulta marcada requiere_revision: el evento contexto_filtrado del log JSON (consultar_servicio.py --registro-json) y los eventos documento_descartado_por_inyeccion traen la fuente y los patrones del documento descartado; una persona abre ese documento y decide si es un ataque o un falso positivo antes de reindexar o de repetir la consulta. Proceso humano, no automatizado.",
+    "nota": "OWASP LLM01:2025 (Prompt Injection). No hay una herramienta que liste las consultas marcadas: se buscan en el log JSON."
   },
   {
     "riesgo": "Entradas completas de usuarios guardadas en las trazas del agente",
@@ -31,10 +33,11 @@
     "mitigacion": "Los logs registran huella y longitud del texto en lugar del contenido (Bloque 31).",
     "evidencias": [
       "src/registro_estructurado.py::resumen_de_texto",
-      "src/registro_estructurado.py::registrar_evento"
+      "src/registro_estructurado.py::registrar_evento",
+      "test_gate2.py::test_3_logs_sin_contenido_crudo"
     ],
-    "supervision": null,
-    "nota": "OWASP LLM02:2025 (Sensitive Information Disclosure)."
+    "supervision": "Muestreo humano periodico de los logs reales: una persona busca con grep un dato de prueba reconocible (por ejemplo un correo ficticio enviado dentro de una pregunta) y lee una muestra de eventos para confirmar que solo hay longitudes y huellas; test_gate2.py::test_3_logs_sin_contenido_crudo lo comprueba en cada corrida de pruebas. Proceso humano, no automatizado.",
+    "nota": "OWASP LLM02:2025 (Sensitive Information Disclosure). La huella es un sha256 sin sal: un texto corto o predecible se puede confirmar comparando huellas."
   },
   {
     "riesgo": "Accion de riesgo alto ejecutada sin aprobacion humana",
@@ -57,10 +60,11 @@
     "mitigacion": "Registro de versiones con huella y una prueba que compara el prompt del codigo con el ultimo registrado; la suite falla si no coinciden.",
     "evidencias": [
       "src/registro_prompts.py::comparar_con_codigo",
-      "src/registro_prompts.py::registrar_version"
+      "src/registro_prompts.py::registrar_version",
+      "src/supervision_despliegue.py::supervisar"
     ],
-    "supervision": null,
-    "nota": "La proteccion depende de correr la suite."
+    "supervision": "Revision humana antes de cada entrega o merge: una persona corre registrar_prompt.py --verificar (sale con 1 si el prompt del codigo no es el ultimo registrado) y una version nueva solo se despliega con la aprobacion del grafo supervisar (interrupt de supervision_despliegue). Proceso humano, no automatizado.",
+    "nota": "La proteccion depende de correr la suite o de correr registrar_prompt.py --verificar; ambas las dispara una persona."
   },
   {
     "riesgo": "Dataset de tuning desbalanceado produce sesgo",
@@ -69,10 +73,11 @@
     "mitigacion": "Chequeo de balance por categoria y aviso antes de usar el dataset (Bloque 29).",
     "evidencias": [
       "src/dataset_tuning.py::avisos_de_balance",
-      "src/dataset_tuning.py::resumir_balance"
+      "src/dataset_tuning.py::resumir_balance",
+      "scripts/preparar_dataset_tuning.py::main"
     ],
-    "supervision": null,
-    "nota": ""
+    "supervision": "Revision humana del dataset antes de cualquier entrenamiento: una persona lee el resumen de balance y los avisos del validador (dataset_tuning.avisos_de_balance, scripts/preparar_dataset_tuning.py) y decide si el dataset sirve. El chequeo solo avisa y no bloquea. Proceso humano, no automatizado.",
+    "nota": "El repositorio no entrena ningun modelo; el riesgo aplica al dataset de tuning que se prepara para una posible personalizacion."
   },
   {
     "riesgo": "Despliegue de un prompt nuevo sin aprobacion humana",
