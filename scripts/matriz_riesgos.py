@@ -33,7 +33,7 @@ def main(argv=None) -> int:
         return 1
     for linea in matriz_riesgos.tabla(filas):
         print(linea)
-    problemas = matriz_riesgos.problemas_de_evidencias(filas, argumentos.raiz)
+    problemas = matriz_riesgos.problemas_de_evidencias(filas, argumentos.raiz) + matriz_riesgos.problemas_de_supervision(filas)
     if problemas:
         print()
         for problema in problemas:

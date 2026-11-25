@@ -275,7 +275,7 @@ def test_l3_z_el_script_sale_con_1_y_sin_traceback_si_la_matriz_no_se_puede_leer
 
 
 def test_l3_za_el_script_sale_con_1_si_una_evidencia_no_existe_pero_imprime_la_tabla(raiz, tmp_path, capsys):
-    ruta = escribir(tmp_path / "m.json", [fila_ok(evidencias=["src/codigo.py::NoExiste"])])
+    ruta = escribir(tmp_path / "m.json", [fila_ok(evidencias=["src/codigo.py::NoExiste"], supervision="Revision humana de prueba")])
     assert script.main(["--matriz", ruta, "--raiz", str(raiz)]) == 1
     salida = capsys.readouterr()
     assert salida.out.startswith("ALTO     (12) - Riesgo de prueba")
@@ -283,7 +283,59 @@ def test_l3_za_el_script_sale_con_1_si_una_evidencia_no_existe_pero_imprime_la_t
 
 
 def test_l3_zb_el_script_no_modifica_la_matriz_ni_el_codigo(raiz, tmp_path):
-    ruta = escribir(tmp_path / "m.json", [fila_ok()])
-    antes = (os.stat(ruta).st_mtime_ns, os.stat(raiz / "src" / "codigo.py").st_mtime_ns, sorted(os.listdir(tmp_path)))
+    ruta = escribir(tmp_path / "m.json", [fila_ok(supervision="Revision humana de prueba")])
+    antes =(os.stat(ruta).st_mtime_ns, os.stat(raiz / "src" / "codigo.py").st_mtime_ns, sorted(os.listdir(tmp_path)))
     assert script.main(["--matriz", ruta, "--raiz", str(raiz)]) == 0
     assert antes == (os.stat(ruta).st_mtime_ns, os.stat(raiz / "src" / "codigo.py").st_mtime_ns, sorted(os.listdir(tmp_path)))
+
+
+@pytest.mark.parametrize(
+    "p,i,supervision,cantidad",
+    [
+        (4, 4, None, 1),
+        (3, 3, None, 1),
+        (2, 4, None, 0),
+        (1, 3, None, 0),
+        (4, 4, "Revision humana de prueba", 0),
+        (5, 5, "Revision humana de prueba", 0),
+    ],
+)
+def test_l3_zc_solo_los_riesgos_alto_o_critico_sin_supervision_dan_problema(p, i, supervision, cantidad):
+    filas = [fila_ok(probabilidad=p, impacto=i, supervision=supervision)]
+    assert len(matriz_riesgos.problemas_de_supervision(filas)) == cantidad
+
+
+def test_l3_zd_el_problema_de_supervision_cita_fila_y_categoria_no_el_contenido():
+    fila = fila_ok(riesgo="SECRETO-RIESGO", mitigacion="SECRETO-MITIGACION", nota="SECRETO-NOTA", probabilidad=4, impacto=4)
+    problemas = matriz_riesgos.problemas_de_supervision([fila])
+    assert problemas == ["fila 1: riesgo CRITICO sin punto de supervision"]
+    assert "SECRETO" not in " ".join(problemas)
+
+
+def test_l3_ze_los_problemas_de_supervision_citan_las_filas_en_orden():
+    filas = [
+        fila_ok(riesgo="a", probabilidad=5, impacto=4),
+        fila_ok(riesgo="b", probabilidad=2, impacto=3),
+        fila_ok(riesgo="c", probabilidad=3, impacto=4),
+    ]
+    assert matriz_riesgos.problemas_de_supervision(filas) == [
+        "fila 1: riesgo CRITICO sin punto de supervision",
+        "fila 3: riesgo ALTO sin punto de supervision",
+    ]
+
+
+def test_l3_zf_la_matriz_del_repo_tiene_supervision_en_cada_riesgo_alto_o_critico():
+    filas = matriz_riesgos.leer_matriz(str(RAIZ / matriz_riesgos.RUTA_MATRIZ_POR_DEFECTO))
+    assert matriz_riesgos.problemas_de_supervision(filas) == []
+    altas = [f for f in matriz_riesgos.filas_calculadas(filas) if f["categoria"] in ("CRITICO", "ALTO")]
+    assert altas
+    for fila in altas:
+        assert len(fila["supervision"]) >= 40, fila["riesgo"]
+
+
+def test_l3_zg_el_script_sale_con_1_si_un_riesgo_alto_no_tiene_supervision(raiz, tmp_path, capsys):
+    ruta = escribir(tmp_path / "m.json", [fila_ok()])
+    assert script.main(["--matriz", ruta, "--raiz", str(raiz)]) == 1
+    salida = capsys.readouterr()
+    assert salida.out.startswith("ALTO     (12) - Riesgo de prueba")
+    assert salida.err == "ERROR: fila 1: riesgo ALTO sin punto de supervision\n"

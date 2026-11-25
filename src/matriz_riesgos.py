@@ -169,6 +169,16 @@ def problemas_de_evidencias(filas: list[dict], raiz: str) -> list[str]:
     return problemas
 
 
+def problemas_de_supervision(filas: list[dict]) -> list[str]:
+    """Una fila por riesgo ALTO o CRITICO sin punto de supervision; cita fila y categoria, nunca el contenido."""
+    problemas = []
+    for numero, fila in enumerate(filas, start=1):
+        categoria = categoria_riesgo(puntaje_riesgo(fila["probabilidad"], fila["impacto"]))
+        if categoria in ("CRITICO", "ALTO") and fila["supervision"] is None:
+            problemas.append(f"fila {numero}: riesgo {categoria} sin punto de supervision")
+    return problemas
+
+
 def filas_calculadas(filas: list[dict]) -> list[dict]:
     """Copia de las filas con puntaje, categoria y al_limite, ordenadas de mayor a menor puntaje (estable)."""
     calculadas = []
