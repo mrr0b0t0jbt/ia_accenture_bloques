@@ -2,7 +2,7 @@
 
 Esta guía permite instalar el proyecto desde cero, indexar el corpus, hacer una consulta de punta a punta y comprobar los cuatro criterios no compensables y las seis dimensiones de la rúbrica del Gate 2. El detalle técnico de cada bloque está en [README.md](README.md); aquí solo se dice dónde está la evidencia y cómo comprobarla.
 
-Estado de lo medido: 2026-11-25, `main` a0d7acf, suite de pruebas 1557 passed y `test_gate2.py` 4 passed (medidos con el `.venv` del repositorio y también en una copia limpia con un entorno virtual nuevo; ver "Qué no está verificado").
+Estado de lo medido: 2026-11-25, sobre el commit a2567d6 (el contenido del repositorio sin este archivo), suite de pruebas 1567 passed y `test_gate2.py` 4 passed, medidos con el `.venv` del repositorio. La instalación limpia con un entorno virtual nuevo se probó antes de agregar la validación de supervisión de la matriz de riesgos (1556 passed en esa copia); ver "Qué no está verificado".
 
 ## 1. Qué modelo usa el proyecto
 
@@ -69,7 +69,7 @@ Así, ninguna respuesta con texto del modelo sale sin al menos una cita real.
 
 ```bash
 python -m pytest test_gate2.py -v      # las 4 pruebas de los criterios no compensables
-python -m pytest -q                    # suite completa (1557 pruebas en a0d7acf)
+python -m pytest -q                    # suite completa (1567 pruebas en a2567d6)
 ```
 
 Todas corren sin red ni claves (modelo y vector store falsos o en carpetas temporales). `test_gate2.py` está fuera de `test/unit/` a propósito y se ejecuta aparte, como pide el curso.
