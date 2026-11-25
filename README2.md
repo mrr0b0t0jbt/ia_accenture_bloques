@@ -2,7 +2,7 @@
 
 Esta guía permite instalar el proyecto desde cero, indexar el corpus, hacer una consulta de punta a punta y comprobar los cuatro criterios no compensables y las seis dimensiones de la rúbrica del Gate 2. El detalle técnico de cada bloque está en [README.md](README.md); aquí solo se dice dónde está la evidencia y cómo comprobarla.
 
-Estado de lo medido: 2026-11-25, sobre el commit a2567d6 (el contenido del repositorio sin este archivo), suite de pruebas 1567 passed y `test_gate2.py` 4 passed, medidos con el `.venv` del repositorio. La instalación limpia con un entorno virtual nuevo se probó antes de agregar la validación de supervisión de la matriz de riesgos (1556 passed en esa copia); ver "Qué no está verificado".
+Estado de lo medido: 2026-11-25, sobre el commit a2567d6 (el contenido del repositorio sin este archivo), suite de pruebas 1567 passed y `test_gate2.py` 4 passed con el `.venv` del repositorio. Además, en copias limpias (`git archive` de `main` 16e66d6, que difiere de a2567d6 solo en documentos; entorno virtual nuevo, `pip install -r requirements.txt`, `pip check` sin conflictos, sin claves) con Python 3.12.16, 3.13.18 y 3.14.9: 1567 passed y 4 passed en las tres. `verificar_entorno.py` se probó también con un `.env` y un `vectorstore/` reales (copia aislada): sale con 0.
 
 ## 1. Qué modelo usa el proyecto
 
@@ -13,7 +13,7 @@ Estado de lo medido: 2026-11-25, sobre el commit a2567d6 (el contenido del repos
 
 ## 2. Instalación desde cero
 
-Requiere Python 3.10 o superior (probado con 3.14.9) y Git.
+Requiere **Python 3.12 o superior** y Git. Probado con 3.12.16, 3.13.18 y 3.14.9 (desarrollo con 3.14). Con Python 3.11 `pip install -r requirements.txt` falla, porque `requirements.txt` fija `numpy==2.5.4` y esa versión no existe para 3.11; los ejemplos del curso usan 3.11, así que revisa `python --version` antes de crear el entorno. (`verificar_entorno.py` todavía acepta 3.10 o superior: ver Limitaciones.)
 
 ```bash
 git clone <url-del-repositorio> curso_ia && cd curso_ia
@@ -110,6 +110,7 @@ Las cifras de precisión, exhaustividad, latencia y costo no se repiten aquí: e
 - **Respuesta cortada por el límite de tokens.** `consultar_servicio.py` imprime la respuesta tal como llega aunque el modelo la haya cortado por `--max-tokens` (el log lo registra como `truncado`, pero la consola no avisa). En la consulta real documentada el valor por defecto (512) cortó la respuesta a mitad de frase. Con `--max-tokens 1024` hay más margen.
 - **Decisión de personalización.** El método da cero puntos a RAG, fine-tuning completo y PEFT para el caso evaluado (el clasificador del router, no el RAG), así que la decisión es mantener el clasificador actual. La respuesta sobre presupuesto está marcada `[A CONFIRMAR POR EL AUTOR]` y la firma del documento está pendiente.
 - **Falsos positivos del detector de inyección.** Un fragmento legítimo que cite el ataque (por ejemplo "nuevo sistema:") se descarta. El detector no cubre homoglifos de otros alfabetos ni sinónimos (README.md, sección del Bloque 31).
+- **Versión mínima de Python.** `verificar_entorno.py` acepta 3.10 o superior, pero las dependencias fijadas exigen 3.12 o superior; con 3.11 el script dice que Python está bien y luego marca los paquetes como pendientes.
 - **Índice no versionado.** Quien revise debe reindexar con su propia clave de Gemini (sección 3).
 - **Dos claves.** La consulta real necesita `CLAUDE_API_KEY` y `GEMINI_API_KEY`.
 - **Dependencias.** `chromadb` 1.5.9 tiene avisos de seguridad sin arreglo disponible, de alcance probablemente no aplicable (sin verificar, README.md).
@@ -117,5 +118,5 @@ Las cifras de precisión, exhaustividad, latencia y costo no se repiten aquí: e
 ## 10. Qué no está verificado
 
 - La consulta real de punta a punta se ejecutó una vez (2026-11-25, una pregunta, código 0, respuesta con tres citas válidas, sin el correo de prueba en los logs) sobre una copia del índice y con una sola pregunta. No hay varianza medida ni se contrastó el costo con la consola de Anthropic. Las pruebas automáticas usan modelos y vector stores falsos.
-- La instalación con Python 3.11, que es la versión de los ejemplos del curso: se probó con 3.14.9, con el que están fijadas las versiones de `requirements.txt`.
-- `verificar_entorno.py` contra un `.env` y un `vectorstore/` reales.
+- La instalación con Python 3.10 y 3.11: con 3.11 falla (`numpy==2.5.4`); 3.10 no se probó. No se probó Windows ni macOS.
+- La varianza de la consulta real (una sola pregunta) y el costo contra la consola de Anthropic.
