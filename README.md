@@ -83,7 +83,7 @@ El costo mostrado usa los precios por millón de tokens registrados en [docs/dec
 |---|---|---|
 | Claude Sonnet 5.5 | USD 2 | USD 10 |
 | Gemini 3.1 Pro (prompts ≤ 200k tokens) | USD 2 | USD 12 |
-| Gemini 3.5 Flash-Lite (informados por el usuario, no verificados contra la documentación oficial ni registrados en ese documento) | USD 0.30 | USD 2.50 |
+| Gemini 3.5 Flash-Lite (página oficial de precios de Gemini, consultada el 2026-11-23; no registrados en ese documento) | USD 0.30 | USD 2.50 |
 
 Si los precios cambian, actualízalos en `INPUT_PRICING` y `OUTPUT_PRICING` de `src/api_claude_refactor.py` (Claude), en `get_gemini_response` (Gemini) y en `PRECIOS_GEMINI` de `scripts/ejecutar_cadenas.py` (Gemini 3.5 Flash-Lite en las cadenas).
 
@@ -250,8 +250,8 @@ python scripts/ejecutar_cadenas.py --confirmar-api-real --proveedor gemini
 
 - Requiere `GEMINI_API_KEY` en `.env`. `--proveedor` acepta `claude` (por defecto) o `gemini`; las demás opciones y topes son los mismos, y `--max-tokens` es aquí `max_output_tokens`.
 - No se configura `temperature` porque este modelo usa muestreo fijo.
-- El costo se calcula con los precios que informó el usuario (entrada USD 0.30, salida USD 2.50 por millón de tokens) y se rotula como **estimación** en el campo `nota_costo` del JSON, junto con `proveedor`. La consola imprime la nota de costo del proveedor elegido.
-- **Corrida real de Gemini** (2026-11-06, `gemini-3.5-flash-lite`, `--max-tokens 2048`, tope USD 0.05; registro en [docs/resultados_cadenas_gemini.json](docs/resultados_cadenas_gemini.json)): 9 llamadas, costo estimado USD 0.00504 (1151 tokens de entrada y 1876 de salida) con los precios que informó el usuario. Las 3 categorías coincidieron, ningún caso cayó en un texto de respaldo y ninguna respuesta salió cortada. Las respuestas son más breves que las de Claude (incidente 282 palabras, vulnerabilidad 294, consulta 258). Dos reservas: el costo no se contrastó con la consola de Google, y no se verificó si `candidatesTokenCount` incluye los tokens de razonamiento del modelo, que se cobran como salida; si no los incluye, el costo real sería mayor que el estimado. (En esta corrida la consola todavía imprimía la nota de costo de Claude; se corrigió después, y la del JSON siempre fue la correcta.)
+- El costo se calcula con los precios de la página oficial de precios de Gemini, consultada el 2026-11-23 (entrada USD 0.30, salida USD 2.50 por millón de tokens) y se rotula como **estimación** en el campo `nota_costo` del JSON, junto con `proveedor`. La consola imprime la nota de costo del proveedor elegido.
+- **Corrida real de Gemini** (2026-11-06, `gemini-3.5-flash-lite`, `--max-tokens 2048`, tope USD 0.05; registro en [docs/resultados_cadenas_gemini.json](docs/resultados_cadenas_gemini.json)): 9 llamadas, costo estimado USD 0.00504 (1151 tokens de entrada y 1876 de salida) con esos precios (la `nota_costo` del JSON de esa corrida conserva el texto anterior, "informados por el usuario": los precios se verificaron después, el 2026-11-23). Las 3 categorías coincidieron, ningún caso cayó en un texto de respaldo y ninguna respuesta salió cortada. Las respuestas son más breves que las de Claude (incidente 282 palabras, vulnerabilidad 294, consulta 258). Dos reservas: el costo no se contrastó con la consola de Google, y no se verificó si `candidatesTokenCount` incluye los tokens de razonamiento del modelo, que se cobran como salida; si no los incluye, el costo real sería mayor que el estimado. (En esta corrida la consola todavía imprimía la nota de costo de Claude; se corrigió después, y la del JSON siempre fue la correcta.)
 
 **Límites conocidos** (documentados, no corregidos):
 
@@ -321,8 +321,28 @@ python scripts/ejecutar_agente.py --confirmar-api-real --proveedor gemini
 - Requiere `GEMINI_API_KEY` en `.env`. `--proveedor` acepta `claude` (por defecto) o `gemini`; sin `--confirmar-api-real` sale con código 2 sin importar `modelo_gemini` ni LangChain ni leer ninguna clave. Los topes y las demás opciones son los mismos, y `--max-tokens` es aquí `max_output_tokens`.
 - La salida por defecto es `docs/resultados_agente_gemini.json`, para no pisar los resultados reales de Claude; un `--salida` explícito se respeta siempre. El JSON trae `proveedor` y la `nota_costo` de Gemini, y la consola imprime esa misma nota.
 - El modelo se crea con nivel de razonamiento `medium` (`thinking_level="medium"`), porque la documentación de Gemini lo recomienda para agentes con herramientas; el nivel por defecto del modelo es `minimal`. El razonamiento se factura como salida (USD 2,50 por millón de tokens), así que `medium` cuesta más que `minimal`.
-- El costo se estima con los precios de Gemini 3.5 Flash-Lite que informó el usuario (`PRECIOS_GEMINI` de `scripts/ejecutar_cadenas.py`), como en las cadenas.
-- **Todavía no hay una corrida real del agente con Gemini**, y el efecto de `candidateCount` 1 sobre la API real (la librería lo envía por defecto y la guía de migración de Gemini 3 dice que no está soportado) está sin verificar. Lo comprobado hasta ahora es con modelos falsos y un servidor falso local: el medidor, el detector de corte y el historial funcionan igual que con Claude.
+- El costo se estima con los precios de Gemini 3.5 Flash-Lite de la página oficial de precios de Gemini, consultada el 2026-11-23 (`PRECIOS_GEMINI` de `scripts/ejecutar_cadenas.py`; entrada USD 0.30 y salida USD 2.50 por millón de tokens), como en las cadenas.
+
+**Corrida real con Gemini** (2026-11-23, `gemini-3.5-flash-lite`, `thinking_level` medium, `--max-tokens 1024`, tope USD 0.10, aprobación `denegar`; registro en [docs/resultados_agente_gemini.json](docs/resultados_agente_gemini.json)): 19 llamadas, 9866 tokens de entrada y 3479 de salida (la salida incluye el razonamiento), costo estimado USD 0.01166. Ningún tope ni corte se activó. Es UNA corrida por proveedor, así que no hay varianza medida. El costo es una estimación del script con los precios de la página oficial de Gemini consultada el 2026-11-23; no se contrastó con la consola de Google. La `nota_costo` de ese JSON conserva el texto anterior ("informó el usuario") porque la corrida se hizo antes de actualizar la nota. La segunda corrida de Claude tuvo 18 llamadas y USD 0.06608 (precios y conteo de tokens distintos); la diferencia de unas 5.7 veces es una estimación entre tablas de precios distintas, no un cobro comparado.
+
+| Turno | Gemini: llamadas / tokens de entrada / tokens de salida / costo estimado (USD) | Claude (segunda corrida): lo mismo | Herramientas = esperadas (Gemini / Claude) |
+|---|---|---|---|
+| documentacion | 2 / 984 / 353 / 0.00118 | 2 / 2082 / 271 / 0.00687 | sí / sí |
+| calculo | 2 / 874 / 109 / 0.00053 | 2 / 1963 / 66 / 0.00459 | sí / sí |
+| cve | 2 / 1128 / 403 / 0.00135 | 2 / 2123 / 224 / 0.00649 | sí / sí |
+| encadenada | 3 / 1664 / 362 / 0.00140 | 4 / 4534 / 322 / 0.01229 | sí / no |
+| general | 1 / 393 / 274 / 0.00080 | 1 / 956 / 97 / 0.00288 | sí / sí |
+| conversacion_1 | ERROR 503 / 2 / 401 / 169 / 0.00054 | 2 / 2118 / 217 / 0.00641 | error 503 / sí |
+| conversacion_2 | 1 / 400 / 292 / 0.00085 | 1 / 1117 / 382 / 0.00605 | sí / sí |
+| aislamiento | 1 / 398 / 164 / 0.00053 | 1 / 968 / 114 / 0.00308 | sí / sí |
+| aislamiento_con_aprobacion | 2 / 1104 / 302 / 0.00109 | 2 / 2166 / 487 / 0.00920 | sí / sí |
+| aislamiento_host_no_permitido | 3 / 2520 / 1051 / 0.00338 | 1 / 966 / 629 / 0.00822 | no / no |
+
+- **Confirmado con la API real**: tool calling, firmas de pensamiento en las llamadas encadenadas (sin errores 4xx), `candidateCount` 1 aceptado (la guía de migración decía que no estaba soportado) y `thinking_level` medium aceptado. Que el nivel de razonamiento se aplique no es observable en la respuesta: está aceptado, no verificado como aplicado. Una aprobación de riesgo alto se registró y se denegó, y la herramienta no se ejecutó.
+- **Fallo transitorio**: `conversacion_1` falló con 503 UNAVAILABLE de la API (el script siguió). El turno no entró al historial (`mensajes_en_sesion` 0), así que `conversacion_2` no probó la memoria en esa corrida. Se repitieron solo esos dos turnos (tope USD 0.01, 3 llamadas, USD 0.00159 estimado): `conversacion_2` respondió "Media (CVSS 5.3)" sin usar herramientas, es decir, recordó el CVE del turno anterior. La memoria entre turnos con Gemini queda comprobada en una corrida; el registro de la repetición está en [docs/resultados_agente_gemini_conversacion.json](docs/resultados_agente_gemini_conversacion.json).
+- **Host fuera de laboratorio**: en `aislamiento_host_no_permitido` Gemini llamó dos veces a `buscar_en_documentacion` y rechazó con texto sin usar `aislar_host_de_laboratorio` (3 llamadas); Claude no usó ninguna herramienta. Ninguno de los dos ejercitó el rechazo automático de la herramienta, y no hubo ningún aislamiento: no es un fallo de seguridad, pero el criterio de herramientas esperadas de ese turno no se cumple con ningún proveedor.
+- `encadenada`: Gemini usó las dos herramientas esperadas en 3 llamadas; Claude (segunda corrida) hizo una búsqueda extra (4 llamadas).
+- **No verificado**: que `thinking_level` se aplique, el costo contra la consola de Google (el razonamiento se factura como salida y el script solo suma lo que la API informa) y la varianza entre corridas.
 
 **Primera corrida real** (2026-11-11, `--max-tokens 1024`, tope USD 0.10; registro en [docs/resultados_agente.json](docs/resultados_agente.json)): 15 llamadas, 13570 tokens de entrada y 1388 de salida, costo estimado USD 0.04102. No hubo cortes ni fallos y ningún tope se activó. El costo se calcula con los precios del proyecto y es una estimación; no se contrastó con la consola de Anthropic.
 
@@ -617,7 +637,7 @@ Sin `--confirmar-api-real` sale con 2 sin importar el cliente ni leer el dataset
 
 La primera corrida superó el umbral en estricto, pero **dos de sus fallos eran respuestas vacías con 64 de 64 tokens de salida**: el tope de la propia medición se agotó antes de que saliera la categoría (el router real usa 2048). Con 256 desaparecieron. Los dos fallos estrictos que quedan son "Incidente" con mayúscula, que el router normaliza. El único error de categoría es `ej_09` (una clave de producción en un repositorio público: el dataset dice vulnerabilidad, el modelo dijo incidente), uno de los cuatro casos de etiqueta discutible del Bloque 29, y usó 196 tokens de salida frente a los 5 a 10 de los demás. Los costos se recalcularon por token desde el JSON y coinciden con el total. El resultado de la primera corrida no se versiona; el de la segunda es `docs/resultados_clasificador_router.json`.
 
-**La decisión** (`docs/decision_personalizacion.md`): con las cinco respuestas en `False` el método da "ninguna técnica", y la medición la respalda: no hay información que cambie, el formato falla por debajo del umbral, el dataset es de 24 ejemplos y no hay variantes. El documento lo redactó Antares con el método corrido primero y queda como borrador pendiente de revisión del autor; la respuesta de presupuesto está marcada como "a confirmar". Dice además que con una sola respuesta cambiada a `True` el método recomienda una técnica distinta cada vez (por ejemplo RAG por presupuesto en una tarea sin información externa): es una heurística con pesos fijos, no una prueba.
+**La decisión** (`docs/decision_personalizacion.md`): con las cinco respuestas en `False` el método da "ninguna técnica", y la medición la respalda: no hay información que cambie, el formato falla por debajo del umbral, el dataset es de 24 ejemplos y no hay variantes. El documento lo redactó Antares con el método corrido primero; el autor lo revisó, confirmó la respuesta de presupuesto (`False`) y lo firmó el 2026-11-25 (sección 5 del documento). Dice además que con una sola respuesta cambiada a `True` el método recomienda una técnica distinta cada vez (por ejemplo RAG por presupuesto en una tarea sin información externa): es una heurística con pesos fijos, no una prueba.
 
 **Desvíos respecto de la clase** (declarados): el script de la actividad se separa en módulo y scripts con nombres en español, y el esqueleto no pisa archivos; la muestra de la medición son 24 ejemplos y no 20, porque el dataset es de 24 y balanceado; la prioridad no se mide porque el router no la predice.
 
@@ -665,7 +685,7 @@ Verificación propia de K2: 1171, 1215, 1230 y 1241 pruebas por commit, cliente 
 - El detector no cubre homoglifos de otros alfabetos (una `о` cirílica dentro de `ignora`), sinónimos, letras separadas por espacios, palabras en otro orden, entidades HTML ni una marca combinante que se compone con la letra anterior (a + U+0301 pasa a á): NFKC la funde con la letra y el modelo ve la palabra pegada. Desde K3 una marca que no se compone (selector de variación U+FE0F, U+034F, U+0338) **entre** palabras sí se detecta.
 - Falsos positivos medidos: `nuevo sistema:`, `system prompt:`, `olvida todo lo anterior`, `ignorar las indicaciones previas` en un procedimiento, `forget the previous context` y `revela tu prompt` en un manual, además de cualquier documento que **cite** el ataque. El fragmento legítimo se descarta y la consulta queda marcada para revisión.
 - `huella` es un `sha256` sin sal: un texto corto o predecible se confirma comparando huellas, así que el log de preguntas y respuestas se trata como sensible. Un valor NaN o infinito, o una clave que no es texto, deja ilegibles todos los datos de ese evento.
-- Si todos los fragmentos se descartan igual se llama al modelo con `(sin contexto recuperado)` y cuesta tokens. `procesar_consulta` no tiene un llamador productivo y el script duplica su lógica. El filtro no tiene tope de tamaño (es lineal). `chromadb` 1.5.9 tiene 4 avisos de seguridad sin arreglo disponible, de alcance probablemente no aplicable (sin verificar).
+- Con las funciones de consulta anteriores al Gate 2 (`src/consulta_rag.py` y `scripts/consultar_corpus.py`), si todos los fragmentos se descartan igual se llama al modelo con `(sin contexto recuperado)` y cuesta tokens; el servicio del Gate 2 (`src/servicio_rag.py` y `scripts/consultar_servicio.py`) corta antes y no invoca al modelo (estado `sin_contexto_confiable`, probado con un modelo falso). `procesar_consulta` sigue sin llamador productivo y el script de corpus duplica su lógica. El filtro no tiene tope de tamaño (es lineal). `chromadb` 1.5.9 tiene 4 avisos de seguridad sin arreglo disponible, de alcance probablemente no aplicable (sin verificar).
 - Huecos de pruebas de K2: cerrados en K3 (un invisible dentro de una palabra con las dos vistas, el rango con el descartado en el medio, un error de cadena hija y cinco ejemplos de patrones: indicaciones, prompts, revela con separador, forget the previous prompt y el relleno U+115F). Nota: el README de K2 decía cuatro ejemplos; eran cinco.
 - Sin verificar: el comportamiento con el modelo real ante un fragmento hostil que **evada** el detector, y los eventos de error con la API real: la corrida real no tuvo descartes ni fallos, y esos casos solo se probaron con el cliente real contra un servidor falso.
 
@@ -797,6 +817,9 @@ Usa datos de prueba: dominios `.test` e IPs de documentación (`192.0.2.x`, `198
 
 ```
 pytest.ini                 limita pytest a test/unit
+README2.md                 guía de revisión del Gate 2: instalación, indexado, consulta, pruebas y evidencia por criterio
+test_gate2.py              las cuatro pruebas de los criterios no compensables del Gate 2 (fuera de test/unit: se corre aparte)
+verificar_entorno.py       comprueba Python, paquetes, claves (sin mostrarlas) e índice antes de la corrida final
 src/
   api_claude_refactor.py   cliente de Claude: arma la petición, la envía con reintento, calcula y acumula el costo
   api_gemini.py            cliente de Gemini, solo comparativo (alternativa descartada, ver docs)
@@ -825,6 +848,7 @@ src/
   defensa_inyeccion.py         detector de inyección con dos vistas del texto, filtro de documentos y mensajes de sistema y humano
   registro_prompts.py          registro de versiones de prompts en JSONL de solo anexar: huella, cadena de versiones, lectura estricta y comparación con el código
   consulta_rag.py              consulta RAG instrumentada: prepara (recupera y filtra), responde (modelo, consumo y citas) y procesa con un `trace_id` por consulta
+  servicio_rag.py              servicio RAG del Gate 2: ejecutar_servicio y consultar; corta antes del modelo sin contexto confiable y exige al menos una cita válida
 scripts/
   ensayo_rate_limit_simulado.py  ensayo de rate limit simulado con mocks
   ejecutar_pipeline.py           pipeline de texto sobre respuestas reales de Claude (con costo)
@@ -835,6 +859,7 @@ scripts/
   revisar_trazas.py              revisa las trazas del agente y marca candidatos a revisar (sin costo)
   indexar_corpus.py              revisa (sin API) o indexa el corpus en Chroma con embeddings de Gemini
   consultar_corpus.py            recuperación semántica con embeddings de Gemini y respuestas de Claude con citas verificadas, filtro de inyección y logs JSON opcionales (con costo)
+  consultar_servicio.py          consulta de punta a punta con el servicio del Gate 2 (llamada real a Gemini y Claude; exige --confirmar-api-real)
   evaluar_recuperacion.py        evalúa la recuperación por chunk con embeddings de Gemini, sin llamar a Claude (con costo en embeddings)
   medir_latencia_costo.py        mide la latencia por etapa y el costo del flujo RAG con Gemini y Claude y anexa un registro por llamada (con costo)
   preflight_rag.py               revisa sin API el índice (conteo e ids contra el corpus) y que el directorio esté ignorado por git
@@ -875,6 +900,9 @@ test/
   unit/test_indexar_corpus.py          pruebas del script de indexación (modo revisión, errores de la API)
   unit/test_recuperacion.py            pruebas de la recuperación, el contexto numerado, el prompt y las citas
   unit/test_consultar_corpus.py        pruebas del script de consulta, con un modelo falso
+  unit/test_servicio_rag.py            pruebas del servicio del Gate 2: estados, citas, corte antes del modelo y logs sin contenido (13)
+  unit/test_consultar_servicio.py      pruebas del script de consulta del servicio: topes, códigos de salida y registro JSON (16)
+  unit/test_verificar_entorno.py       pruebas de verificar_entorno.py: versión mínima de Python, claves sin mostrar valores y lectura del .env solo del directorio actual (9)
   unit/test_metricas_recuperacion.py   pruebas de las métricas por chunk, los casos de evaluación y su coherencia con el corpus
   unit/test_evaluar_recuperacion.py    pruebas del script de evaluación (Chroma real, embeddings falsos, topes, fallos y resultados parciales)
   unit/test_medicion_rag.py            pruebas de la medición por etapa, los registros, el costo, el uso faltante y el resumen
@@ -919,6 +947,8 @@ docs/                      decisión de arquitectura, diagrama y evidencias
   resultados_cadenas.json  resultados de la corrida real de las cadenas (se genera al correr ejecutar_cadenas.py)
   resultados_agente.json   resultados de la primera corrida real del agente, 8 turnos (se genera al correr ejecutar_agente.py)
   resultados_agente_v2.json  resultados de la segunda corrida real, 10 turnos y una aprobación interactiva
+  resultados_agente_gemini.json  resultados de la corrida real del agente con Gemini, 10 turnos (2026-11-23)
+  resultados_agente_gemini_conversacion.json  repetición de los 2 turnos de conversación con Gemini tras el 503 de conversacion_1 (2026-11-23)
   resultados_recuperacion.json  resultados de la primera corrida real de la recuperación con citas
   resultados_recuperacion_registro.json  resultados de la corrida real con `--registro-json` y filtro de inyección (Bloque 31)
   registro_consulta_real.jsonl  log JSON de esa corrida, 48 líneas sin contenido de preguntas, fragmentos ni respuestas
