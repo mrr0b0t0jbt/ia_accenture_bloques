@@ -15,26 +15,34 @@ SIN_CONTEXTO_VERIFICADO = "No tengo informacion suficiente y verificada para res
 
 def consultar(pregunta: str, vectorstore, modelo, k: int = recuperacion.K_POR_DEFECTO,
               logger: logging.Logger | None = None, precios=None) -> dict:
-    """Devuelve {respuesta, fuentes, trace_id, estado}; estado: respondida, sin_contexto_confiable, sin_cita_valida o sin_respuesta."""
+    """Devuelve {respuesta, fuentes, trace_id, estado, truncado}.
+
+    estado: respondida, sin_contexto_confiable, sin_cita_valida o sin_respuesta.
+    truncado: True si el modelo cortó la respuesta por max_tokens; False si no se invocó el modelo (sin_contexto_confiable).
+    """
     validar_precios(precios)
     with con_trace_id() as trace_id:
         preparacion = preparar_consulta(pregunta, vectorstore, k, logger)
         if not preparacion["citas"]:
             registrar_evento(logger, logging.WARNING, "sin_contexto_confiable",
                              n_recuperados=len(preparacion["resultados"]), n_descartados=len(preparacion["descartados"]))
-            return {"respuesta": SIN_CONTEXTO_VERIFICADO, "fuentes": [], "trace_id": trace_id, "estado": "sin_contexto_confiable"}
+            return {"respuesta": SIN_CONTEXTO_VERIFICADO, "fuentes": [], "trace_id": trace_id,
+                    "estado": "sin_contexto_confiable", "truncado": False}
         resultado = responder_consulta(preparacion, modelo, logger, precios)
+        truncado = resultado["truncado"]
         if resultado["admite_falta_de_contexto"]:
-            return {"respuesta": resultado["respuesta"], "fuentes": [], "trace_id": trace_id, "estado": "sin_respuesta"}
+            return {"respuesta": resultado["respuesta"], "fuentes": [], "trace_id": trace_id, "estado": "sin_respuesta",
+                    "truncado": truncado}
         validas = resultado["citas"]["validas"]
         if not validas:
             registrar_evento(logger, logging.WARNING, "respuesta_sin_cita_valida",
                              n_citas_invalidas=len(resultado["citas"]["invalidas"]))
-            return {"respuesta": SIN_CONTEXTO_VERIFICADO, "fuentes": [], "trace_id": trace_id, "estado": "sin_cita_valida"}
+            return {"respuesta": SIN_CONTEXTO_VERIFICADO, "fuentes": [], "trace_id": trace_id, "estado": "sin_cita_valida",
+                    "truncado": truncado}
         fuentes = sorted({fuente for _, fuente in validas})
         lineas = [f"[{numero}] {fuente}" for numero, fuente in validas]
         texto = resultado["respuesta"].rstrip() + "\n\nFuentes:\n" + "\n".join(lineas)
-        return {"respuesta": texto, "fuentes": fuentes, "trace_id": trace_id, "estado": "respondida"}
+        return {"respuesta": texto, "fuentes": fuentes, "trace_id": trace_id, "estado": "respondida", "truncado": truncado}
 
 
 def ejecutar_servicio(pregunta: str, vectorstore, modelo, k: int = recuperacion.K_POR_DEFECTO,
