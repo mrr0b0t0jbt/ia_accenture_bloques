@@ -37,13 +37,16 @@ class VectorstoreFalso:
 class ModeloFalso:
     """Cuenta las llamadas y devuelve un AIMessage con el texto dado."""
 
-    def __init__(self, texto="Devoluciones en 30 dias [1]."):
+    def __init__(self, texto="Devoluciones en 30 dias [1].", stop_reason=None):
         self.texto = texto
+        self.stop_reason = stop_reason
         self.llamadas = 0
 
     def invoke(self, mensajes):
         self.llamadas += 1
-        return AIMessage(content=self.texto, usage_metadata={"input_tokens": 210, "output_tokens": 18, "total_tokens": 228})
+        metadata = {"stop_reason": self.stop_reason} if self.stop_reason else {}
+        return AIMessage(content=self.texto, usage_metadata={"input_tokens": 210, "output_tokens": 18, "total_tokens": 228},
+                         response_metadata=metadata)
 
 
 def _limpios():
@@ -136,6 +139,31 @@ def test_cada_consulta_tiene_su_trace_id_y_no_queda_activo():
     segunda = consultar(PREGUNTA, _limpios(), ModeloFalso(), k=2)
     assert primera["trace_id"] != segunda["trace_id"]
     assert registro_estructurado.trace_id_var.get() is None
+
+
+def test_respuesta_cortada_por_max_tokens_marca_truncado():
+    salida = consultar(PREGUNTA, _limpios(), ModeloFalso(stop_reason="max_tokens"), k=2)
+    assert salida["estado"] == "respondida"
+    assert salida["truncado"] is True
+
+
+def test_sin_cita_valida_tambien_marca_truncado():
+    salida = consultar(PREGUNTA, _limpios(), ModeloFalso("Devoluciones en", stop_reason="max_tokens"), k=2)
+    assert salida["estado"] == "sin_cita_valida"
+    assert salida["truncado"] is True
+
+
+def test_respuesta_completa_no_marca_truncado():
+    salida = consultar(PREGUNTA, _limpios(), ModeloFalso(stop_reason="end_turn"), k=2)
+    assert salida["estado"] == "respondida"
+    assert salida["truncado"] is False
+
+
+def test_sin_contexto_confiable_no_marca_truncado():
+    vectorstore = VectorstoreFalso([(_doc(TEXTO_HOSTIL, "hostil.pdf"), 0.1)])
+    salida = consultar(PREGUNTA, vectorstore, ModeloFalso(stop_reason="max_tokens"), k=1)
+    assert salida["estado"] == "sin_contexto_confiable"
+    assert salida["truncado"] is False
 
 
 def test_log_no_trae_el_correo_ni_la_pregunta(registro):

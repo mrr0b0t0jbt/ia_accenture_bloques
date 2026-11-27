@@ -31,11 +31,13 @@ class VectorstoreFalso:
 
 
 class ModeloFalso:
-    def __init__(self, texto):
+    def __init__(self, texto, stop_reason="end_turn"):
         self.texto = texto
+        self.stop_reason = stop_reason
 
     def invoke(self, mensajes):
-        return AIMessage(content=self.texto, usage_metadata={"input_tokens": 100, "output_tokens": 10, "total_tokens": 110})
+        return AIMessage(content=self.texto, usage_metadata={"input_tokens": 100, "output_tokens": 10, "total_tokens": 110},
+                         response_metadata={"stop_reason": self.stop_reason})
 
 
 @pytest.fixture
@@ -49,7 +51,7 @@ def falsos(monkeypatch):
 
     def crear_modelo(max_tokens):
         registro["max_tokens"] = max_tokens
-        return ModeloFalso(registro["texto"])
+        return ModeloFalso(registro["texto"], registro.get("stop_reason", "end_turn"))
 
     monkeypatch.setattr(embeddings_gemini, "crear_embeddings", lambda: "embeddings-falsos")
     monkeypatch.setattr(indexacion, "cargar_vectorstore", cargar)
@@ -132,6 +134,20 @@ def test_sin_cita_da_aviso_y_codigo_0(falsos, capsys, tmp_path):
     salida = capsys.readouterr()
     assert "Aviso:" in salida.err
     assert "sin_cita_valida" in salida.err
+
+
+def test_respuesta_truncada_da_aviso_y_codigo_0(falsos, capsys, tmp_path):
+    falsos["stop_reason"] = "max_tokens"
+    assert consultar_servicio.main(BASE + ["--directorio", str(tmp_path)]) == 0
+    salida = capsys.readouterr()
+    assert "Aviso: la respuesta salio cortada por --max-tokens" in salida.err
+    assert str(consultar_servicio.MAX_TOKENS_MAXIMO) in salida.err
+    assert PREGUNTA not in salida.out + salida.err
+
+
+def test_respuesta_completa_no_da_aviso_de_truncado(falsos, capsys, tmp_path):
+    assert consultar_servicio.main(BASE + ["--directorio", str(tmp_path)]) == 0
+    assert "cortada por --max-tokens" not in capsys.readouterr().err
 
 
 def test_error_del_indice_sale_con_1_sin_traceback(monkeypatch, falsos, capsys, tmp_path):

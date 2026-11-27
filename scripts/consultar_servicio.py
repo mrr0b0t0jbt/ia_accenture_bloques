@@ -3,6 +3,7 @@
 Recupera con embeddings REALES de Gemini desde el índice ya creado y responde con Claude REAL, con costo.
 La pregunta no se imprime ni se registra; con --registro-json los logs JSON (sin contenido) van a stderr.
 Sin --confirmar-api-real sale con código 2 sin cargar langchain ni leer las claves.
+Si el modelo corta la respuesta por --max-tokens, avisa en stderr (sin la pregunta ni la respuesta) y sale con 0.
 
 Requiere el índice creado antes con scripts/indexar_corpus.py --confirmar-api-real.
 
@@ -95,6 +96,9 @@ def main(argv: list[str] | None = None) -> int:
     print(recuperacion.limpiar_para_consola(salida["respuesta"]))
     if salida["estado"] != "respondida":
         print(f"Aviso: la consulta terminó sin respuesta citada (estado {salida['estado']}).", file=sys.stderr)
+    if salida["truncado"]:
+        print(f"Aviso: la respuesta salio cortada por --max-tokens ({args.max_tokens}); "
+              f"prueba subirlo (máximo {MAX_TOKENS_MAXIMO}).", file=sys.stderr)
     return 0
 
 
