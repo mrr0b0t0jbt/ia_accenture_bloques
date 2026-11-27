@@ -76,6 +76,31 @@ def test_lee_el_env_del_directorio_actual_sin_mostrar_valores(tmp_path):
     assert CANARIO_GEMINI not in salida
 
 
+def _escribir_env_con_canarios(tmp_path):
+    (tmp_path / ".env").write_text(f"CLAUDE_API_KEY={CANARIO_CLAUDE}\nGEMINI_API_KEY={CANARIO_GEMINI}\n", encoding="utf-8")
+
+
+def test_variable_vacia_en_el_entorno_no_se_pisa_con_el_env(tmp_path):
+    # override=False: una variable ya definida, aunque vacía, gana sobre el .env (con override=True diría "definida")
+    _escribir_env_con_canarios(tmp_path)
+    proceso = _correr(tmp_path, CLAUDE_API_KEY="")
+    salida = proceso.stdout + proceso.stderr
+    assert "CLAUDE_API_KEY: FALTA" in proceso.stdout, salida
+    assert CANARIO_CLAUDE not in salida
+    assert CANARIO_GEMINI not in salida
+
+
+def test_variable_del_entorno_gana_sobre_el_env_sin_mostrar_valores(tmp_path):
+    canario_entorno = "canario-entorno-0006"
+    _escribir_env_con_canarios(tmp_path)
+    proceso = _correr(tmp_path, CLAUDE_API_KEY=canario_entorno)
+    salida = proceso.stdout + proceso.stderr
+    assert "CLAUDE_API_KEY: definida" in proceso.stdout, salida
+    assert canario_entorno not in salida
+    assert CANARIO_CLAUDE not in salida
+    assert CANARIO_GEMINI not in salida
+
+
 def test_no_lee_el_env_de_un_directorio_padre(tmp_path):
     (tmp_path / ".env").write_text(f"CLAUDE_API_KEY={CANARIO_CLAUDE}\n", encoding="utf-8")
     hijo = tmp_path / "hijo"
