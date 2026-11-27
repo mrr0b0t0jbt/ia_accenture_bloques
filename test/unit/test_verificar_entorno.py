@@ -18,6 +18,21 @@ def _correr_en(carpeta_script, cwd, **extra_env):
                           capture_output=True, text=True, timeout=60)
 
 
+def _correr_con_version(tmp_path, version):
+    """Corre verificar_entorno.py en una carpeta vacia haciendo que sys.version_info valga la version dada."""
+    version_falsa = tuple(version) + ("final", 0)
+    script = str(RAIZ / "verificar_entorno.py")
+    corredor = tmp_path / "corredor.py"
+    corredor.write_text(
+        "import runpy, sys\n"
+        f"sys.version_info = {version_falsa!r}\n"
+        f"runpy.run_path({script!r}, run_name=\"__main__\")\n",
+        encoding="utf-8",
+    )
+    env = {clave: os.environ[clave] for clave in ("PATH", "SYSTEMROOT", "LANG") if clave in os.environ}
+    return subprocess.run([sys.executable, str(corredor)], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60)
+
+
 def _correr(tmp_path, **extra_env):
     """Copia el script a tmp_path y lo corre ahí con un entorno mínimo sin claves (más las variables dadas)."""
     return _correr_en(tmp_path, tmp_path, **extra_env)
@@ -90,3 +105,22 @@ def test_el_env_se_lee_del_cwd_y_no_de_la_carpeta_del_script(tmp_path):
     assert "GEMINI_API_KEY" in proceso.stdout.split("Pendiente:")[1]
     assert canario_padre not in salida
     assert canario_cwd not in salida
+
+
+def test_python_3_11_no_cumple_la_version_minima(tmp_path):
+    proceso = _correr_con_version(tmp_path, (3, 11, 9))
+    assert proceso.returncode == 1
+    assert "Python 3.11.9: se requiere 3.12 o más" in proceso.stdout
+    assert "Python 3.12+" in proceso.stdout.split("Pendiente:")[-1]
+
+
+def test_python_3_12_es_la_version_minima_aceptada(tmp_path):
+    proceso = _correr_con_version(tmp_path, (3, 12, 0))
+    assert "Python 3.12.0: OK" in proceso.stdout
+    assert "se requiere" not in proceso.stdout
+
+
+def test_python_3_14_cumple_la_version_minima(tmp_path):
+    proceso = _correr_con_version(tmp_path, (3, 14, 9))
+    assert "Python 3.14.9: OK" in proceso.stdout
+    assert "se requiere" not in proceso.stdout
