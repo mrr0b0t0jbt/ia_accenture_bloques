@@ -2,7 +2,7 @@
 
 Esta guía permite instalar el proyecto desde cero, indexar el corpus, hacer una consulta de punta a punta y comprobar los cuatro criterios no compensables y las seis dimensiones de la rúbrica del Gate 2. El detalle técnico de cada bloque está en [README.md](README.md); aquí solo se dice dónde está la evidencia y cómo comprobarla.
 
-Estado de lo medido: 2026-11-25, sobre el commit a2567d6 (el contenido del repositorio sin este archivo), suite de pruebas 1567 passed y `test_gate2.py` 4 passed con el `.venv` del repositorio. Además, en copias limpias (`git archive` de `main` 16e66d6, que difiere de a2567d6 solo en documentos; entorno virtual nuevo, `pip install -r requirements.txt`, `pip check` sin conflictos, sin claves) con Python 3.12.16, 3.13.18 y 3.14.9: 1567 passed y 4 passed en las tres. `verificar_entorno.py` se probó también con un `.env` y un `vectorstore/` reales (copia aislada): sale con 0.
+Estado de lo medido: 2026-11-27, sobre el commit 28e3ada (`git archive` de `main`), suite de pruebas 1570 passed y `test_gate2.py` 4 passed con el `.venv` del repositorio. Además, el 2026-11-25, en copias limpias (`git archive` de `main` 16e66d6, que difiere de a2567d6 solo en documentos; entorno virtual nuevo, `pip install -r requirements.txt`, `pip check` sin conflictos, sin claves) con Python 3.12.16, 3.13.18 y 3.14.9: 1567 passed y 4 passed en las tres. `verificar_entorno.py` se probó también con un `.env` y un `vectorstore/` reales (copia aislada): sale con 0.
 
 ## 1. Qué modelo usa el proyecto
 
@@ -13,7 +13,7 @@ Estado de lo medido: 2026-11-25, sobre el commit a2567d6 (el contenido del repos
 
 ## 2. Instalación desde cero
 
-Requiere **Python 3.12 o superior** y Git. Probado con 3.12.16, 3.13.18 y 3.14.9 (desarrollo con 3.14). Con Python 3.11 `pip install -r requirements.txt` falla, porque `requirements.txt` fija `numpy==2.5.4` y esa versión no existe para 3.11; los ejemplos del curso usan 3.11, así que revisa `python --version` antes de crear el entorno. (`verificar_entorno.py` todavía acepta 3.10 o superior: ver Limitaciones.)
+Requiere **Python 3.12 o superior** y Git. Probado con 3.12.16, 3.13.18 y 3.14.9 (desarrollo con 3.14). Con Python 3.11 `pip install -r requirements.txt` falla, porque `requirements.txt` fija `numpy==2.5.4` y esa versión no existe para 3.11; los ejemplos del curso usan 3.11, así que revisa `python --version` antes de crear el entorno. `verificar_entorno.py` rechaza cualquier versión menor que 3.12.
 
 ```bash
 git clone <url-del-repositorio> curso_ia && cd curso_ia
@@ -69,7 +69,7 @@ Así, ninguna respuesta con texto del modelo sale sin al menos una cita real.
 
 ```bash
 python -m pytest test_gate2.py -v      # las 4 pruebas de los criterios no compensables
-python -m pytest -q                    # suite completa (1567 pruebas en a2567d6)
+python -m pytest -q                    # suite completa (1570 pruebas en 28e3ada)
 ```
 
 Todas corren sin red ni claves (modelo y vector store falsos o en carpetas temporales). `test_gate2.py` está fuera de `test/unit/` a propósito y se ejecuta aparte, como pide el curso.
@@ -92,7 +92,7 @@ Las cifras de precisión, exhaustividad, latencia y costo no se repiten aquí: e
 | Pipeline RAG funcional (25 %) | `scripts/indexar_corpus.py`, `src/indexacion.py`, `src/recuperacion.py`, `src/servicio_rag.py`, índice persistido en `vectorstore/` | Índice persistido, no reconstruido en cada consulta; `preflight_rag.py` comprueba que el índice coincide con el corpus (probado sobre una copia: OK) |
 | Recuperación y citación (15 %) | `src/metricas_recuperacion.py`, `scripts/evaluar_recuperacion.py`, `docs/resultados_evaluacion_recuperacion.json`; README.md "RAG: evaluación de la recuperación por chunk (Bloque 27)" | Métricas medidas sobre el corpus propio (14 preguntas). Citas validadas contra el contexto real |
 | Costo, latencia y checklist operativo (10 %) | `src/medicion_rag.py`, `scripts/medir_latencia_costo.py`, `docs/registros_latencia_costo.jsonl`; README.md "RAG: latencia y costo reales del flujo completo (Bloque 28)" | Corridas reales documentadas. El costo de Claude es una estimación con los precios del proyecto; los embeddings se cuentan en peticiones, no en dólares |
-| Personalización justificada (15 %) | `docs/decision_personalizacion.md`, `scripts/decidir_personalizacion.py`, `src/decision_personalizacion.py` | Ver "Limitaciones": el resultado es "ninguna técnica por ahora" para el clasificador del router, y una respuesta está marcada como pendiente de confirmación del autor |
+| Personalización justificada (15 %) | `docs/decision_personalizacion.md`, `scripts/decidir_personalizacion.py`, `src/decision_personalizacion.py` | Ver "Limitaciones": el resultado es "ninguna técnica por ahora" para el clasificador del router, y el autor lo firmó el 25/11/2026 |
 | Observabilidad y trazabilidad (15 %) | `src/registro_estructurado.py` (log JSON, `trace_id`, consumo por consulta), `src/trazas.py`, `docs/registro_consulta_real.jsonl` | `trace_id` distinto por consulta y sin valor activo fuera de ella (probado en `test_servicio_rag.py`) |
 | Seguridad, versionado y gobernanza (20 %) | `src/defensa_inyeccion.py`, `src/registro_prompts.py`, `docs/registro_prompts.jsonl`, `src/supervision_despliegue.py`, `docs/matriz_riesgos.json` | `registrar_prompt.py --verificar`: el prompt del código es la versión 2, OK. `matriz_riesgos.py`: 11 riesgos, todas las evidencias existen en el código. Los siete riesgos ALTO o CRÍTICO tienen supervisión y el validador lo exige; cuatro son procesos humanos (ver "Limitaciones") |
 
@@ -108,9 +108,8 @@ Las cifras de precisión, exhaustividad, latencia y costo no se repiten aquí: e
 
 - **Matriz de riesgos y supervisión.** Los siete riesgos ALTO o CRÍTICO de `docs/matriz_riesgos.json` tienen un punto de supervisión, y `python scripts/matriz_riesgos.py` sale con 1 si uno de ellos no lo tiene. Tres de esos puntos ya existían (revisión semanal de trazas, `esperar_aprobacion`, `interrupt` del grafo antes de desplegar). Los cuatro últimos (inyección de prompt, datos personales en los logs, prompt cambiado sin registrar la versión y dataset de tuning desbalanceado) son **procesos humanos, no automatizados**; la matriz lo dice en cada fila. Para la inyección, lo que el código aporta es el marcado `requiere_revision` y el log con la fuente y los patrones del documento descartado; no hay una herramienta que liste esas consultas, se buscan en el log JSON. Además, las probabilidades e impactos son estimaciones y las 11 filas quedan en el límite de otra categoría; no tienen revisión externa.
 - **Respuesta cortada por el límite de tokens.** `consultar_servicio.py` imprime la respuesta tal como llega aunque el modelo la haya cortado por `--max-tokens` (el log lo registra como `truncado`, pero la consola no avisa). En la consulta real documentada el valor por defecto (512) cortó la respuesta a mitad de frase. Con `--max-tokens 1024` hay más margen.
-- **Decisión de personalización.** El método da cero puntos a RAG, fine-tuning completo y PEFT para el caso evaluado (el clasificador del router, no el RAG), así que la decisión es mantener el clasificador actual. La respuesta sobre presupuesto está marcada `[A CONFIRMAR POR EL AUTOR]` y la firma del documento está pendiente.
+- **Decisión de personalización.** El método da cero puntos a RAG, fine-tuning completo y PEFT para el caso evaluado (el clasificador del router, no el RAG), así que la decisión es mantener el clasificador actual. El autor revisó el documento, confirmó la respuesta sobre presupuesto (`False`) y lo firmó el 25/11/2026 (sección 5 del documento).
 - **Falsos positivos del detector de inyección.** Un fragmento legítimo que cite el ataque (por ejemplo "nuevo sistema:") se descarta. El detector no cubre homoglifos de otros alfabetos ni sinónimos (README.md, sección del Bloque 31).
-- **Versión mínima de Python.** `verificar_entorno.py` acepta 3.10 o superior, pero las dependencias fijadas exigen 3.12 o superior; con 3.11 el script dice que Python está bien y luego marca los paquetes como pendientes.
 - **Índice no versionado.** Quien revise debe reindexar con su propia clave de Gemini (sección 3).
 - **Dos claves.** La consulta real necesita `CLAUDE_API_KEY` y `GEMINI_API_KEY`.
 - **Dependencias.** `chromadb` 1.5.9 tiene avisos de seguridad sin arreglo disponible, de alcance probablemente no aplicable (sin verificar, README.md).
