@@ -25,9 +25,9 @@ MAX_LLAMADAS = 12
 LLAMADAS_POR_AVISO = 3
 LLAMADAS_POR_MENSAJE = 2
 NOTA_COSTO = "El costo es una estimación calculada con los tokens informados y los precios del proyecto; no es el cobro real."
-# USD por token de entrada y salida de Gemini 3.5 Flash-Lite, informados por el usuario, no verificados contra la documentación oficial
+# USD por token de entrada y salida de Gemini 3.5 Flash-Lite, según la página oficial de precios de Gemini, consultada el 2026-11-23
 PRECIOS_GEMINI = (0.30 / 1_000_000, 2.50 / 1_000_000)
-NOTA_COSTO_GEMINI = "El costo es una estimación calculada con los tokens informados y los precios de Gemini 3.5 Flash-Lite que informó el usuario (entrada USD 0.30, salida USD 2.50 por millón); no es el cobro real."
+NOTA_COSTO_GEMINI = "El costo es una estimación calculada con los tokens informados y los precios de Gemini 3.5 Flash-Lite de la página oficial de precios de Gemini, consultada el 2026-11-23 (entrada USD 0.30, salida USD 2.50 por millón); no es el cobro real."
 
 
 def cargar_casos(ruta: str) -> dict:
