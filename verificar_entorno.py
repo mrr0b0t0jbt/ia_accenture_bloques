@@ -12,7 +12,7 @@ import sys
 from importlib import metadata
 from pathlib import Path
 
-VERSION_MINIMA = (3, 10)
+VERSION_MINIMA = (3, 12)
 PAQUETES = (
     "langchain-core",
     "langchain-chroma",
