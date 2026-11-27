@@ -2,7 +2,7 @@
 
 Esta guía permite instalar el proyecto desde cero, indexar el corpus, hacer una consulta de punta a punta y comprobar los cuatro criterios no compensables y las seis dimensiones de la rúbrica del Gate 2. El detalle técnico de cada bloque está en [README.md](README.md); aquí solo se dice dónde está la evidencia y cómo comprobarla.
 
-Estado de lo medido: 2026-11-27, sobre el commit 28e3ada (`git archive` de `main`), suite de pruebas 1570 passed y `test_gate2.py` 4 passed con el `.venv` del repositorio. Además, el 2026-11-25, en copias limpias (`git archive` de `main` 16e66d6, que difiere de a2567d6 solo en documentos; entorno virtual nuevo, `pip install -r requirements.txt`, `pip check` sin conflictos, sin claves) con Python 3.12.16, 3.13.18 y 3.14.9: 1567 passed y 4 passed en las tres. `verificar_entorno.py` se probó también con un `.env` y un `vectorstore/` reales (copia aislada): sale con 0.
+Estado de lo medido: 2026-11-27, sobre el commit d5029d8 (`git archive` de `main`), suite de pruebas 1578 passed y `test_gate2.py` 4 passed con el `.venv` del repositorio. Además, el 2026-11-25, en copias limpias (`git archive` de `main` 16e66d6, que difiere de a2567d6 solo en documentos; entorno virtual nuevo, `pip install -r requirements.txt`, `pip check` sin conflictos, sin claves) con Python 3.12.16, 3.13.18 y 3.14.9: 1567 passed y 4 passed en las tres. `verificar_entorno.py` se probó también con un `.env` y un `vectorstore/` reales (copia aislada): sale con 0.
 
 ## 1. Qué modelo usa el proyecto
 
@@ -69,7 +69,7 @@ Así, ninguna respuesta con texto del modelo sale sin al menos una cita real.
 
 ```bash
 python -m pytest test_gate2.py -v      # las 4 pruebas de los criterios no compensables
-python -m pytest -q                    # suite completa (1570 pruebas en 28e3ada)
+python -m pytest -q                    # suite completa (1578 pruebas en d5029d8)
 ```
 
 Todas corren sin red ni claves (modelo y vector store falsos o en carpetas temporales). `test_gate2.py` está fuera de `test/unit/` a propósito y se ejecuta aparte, como pide el curso.
@@ -102,12 +102,12 @@ Las cifras de precisión, exhaustividad, latencia y costo no se repiten aquí: e
 - `scripts/consultar_servicio.py`: consulta de punta a punta desde la terminal.
 - `test_gate2.py`: las cuatro pruebas del curso, adaptadas a este proyecto.
 - `verificar_entorno.py`: comprobación del entorno antes de la corrida final.
-- `test/unit/test_servicio_rag.py`, `test_consultar_servicio.py`, `test_verificar_entorno.py`: 35 pruebas nuevas (13, 16 y 6).
+- `test/unit/test_servicio_rag.py`, `test_consultar_servicio.py`, `test_verificar_entorno.py`: 46 pruebas (17, 18 y 11).
 
 ## 9. Limitaciones conocidas y pendientes (declaradas, no ocultas)
 
 - **Matriz de riesgos y supervisión.** Los siete riesgos ALTO o CRÍTICO de `docs/matriz_riesgos.json` tienen un punto de supervisión, y `python scripts/matriz_riesgos.py` sale con 1 si uno de ellos no lo tiene. Tres de esos puntos ya existían (revisión semanal de trazas, `esperar_aprobacion`, `interrupt` del grafo antes de desplegar). Los cuatro últimos (inyección de prompt, datos personales en los logs, prompt cambiado sin registrar la versión y dataset de tuning desbalanceado) son **procesos humanos, no automatizados**; la matriz lo dice en cada fila. Para la inyección, lo que el código aporta es el marcado `requiere_revision` y el log con la fuente y los patrones del documento descartado; no hay una herramienta que liste esas consultas, se buscan en el log JSON. Además, las probabilidades e impactos son estimaciones y las 11 filas quedan en el límite de otra categoría; no tienen revisión externa.
-- **Respuesta cortada por el límite de tokens.** `consultar_servicio.py` imprime la respuesta tal como llega aunque el modelo la haya cortado por `--max-tokens` (el log lo registra como `truncado`, pero la consola no avisa). En la consulta real documentada el valor por defecto (512) cortó la respuesta a mitad de frase. Con `--max-tokens 1024` hay más margen.
+- **Respuesta cortada por el límite de tokens.** `consultar_servicio.py` avisa por stderr cuando el modelo corta la respuesta por `--max-tokens` (sin imprimir la pregunta ni la respuesta) y sale con 0; el log lo registra como `truncado`. En la consulta real documentada el valor por defecto (512) cortó la respuesta a mitad de frase. Con `--max-tokens 1024` hay más margen.
 - **Decisión de personalización.** El método da cero puntos a RAG, fine-tuning completo y PEFT para el caso evaluado (el clasificador del router, no el RAG), así que la decisión es mantener el clasificador actual. El autor revisó el documento, confirmó la respuesta sobre presupuesto (`False`) y lo firmó el 25/11/2026 (sección 5 del documento).
 - **Falsos positivos del detector de inyección.** Un fragmento legítimo que cite el ataque (por ejemplo "nuevo sistema:") se descarta. El detector no cubre homoglifos de otros alfabetos ni sinónimos (README.md, sección del Bloque 31).
 - **Índice no versionado.** Quien revise debe reindexar con su propia clave de Gemini (sección 3).
