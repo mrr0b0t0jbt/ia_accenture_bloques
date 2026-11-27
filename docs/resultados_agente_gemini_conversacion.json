@@ -1,0 +1,61 @@
+{
+  "proveedor": "gemini",
+  "nota_costo": "El costo es una estimación calculada con los tokens informados y los precios de Gemini 3.5 Flash-Lite que informó el usuario (entrada USD 0.30, salida USD 2.50 por millón); no es el cobro real.",
+  "resultados": [
+    {
+      "id": "conversacion_1",
+      "sesion": "s-conv",
+      "mensaje": "Consulta el CVE-2099-10001 e incluye su mitigación.",
+      "herramientas_esperadas": [
+        "consultar_cve_de_laboratorio"
+      ],
+      "respuesta": "El CVE-2099-10001 presenta la siguiente información:\n\n- **Descripción:** Fuga de datos ficticia en el panel de pruebas de una aplicación de laboratorio.\n- **Severidad:** Media (CVSS 5.3).\n- **Mitigación:** Desactivar el panel de pruebas ficticio en el laboratorio.",
+      "herramientas_usadas": [
+        "consultar_cve_de_laboratorio"
+      ],
+      "coincide_herramientas": true,
+      "pasos": [
+        {
+          "herramienta": "consultar_cve_de_laboratorio",
+          "entrada": {
+            "cve_id": "CVE-2099-10001",
+            "incluir_mitigacion": true
+          },
+          "observacion": "CVE-2099-10001: Fuga de datos ficticia en el panel de pruebas de una aplicacion de laboratorio. Severidad: media (CVSS 5.3). Mitigación: Desactivar el panel de pruebas ficticio en el laboratorio."
+        }
+      ],
+      "hubo_fallo": false,
+      "aprobaciones": [],
+      "llamadas": 2,
+      "tokens_entrada": 1046,
+      "tokens_salida": 239,
+      "costo_estimado": 0.0009113000000000001,
+      "truncado": false,
+      "mensajes_en_sesion": 2
+    },
+    {
+      "id": "conversacion_2",
+      "sesion": "s-conv",
+      "mensaje": "¿Cuál era su severidad? Responde con lo que ya sabes, sin usar herramientas.",
+      "herramientas_esperadas": [],
+      "respuesta": "La severidad del CVE-2099-10001 es **Media (CVSS 5.3)**.",
+      "herramientas_usadas": [],
+      "coincide_herramientas": true,
+      "pasos": [],
+      "hubo_fallo": false,
+      "aprobaciones": [],
+      "llamadas": 1,
+      "tokens_entrada": 497,
+      "tokens_salida": 210,
+      "costo_estimado": 0.0006741000000000001,
+      "truncado": false,
+      "mensajes_en_sesion": 4
+    }
+  ],
+  "llamadas_totales": 3,
+  "costo_total_estimado": 0.0015854,
+  "cortado_por_tope": false,
+  "cortado_por_llamadas": false,
+  "cortado_por_falta_de_uso": false,
+  "aprobaciones": []
+}
